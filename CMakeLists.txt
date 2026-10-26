@@ -58,7 +58,6 @@ include(GNUInstallDirs)
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(JPEG REQUIRED)
-find_package(PNG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(Stb REQUIRED)  # vcpkg's stb: Stb_INCLUDE_DIR, headers only
@@ -150,14 +149,14 @@ target_compile_features(bm3d_core PUBLIC cxx_std_17)
 # page of the machine
 target_compile_options(bm3d_core PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 # The image libraries stay private: a program that links bm3d_core does not need their headers.
-# The stb headers are only included, so they are not part of the link.
+# The stb headers are only included, so they are not part of the link (stb reads the PNG, BMP, GIF
+# and TGA textures; libjpeg-turbo, libwebp and libtiff read the others).
 target_include_directories(bm3d_core PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_core
     PRIVATE
         bm3d_corto
         bm3d_vcg
         JPEG::JPEG
-        PNG::PNG
         TIFF::TIFF
         WebP::webp
         Threads::Threads)

@@ -4,6 +4,7 @@
 #include "pictures.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <csetjmp>
 #include <cstdio>
@@ -108,9 +109,13 @@ std::vector<uint8_t> paletteIndices() {
     return indices;
 }
 
-// libjpeg, not stb: the JPEG writer of stb shifts negative ints left, which C++17 leaves undefined
-void writeJpeg(const fs::path& file, const Raster& raster) {
-    requireChannels(raster, 3, "JPEG");
+// libjpeg, not stb: the JPEG writer of stb shifts negative ints left, which C++17 leaves undefined.
+// `samples` holds `components` bytes per pixel, rows from the top, in the color space `space` of
+// the input (the file keeps it, or the YCbCr libjpeg chooses for RGB).
+static void writeJpegSamples(const fs::path& file, int width, int height, int components, J_COLOR_SPACE space,
+                             const std::vector<uint8_t>& samples, int quality) {
+    if (samples.size() != size_t(width) * size_t(height) * size_t(components))
+        throw std::runtime_error("the raster holds the wrong number of samples");
     // Made before the jump target below: a jump back does not run the destructors of what was
     // made after it. jpeg_destroy_compress does nothing to a zeroed object that was never created.
     unsigned char* encoded = nullptr;  // malloc'ed by libjpeg's memory destination
@@ -126,23 +131,34 @@ void writeJpeg(const fs::path& file, const Raster& raster) {
     }
     jpeg_create_compress(&info);
     jpeg_mem_dest(&info, &encoded, &size);
-    info.image_width = JDIMENSION(raster.width);
-    info.image_height = JDIMENSION(raster.height);
-    info.input_components = 3;
-    info.in_color_space = JCS_RGB;
+    info.image_width = JDIMENSION(width);
+    info.image_height = JDIMENSION(height);
+    info.input_components = components;
+    info.in_color_space = space;
     jpeg_set_defaults(&info);
-    jpeg_set_quality(&info, 90, TRUE);
+    jpeg_set_quality(&info, quality, TRUE);
     jpeg_start_compress(&info, TRUE);
-    const size_t stride = size_t(raster.width) * 3;
+    const size_t stride = size_t(width) * size_t(components);
     while (info.next_scanline < info.image_height) {
         // jpeg_write_scanlines takes rows that are not const and only reads them
-        JSAMPROW row = const_cast<JSAMPROW>(raster.pixels.data() + size_t(info.next_scanline) * stride);
+        JSAMPROW row = const_cast<JSAMPROW>(samples.data() + size_t(info.next_scanline) * stride);
         jpeg_write_scanlines(&info, &row, 1);
     }
     jpeg_finish_compress(&info);
     jpeg_destroy_compress(&info);
     std::unique_ptr<unsigned char, decltype(&std::free)> owner(encoded, &std::free);
     writeBytes(file, encoded, size_t(size));
+}
+
+void writeJpeg(const fs::path& file, const Raster& raster) {
+    requireChannels(raster, 3, "JPEG");
+    writeJpegSamples(file, raster.width, raster.height, 3, JCS_RGB, raster.pixels, 90);
+}
+
+void writeCmykJpeg(const fs::path& file, int width, int height, const std::vector<uint8_t>& samples) {
+    // libjpeg marks a 4 component JPEG as Adobe's, whose CMYK is stored inverted: the samples go
+    // in as given
+    writeJpegSamples(file, width, height, 4, JCS_CMYK, samples, 100);
 }
 
 void writePng(const fs::path& file, const Raster& raster) {
@@ -200,15 +216,36 @@ void writeWebp(const fs::path& file, const Raster& raster) {
     writeBytes(file, encoded, size);
 }
 
-void writePalettedPng(const fs::path& file, int width, int height, const std::vector<uint8_t>& indices) {
-    if (indices.size() != size_t(width) * size_t(height))
-        throw std::runtime_error("one palette index per pixel is needed");
+std::vector<uint8_t> packSamples(int width, int height, int bitDepth, const std::vector<uint8_t>& samples) {
+    if (bitDepth != 1 && bitDepth != 2 && bitDepth != 4 && bitDepth != 8)
+        throw std::runtime_error("packSamples takes 1, 2, 4 or 8 bits");
+    if (samples.size() != size_t(width) * size_t(height))
+        throw std::runtime_error("one sample per pixel is needed");
+    const size_t perByte = size_t(8 / bitDepth);
+    const size_t rowBytes = (size_t(width) + perByte - 1) / perByte;
+    std::vector<uint8_t> rows(rowBytes * size_t(height), 0);
+    for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++) {
+            const unsigned sample = samples[size_t(y) * size_t(width) + size_t(x)] & ((1u << bitDepth) - 1);
+            // the first pixel of a byte is in its high bits
+            const size_t shift = (perByte - 1 - size_t(x) % perByte) * size_t(bitDepth);
+            rows[size_t(y) * rowBytes + size_t(x) / perByte] |= uint8_t(sample << shift);
+        }
+    return rows;
+}
 
-    std::vector<uint8_t> bytes;
+void writeRawPng(const fs::path& file, const PngSpec& spec, const std::vector<uint8_t>& rows) {
+    const size_t channels = spec.colorType == PngSpec::Rgb ? 3 : 1;
+    const size_t rowBytes = (size_t(spec.width) * channels * size_t(spec.bitDepth) + 7) / 8;
+    if (rows.size() != rowBytes * size_t(spec.height))
+        throw std::runtime_error("the raster holds the wrong number of samples");
+
     // Made before the jump target below: a jump back does not run the destructors of what was
     // made after it
-    const size_t rowBytes = (size_t(width) + 1) / 2;  // two pixels in a byte, the first in the high nibble
-    std::vector<uint8_t> row(rowBytes);
+    std::vector<uint8_t> bytes;
+    std::vector<png_color> palette;
+    for (const auto& color : spec.palette)
+        palette.push_back({color[0], color[1], color[2]});
     png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     png_infop info = png != nullptr ? png_create_info_struct(png) : nullptr;
     if (png == nullptr || info == nullptr)
@@ -226,28 +263,58 @@ void writePalettedPng(const fs::path& file, int width, int height, const std::ve
             out->insert(out->end(), data, data + length);
         },
         [](png_structp) {});
-    png_set_IHDR(png, info, uint32_t(width), uint32_t(height), 4, PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_color palette[16];
-    for (int i = 0; i < 16; i++) {
-        uint8_t rgb[3];
-        paletteColor(i, rgb);
-        palette[i] = {rgb[0], rgb[1], rgb[2]};
+    png_set_IHDR(png, info, uint32_t(spec.width), uint32_t(spec.height), spec.bitDepth, int(spec.colorType),
+                 spec.interlaced ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
+                 PNG_FILTER_TYPE_DEFAULT);
+    if (!palette.empty())
+        png_set_PLTE(png, info, palette.data(), int(palette.size()));
+    if (!spec.paletteAlpha.empty())
+        png_set_tRNS(png, info, spec.paletteAlpha.data(), int(spec.paletteAlpha.size()), nullptr);
+    if (spec.transparentGray >= 0) {
+        png_color_16 key{};
+        key.gray = png_uint_16(spec.transparentGray);
+        png_set_tRNS(png, info, nullptr, 0, &key);
     }
-    png_set_PLTE(png, info, palette, 16);
     png_write_info(png, info);
-
-    for (int y = 0; y < height; y++) {
-        std::fill(row.begin(), row.end(), 0);
-        for (int x = 0; x < width; x++) {
-            const uint8_t index = indices[size_t(y) * size_t(width) + size_t(x)] & 0x0f;
-            row[size_t(x) / 2] = uint8_t(row[size_t(x) / 2] | (x % 2 == 0 ? index << 4 : index));
-        }
-        png_write_row(png, row.data());
-    }
+    // an interlaced image is written once for each pass, with the same rows
+    const int passes = spec.interlaced ? png_set_interlace_handling(png) : 1;
+    for (int pass = 0; pass < passes; pass++)
+        for (int y = 0; y < spec.height; y++)
+            png_write_row(png, const_cast<png_bytep>(rows.data() + size_t(y) * rowBytes));
     png_write_end(png, info);
     png_destroy_write_struct(&png, &info);
     writeBytes(file, bytes.data(), bytes.size());
+}
+
+void writePalettedPng(const fs::path& file, int width, int height, const std::vector<uint8_t>& indices) {
+    PngSpec spec;
+    spec.width = width;
+    spec.height = height;
+    spec.bitDepth = 4;
+    spec.colorType = PngSpec::Palette;
+    for (int i = 0; i < 16; i++) {
+        std::array<uint8_t, 3> color;
+        paletteColor(i, color.data());
+        spec.palette.push_back(color);
+    }
+    writeRawPng(file, spec, packSamples(width, height, 4, indices));
+}
+
+void writeRgb16Png(const fs::path& file, int width, int height, const std::vector<uint16_t>& rgb) {
+    if (rgb.size() != size_t(width) * size_t(height) * 3)
+        throw std::runtime_error("the raster holds the wrong number of samples");
+    std::vector<uint8_t> rows;
+    rows.reserve(rgb.size() * 2);
+    for (uint16_t sample : rgb) {  // PNG stores the high byte of a sample first
+        rows.push_back(uint8_t(sample >> 8));
+        rows.push_back(uint8_t(sample & 0xff));
+    }
+    PngSpec spec;
+    spec.width = width;
+    spec.height = height;
+    spec.bitDepth = 16;
+    spec.colorType = PngSpec::Rgb;
+    writeRawPng(file, spec, rows);
 }
 
 DecodedImage decodeWebp(const std::vector<uint8_t>& data) {

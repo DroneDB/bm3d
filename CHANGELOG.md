@@ -4,6 +4,26 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- The image libraries were chosen by measurement (`scripts/bench.py`: interleaved builds of one
+  model with several programs, median and spread of the wall time, peak memory, size and SHA-256 of
+  the file). On the large photogrammetry model (224k triangles, 72 PNG textures of 1.56
+  gigapixels, `--threads 8`, three builds each, machine load 1.7 to 2.9) stb decodes the PNG
+  textures 2.3% faster than libpng (median 109.7 s against 112.3 s, ranges 109.6 to 111.6 and 111.5
+  to 113.0) and writes the same file (SHA-256 339f0276...a780, 358,059,008 bytes), with 6% more peak
+  memory (4583 MiB against 4326): **PNG is now read with stb and the program no longer links
+  libpng** (it stays in the tests, which write palette, 16 bit and interlaced PNGs with it). The
+  16 bit samples are scaled to 8 bits with rounding as libpng did (stb drops the low byte) and the
+  transparent gray of a gray PNG of 2 to 8 bits is still black, so the pictures are the same as
+  before. The same textures as JPEG (quality 90, 4:2:0) decode as fast with stb (99.2 s against 99.0
+  s, +0.1%) but into a different file (stb's inverse DCT and chroma upsampling round differently,
+  350,339,840 bytes against 350,393,600), so **JPEG stays with libjpeg-turbo**, which the JPEG tiles
+  of the texture cache need anyway. The program is 6% smaller (3.53 MB against 3.75 MB).
+- New tests for the decoders: a gray PNG with alpha, a 16 bit PNG and a CMYK JPEG (Adobe style,
+  inverted components) read to the exact pixels and built into a node texture of the expected
+  color; the transparent gray of a gray PNG, a 1 bit PNG, a palette with transparent entries and an
+  interlaced PNG read to the exact pixels (the same on libpng, which read them before). The
+  mutation loop of the robustness tests also damages a PNG texture (a sixth of the runs, under the
+  sanitizers too).
 - Robustness tests (`ctest -L robustness`, `tests/robustness`): the PLY face-list bound and every
   count and index type, long header comments, garbage OBJ faces, texture coordinates with only u or
   not usable, coincident and zero-area triangles, truncated and `solid`-prefixed STL, and the pieces

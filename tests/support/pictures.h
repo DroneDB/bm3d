@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Pictures for the tests: made in memory, written in each of the texture file formats the
-// program reads (with stb_image_write, libpng, libtiff and libwebp), and a decoder for the WebP
+// program reads (with stb_image_write, libjpeg, libpng, libtiff and libwebp), and a decoder for the WebP
 // the program writes in the node textures.
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -19,7 +20,7 @@ namespace bm3dtest {
 struct Raster {
     int width = 0;
     int height = 0;
-    int channels = 3;  // 1 gray, 3 RGB, 4 RGBA
+    int channels = 3;  // 1 gray, 2 gray and alpha, 3 RGB, 4 RGBA (a PNG takes all four, the others RGB)
     std::vector<uint8_t> pixels;
 };
 
@@ -43,6 +44,31 @@ void writeTiff(const fs::path& file, const Raster& raster);  // 8 bit, uncompres
 void writeWebp(const fs::path& file, const Raster& raster);  // lossless, RGB
 // A PNG with a palette of 16 colors (4 bits per pixel); `indices` has one entry per pixel
 void writePalettedPng(const fs::path& file, int width, int height, const std::vector<uint8_t>& indices);
+
+// What libpng needs to write a PNG that stb cannot: the layout of the samples, the palette and the
+// transparency chunk (tRNS)
+struct PngSpec {
+    enum ColorType { Gray = 0, Rgb = 2, Palette = 3 };
+    int width = 0;
+    int height = 0;
+    int bitDepth = 8;               // 1, 2, 4, 8 or 16 (1 to 8 for a palette)
+    ColorType colorType = Gray;
+    bool interlaced = false;        // Adam7; the rows given are those of the plain image
+    std::vector<std::array<uint8_t, 3>> palette;  // a palette image
+    std::vector<uint8_t> paletteAlpha;            // tRNS of a palette image: the alpha of the first entries
+    int transparentGray = -1;                     // tRNS of a gray image: the sample value that is transparent
+};
+// `samples` (one 0..2^bitDepth-1 value per pixel, rows from the top) as the rows of a PNG hold them:
+// the first pixel of a byte in its high bits, every row starting on a byte
+std::vector<uint8_t> packSamples(int width, int height, int bitDepth, const std::vector<uint8_t>& samples);
+// Writes the rows as a PNG stores them (sub-byte samples packed, 16 bit ones high byte first)
+void writeRawPng(const fs::path& file, const PngSpec& spec, const std::vector<uint8_t>& rows);
+// A PNG of 16 bit RGB samples (`rgb` has three per pixel, rows from the top)
+void writeRgb16Png(const fs::path& file, int width, int height, const std::vector<uint16_t>& rgb);
+// A JPEG of four components (`samples` has four per pixel, rows from the top) with the Adobe
+// marker libjpeg writes for CMYK, whose components are stored inverted: 255 is no ink, so a
+// color is (c * k / 255, m * k / 255, y * k / 255) of the stored c, m, y and k
+void writeCmykJpeg(const fs::path& file, int width, int height, const std::vector<uint8_t>& samples);
 
 // A decoded image: one plane per band (R, G, B and, when it has one, alpha)
 struct DecodedImage {

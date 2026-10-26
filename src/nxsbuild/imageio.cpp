@@ -18,23 +18,24 @@ for more details.
 
 #include <algorithm>
 #include <cstdarg>
-#include <csetjmp>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <new>
 
-#include <png.h>
 #include <tiffio.h>
 #include <webp/decode.h>
 #include <webp/encode.h>
 
-//stb decodes the formats that are too small to need a library of their own (and no others)
+//stb decodes PNG and the formats that are too small to need a library of their own (and no
+//others). It decoded the PNG textures of the benchmark model 2% faster than libpng and gave the
+//same file; JPEG stays with libjpeg-turbo, whose output stb's does not reproduce.
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_NO_STDIO
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR
+#define STBI_ONLY_PNG
 #define STBI_ONLY_BMP
 #define STBI_ONLY_GIF
 #define STBI_ONLY_TGA
@@ -46,106 +47,6 @@ for more details.
 namespace nx {
 
 namespace {
-
-// ---------------------------------------------------------------------------------------
-// PNG
-// ---------------------------------------------------------------------------------------
-
-//Everything the error path of libpng must release lives here, outside of the function that
-//holds the setjmp, so the jump out of libpng skips no destructor.
-struct PngReader {
-	png_structp png = nullptr;
-	png_infop info = nullptr;
-	std::string error;
-	const unsigned char *data = nullptr;
-	size_t size = 0;
-	size_t position = 0;
-	std::vector<png_bytep> rows;
-
-	~PngReader() { png_destroy_read_struct(&png, &info, nullptr); }
-};
-
-extern "C" void pngFail(png_structp png, png_const_charp message) {
-	static_cast<PngReader *>(png_get_error_ptr(png))->error = message;
-	png_longjmp(png, 1);
-}
-
-//the ancillary chunks that libpng complains about (an iCCP profile it dislikes, ...) do not
-//change the pixels
-extern "C" void pngWarn(png_structp, png_const_charp) {}
-
-extern "C" void pngRead(png_structp png, png_bytep where, png_size_t length) {
-	PngReader *reader = static_cast<PngReader *>(png_get_io_ptr(png));
-	if(reader->size - reader->position < length)
-		png_error(png, "unexpected end of file");
-	std::memcpy(where, reader->data + reader->position, length);
-	reader->position += length;
-}
-
-//Colors as stored: 16 bit samples are scaled to 8 bits with rounding, palettes and gray are
-//expanded, the transparency (alpha channel, tRNS chunk) is dropped.
-bool readPng(PngReader &reader, Image &image) {
-	reader.png = png_create_read_struct(PNG_LIBPNG_VER_STRING, &reader, pngFail, pngWarn);
-	if(reader.png)
-		reader.info = png_create_info_struct(reader.png);
-	if(!reader.info) {
-		reader.error = "no memory for the PNG decoder";
-		return false;
-	}
-	png_structp png = reader.png;
-	png_infop info = reader.info;
-	if(setjmp(png_jmpbuf(png)))
-		return false;
-
-	png_set_read_fn(png, &reader, pngRead);
-	png_set_user_limits(png, 0x7fffffff, 0x7fffffff);
-	png_read_info(png, info);
-
-	png_uint_32 width = 0, height = 0;
-	int depth = 0, color = 0;
-	png_get_IHDR(png, info, &width, &height, &depth, &color, nullptr, nullptr, nullptr);
-	if(width > 0x7fffffffu || height > 0x7fffffffu)
-		png_error(png, "the image is too large");
-
-	png_set_expand(png);
-	if(depth == 16)
-		png_set_scale_16(png);
-	if(!(color & PNG_COLOR_MASK_COLOR))
-		png_set_gray_to_rgb(png);
-	//the bytes of a pixel in memory are B, G, R and the alpha, whose place a filler takes when
-	//the image has none
-	png_set_bgr(png);
-	const bool hasAlpha = (color & PNG_COLOR_MASK_ALPHA) || png_get_valid(png, info, PNG_INFO_tRNS);
-	if(!hasAlpha)
-		png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-	//A gray image of 2 to 8 bits with a transparent color: the pixels of that gray have always
-	//been black in the textures (the palette Qt made of the image had black for its transparent
-	//entry), the others of the kind (palette, RGB, 16 bit, ...) keep their colors.
-	int keyed = -1;
-	png_color_16p key = nullptr;
-	if(color == PNG_COLOR_TYPE_GRAY && depth >= 2 && depth <= 8 && png_get_tRNS(png, info, nullptr, nullptr, &key) &&
-	   key && key->gray < (1 << depth))
-		keyed = key->gray * (255 / ((1 << depth) - 1));
-	png_set_interlace_handling(png);
-	png_read_update_info(png, info);
-	if(png_get_channels(png, info) != 4 || png_get_rowbytes(png, info) != size_t(width) * 4)
-		png_error(png, "unsupported PNG layout");
-
-	image = Image(int(width), int(height));
-	reader.rows.resize(height);
-	for(png_uint_32 y = 0; y < height; y++)
-		reader.rows[y] = reinterpret_cast<png_bytep>(image.scanLine(int(y)));
-	png_read_image(png, reader.rows.data());
-
-	if(hasAlpha) {
-		for(png_uint_32 y = 0; y < height; y++) {
-			uint32_t *pixels = image.scanLine(int(y));
-			for(png_uint_32 x = 0; x < width; x++)
-				pixels[x] = (int(pixels[x] & 0xff) == keyed) ? Image::Opaque : (pixels[x] | Image::Opaque);
-		}
-	}
-	return true;
-}
 
 // ---------------------------------------------------------------------------------------
 // TIFF
@@ -319,8 +220,47 @@ bool readWebp(const unsigned char *data, size_t size, Image &image, std::string 
 }
 
 // ---------------------------------------------------------------------------------------
-// BMP, GIF, TGA
+// PNG, BMP, GIF, TGA
 // ---------------------------------------------------------------------------------------
+
+const char PngSignature[] = "\x89PNG\r\n\x1a\n";
+
+//A sample of 16 bits is scaled to 8 with rounding, as libpng does (stb would drop the low byte)
+inline unsigned toByte(unsigned char sample) { return sample; }
+inline unsigned toByte(unsigned short sample) { return (unsigned(sample) + 128) / 257; }
+
+//A gray PNG of 2 to 8 bits with a transparent color: the pixels of that gray have always been
+//black in the textures (the palette Qt made of the image had black for its transparent entry);
+//the other images of the kind (palette, RGB, 16 bit, ...) keep their colors. stb gives the pixels
+//of the transparent gray an alpha of 0, which is what tells them here.
+bool isGrayPngOfFewBits(const unsigned char *data, size_t size) {
+	//the header chunk comes first: width, height, bit depth, color type at 16, 20, 24, 25
+	return size >= 26 && std::memcmp(data, PngSignature, 8) == 0 && data[25] == 0 && data[24] >= 2 && data[24] <= 8;
+}
+
+//The pixels of RGBA samples, rows from the top; the alpha is dropped
+template <typename Sample>
+void copyPixels(const Sample *from, Image &image, bool transparentIsBlack) {
+	for(int y = 0; y < image.height(); y++) {
+		uint32_t *pixels = image.scanLine(y);
+		for(int x = 0; x < image.width(); x++, from += 4)
+			pixels[x] = (transparentIsBlack && from[3] == 0) ? Image::rgb(0, 0, 0)
+			                                                  : Image::rgb(toByte(from[0]), toByte(from[1]), toByte(from[2]));
+	}
+}
+
+//Takes over the samples stb allocated and frees them
+template <typename Sample>
+void makeImage(Sample *rgba, int width, int height, bool transparentIsBlack, Image &image) {
+	try {
+		image = Image(width, height);
+	} catch(...) {
+		stbi_image_free(rgba);
+		throw;
+	}
+	copyPixels(rgba, image, transparentIsBlack);
+	stbi_image_free(rgba);
+}
 
 bool readStb(const unsigned char *data, size_t size, Image &image, std::string &error) {
 	if(size > 0x7fffffffu) {
@@ -328,26 +268,22 @@ bool readStb(const unsigned char *data, size_t size, Image &image, std::string &
 		return false;
 	}
 	int width = 0, height = 0, components = 0;
-	unsigned char *rgba = stbi_load_from_memory(data, int(size), &width, &height, &components, 4);
-	if(!rgba) {
-		const char *reason = stbi_failure_reason();
-		error = reason ? reason : "unknown image format";
-		return false;
+	if(stbi_is_16_bit_from_memory(data, int(size))) {
+		stbi_us *rgba = stbi_load_16_from_memory(data, int(size), &width, &height, &components, 4);
+		if(rgba) {
+			makeImage(rgba, width, height, false, image);
+			return true;
+		}
+	} else {
+		stbi_uc *rgba = stbi_load_from_memory(data, int(size), &width, &height, &components, 4);
+		if(rgba) {
+			makeImage(rgba, width, height, isGrayPngOfFewBits(data, size), image);
+			return true;
+		}
 	}
-	try {
-		image = Image(width, height);
-	} catch(...) {
-		stbi_image_free(rgba);
-		throw;
-	}
-	const unsigned char *from = rgba;
-	for(int y = 0; y < height; y++) {
-		uint32_t *pixels = image.scanLine(y);
-		for(int x = 0; x < width; x++, from += 4)
-			pixels[x] = Image::rgb(from[0], from[1], from[2]);
-	}
-	stbi_image_free(rgba);
-	return true;
+	const char *reason = stbi_failure_reason();
+	error = reason ? reason : "unknown image format";
+	return false;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -360,16 +296,6 @@ bool decode(const unsigned char *data, size_t size, Image &image, std::string &e
 	if(startsWith(data, size, "\xff\xd8\xff", 3)) {
 		image = decodeJpeg(data, size, error);
 		return !image.isNull();
-	}
-	if(startsWith(data, size, "\x89PNG\r\n\x1a\n", 8)) {
-		PngReader reader;
-		reader.data = data;
-		reader.size = size;
-		if(readPng(reader, image))
-			return true;
-		error = reader.error;
-		image = Image();
-		return false;
 	}
 	if(size >= 12 && std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WEBP", 4) == 0)
 		return readWebp(data, size, image, error);

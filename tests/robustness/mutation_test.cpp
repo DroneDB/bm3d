@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // A seeded mutation loop: small models in every format the program reads (OBJ, PLY as text and as
-// binary, STL as text and as binary; with a texture where the format has one) are damaged by flipping
+// binary, STL as text and as binary; with a texture where the format has one), and a PNG texture of an
+// OBJ (the decoder of the PNG is stb, written for pictures that are not trusted), are damaged by flipping
 // bytes, cutting the file, inserting bytes and repeating a range, and the program is run on each. Whatever
 // the damage, it must end in time, not crash, say nothing to a sanitizer, and either build a file (exit 0)
 // or refuse the input (exit 2) and leave nothing behind; exit 1 only for memory or scratch space (see
@@ -72,17 +73,26 @@ struct Seed {
     std::string bytes;
     bool textured;       // the model names seed.mtl, and the material t.png
     size_t textLength;   // the file is text up to here: all of it, or the header of a binary PLY
+    bool texture;        // the damaged file is t.png, the texture of a model that is not damaged
 };
+
+// A PNG of 64 x 64 pixels, the picture of the PNG seed
+std::string pngSeed() {
+    TempDir dir;
+    writePng(dir.file("seed.png"), makeRaster(64, 64, 3, [](int band, int x, int y) { return double((x * 4 + y * 3 + band * 40) & 0xff); }));
+    return readBinaryFile(dir.file("seed.png"));
+}
 
 const std::vector<Seed>& seeds() {
     static const std::vector<Seed> all = [] {
         const auto triangles = waveTriangles(3);
         std::vector<Seed> list{
-            {"obj", "obj", texturedObjOf(triangles, "seed.mtl"), true, std::string::npos},
-            {"ply_ascii", "ply", texturedPlyOf(triangles, "t.png", false), true, std::string::npos},
-            {"ply_binary", "ply", texturedPlyOf(triangles, "t.png", true), true, 0},
-            {"stl_ascii", "stl", asciiStl(triangles), false, std::string::npos},
-            {"stl_binary", "stl", binaryStl(triangles), false, 0},
+            {"obj", "obj", texturedObjOf(triangles, "seed.mtl"), true, std::string::npos, false},
+            {"ply_ascii", "ply", texturedPlyOf(triangles, "t.png", false), true, std::string::npos, false},
+            {"ply_binary", "ply", texturedPlyOf(triangles, "t.png", true), true, 0, false},
+            {"stl_ascii", "stl", asciiStl(triangles), false, std::string::npos, false},
+            {"stl_binary", "stl", binaryStl(triangles), false, 0, false},
+            {"png_texture", "png", pngSeed(), false, 0, true},
         };
         for (Seed& seed : list)
             if (seed.name == "ply_binary")
@@ -206,11 +216,16 @@ TEST_P(MutationLoop, theProgramEndsInTimeAndKeepsTheRulesWhateverTheDamage) {
 
     TempDir dir;
     const fs::path in = dir.makeDir("in");
-    if (seed.textured) {
-        writePng(in / "t.png", gradientRaster(3));
+    if (seed.textured || seed.texture) {
+        if (!seed.texture)
+            writePng(in / "t.png", gradientRaster(3));
         writeTextFile(in / "seed.mtl", "newmtl m\nKd 1 1 1\nmap_Kd t.png\n");
     }
-    const fs::path input = in / ("m." + seed.extension);
+    // what is run is the model; what is damaged is the model, or its texture
+    const fs::path input = in / (seed.texture ? std::string("m.obj") : "m." + seed.extension);
+    const fs::path damaged = seed.texture ? in / "t.png" : input;
+    if (seed.texture)
+        writeTextFile(input, texturedObjOf(waveTriangles(3), "seed.mtl"));
 
     int failures = 0, built = 0, refused = 0, scratch = 0;
     // this seed takes every seeds().size()-th run
@@ -218,7 +233,7 @@ TEST_P(MutationLoop, theProgramEndsInTimeAndKeepsTheRulesWhateverTheDamage) {
         Random random(uint64_t(base) * 1000003u + uint64_t(run));
         std::string bytes = seed.bytes;
         const std::string said = mutate(bytes, seed.textLength, random);
-        writeBinaryFile(input, bytes);
+        writeBinaryFile(damaged, bytes);
 
         const Outcome outcome = runOn(dir, input);
         const std::string wrong = whatIsWrong(outcome);
@@ -238,7 +253,7 @@ TEST_P(MutationLoop, theProgramEndsInTimeAndKeepsTheRulesWhateverTheDamage) {
     RecordProperty("resource", scratch);
 }
 
-INSTANTIATE_TEST_SUITE_P(Seeds, MutationLoop, ::testing::Range(size_t(0), size_t(5)),
+INSTANTIATE_TEST_SUITE_P(Seeds, MutationLoop, ::testing::Range(size_t(0), seeds().size()),
                          [](const ::testing::TestParamInfo<size_t>& info) { return seeds()[info.param].name; });
 
 }  // namespace

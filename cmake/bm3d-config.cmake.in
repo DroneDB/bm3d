@@ -5,7 +5,6 @@ include(CMakeFindDependencyMacro)
 find_dependency(Threads)
 find_dependency(Eigen3)
 find_dependency(JPEG)
-find_dependency(PNG)
 find_dependency(TIFF)
 find_dependency(WebP CONFIG)
 

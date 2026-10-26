@@ -35,9 +35,9 @@ commits.
 ## 3. Building
 
 Requirements: a C++17 compiler (GCC, Clang or MSVC), CMake and [vcpkg](https://vcpkg.io). The
-dependencies (Eigen, libjpeg-turbo, libpng, libwebp, libtiff, stb) are listed in `vcpkg.json`
-and installed by vcpkg. Point `VCPKG_ROOT` at a vcpkg checkout; when bm3d is the top-level
-project it uses vcpkg's toolchain file from there.
+dependencies (Eigen, libjpeg-turbo, libwebp, libtiff, stb) are listed in `vcpkg.json` and
+installed by vcpkg (see Dependencies below). Point `VCPKG_ROOT` at a vcpkg checkout; when bm3d is
+the top-level project it uses vcpkg's toolchain file from there.
 
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build
@@ -52,6 +52,40 @@ and leaves the output directories alone. The options `BM3D_BUILD_TESTS` and
 `BM3D_INSTALL_DEVELOPMENT` are on for a standalone build and off for a subproject.
 
 The version is the text of `VERSION`; `vcpkg.json` repeats it and must be kept in step by hand.
+
+### Dependencies
+
+What reads the pictures of a model (textures are told apart by their first bytes, not by the
+extension):
+
+| Format | Library | Why |
+| --- | --- | --- |
+| PNG, BMP, GIF, TGA | stb_image (header only, from the `stb` port) | For PNG it decoded the 72 textures of a large photogrammetry model (1.56 gigapixels) 2.3% faster than libpng and the output file was byte for byte the same (below). One header replaces libpng in the program. |
+| JPEG | libjpeg-turbo | stb's JPEG decoder is as fast but not the same: its inverse DCT and chroma upsampling round differently, so the output changed. libjpeg-turbo is also needed to write the JPEG tiles the texture cache spills to disk. |
+| WebP | libwebp | Reads WebP textures and writes every node texture. |
+| TIFF | libtiff | Reads TIFF textures. |
+
+Eigen is used by the VCGLib simplification code; corto (mesh compression) and VCGLib are in
+`third_party/`. libpng is only used by the tests, to write the PNG pictures stb cannot (a palette,
+16 bit samples, an interlaced image).
+
+How the decoders were chosen: `scripts/bench.py` builds a model several times with several programs,
+interleaved, and prints the median wall time, the spread, the peak memory, the size of the file and
+its SHA-256. A library is replaced by stb only if the median build is at most 3% slower and the file
+is identical. The measurements, on a 32 thread machine with `--threads 8` and a machine load between
+1.7 and 2.9, three builds each:
+
+| Model | Decoder | Median | Range | Peak memory | File | Same file |
+| --- | --- | --- | --- | --- | --- | --- |
+| 72 PNG textures, 224k triangles | libpng | 112.3 s | 111.5 to 113.0 s | 4326 MiB | 358,059,008 bytes | reference |
+| | stb | 109.7 s (-2.3%) | 109.6 to 111.6 s | 4583 MiB (+6%) | 358,059,008 bytes | yes |
+| the same textures as JPEG (quality 90) | libjpeg-turbo | 99.0 s | 99.0 to 99.0 s | 4286 MiB | 350,393,600 bytes | reference |
+| | stb | 99.2 s (+0.1%) | 99.1 to 99.2 s | 4542 MiB (+6%) | 350,339,840 bytes | no |
+
+stb keeps the whole decoded picture in memory next to the one it hands to the builder, which is the
+6% more memory; libpng wrote its rows into the picture directly. stb is also the decoder of pictures
+that come from the user, so the robustness tests damage a PNG texture at random, and the sanitizer
+workflow runs them.
 
 ## 4. Command line
 

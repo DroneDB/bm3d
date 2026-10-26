@@ -4,16 +4,16 @@
   "dependencies": [
     "eigen3",
     "libjpeg-turbo",
-    "libpng",
     "libwebp",
     "stb",
     "tiff"
   ],
   "features": {
     "tests": {
-      "description": "The tests",
+      "description": "The tests (libpng writes the PNG pictures that stb cannot: a palette, 16 bit samples)",
       "dependencies": [
-        "gtest"
+        "gtest",
+        "libpng"
       ]
     }
   },
