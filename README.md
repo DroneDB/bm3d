@@ -137,3 +137,8 @@ keep their own headers and licences (`licenses/`, `NOTICE`). The web viewer will
 comes from is in `PROVENANCE.md`. The imported sources can be checked against their upstream
 commits with `scripts/sync-vcg.py --check`, `scripts/sync-corto.py --check` and
 `scripts/import-nexus.py --check`.
+
+The release archives of the program carry `LICENSE`, `NOTICE`, the licence texts of Nexus, VCGLib
+and corto (`licenses/`) and the licence of each vcpkg library the program links (`licenses/ports/`).
+The Linux program links libstdc++ and libgcc statically under the GCC Runtime Library Exception,
+and the Windows program links the Microsoft runtime statically (`NOTICE`).
