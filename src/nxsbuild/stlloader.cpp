@@ -6,12 +6,14 @@
 
 #include "../common/error.h"
 #include "../common/textparse.h"
+#include "finite.h"
 
 #include <iostream>
 using namespace std;
 
 STLLoader::STLLoader(const std::string &filename) {
 
+	this->filename = filename;
 	has_colors = has_normals = has_textures = false;
 
 	if(!file.open(filename))
@@ -50,8 +52,7 @@ uint32_t STLLoader::getTrianglesAscii(uint32_t size, Triangle *buffer) {
 	uint32_t readed = 0;
 	const char *line;
 	size_t length;
-	char dummy[1024];
-	
+
 	for(uint32_t i = 0; i < size; i++) {
 
 		bool ok = file.readLine(line, length); //facet
@@ -69,14 +70,22 @@ uint32_t STLLoader::getTrianglesAscii(uint32_t size, Triangle *buffer) {
 			ok = file.readLine(line, length); //normal
 			if(!ok) return readed;
 
+			//the keyword, then x y z; a number that is NaN or an infinity is not accepted
+			const char *p = nx::text::skipSpaces(line);
+			while(*p && !nx::text::isSpace(*p))
+				p++;
 			vcg::Point3d d;
-			int n = sscanf(line, "%1023s %lf %lf %lf", dummy, &d[0], &d[1], &d[2]);
-			if(n != 4)
-				throw nx::Error("Invalid STL file");
+			if(!nx::text::parseDouble(p, d[0]) || !nx::text::parseDouble(p, d[1]) || !nx::text::parseDouble(p, d[2]))
+				throw nx::Error("Invalid STL file " + filename + ": triangle " + std::to_string(current_triangle) +
+				                " has a vertex line that is not three finite numbers");
 
 			v[0] = (float)(d[0]);
 			v[1] = (float)(d[1]);
 			v[2] = (float)(d[2]);
+			nx::requireFinite(v, [&]() {
+				return "vertex " + std::to_string(k) + " of triangle " + std::to_string(current_triangle) +
+				       " of stl file " + filename;
+			});
 		}
 		current_triangle++;
 		readed++;
@@ -108,6 +117,11 @@ uint32_t STLLoader::getTrianglesBinary(uint32_t size, Triangle *buffer) {
 		for(int t = 0; t < 3; t++)
 			for(int k = 0; k < 3; k++)
 				tri.vertices[t].v[k] = pos[t*3 + k];
+		for(int t = 0; t < 3; t++)
+			nx::requireFinite(tri.vertices[t].v, [&]() {
+				return "vertex " + std::to_string(t) + " of triangle " + std::to_string(current_triangle) +
+				       " of stl file " + filename;
+			});
 		tri.node = 0;
 		current_triangle++;
 		start += 50;

@@ -132,6 +132,13 @@ used.
   of the kept VCGLib, corto and bm3d files), and the MSVC step of CI lists any header its build
   reads that `FILES` lacks. corto lost no file: its 21 files are all still read. The imported files
   of VCGLib are unchanged byte for byte.
+- `src/nxsbuild/plyloader.{h,cpp}`, `src/nxsbuild/objloader.cpp`, `src/nxsbuild/stlloader.{h,cpp}`:
+  a vertex whose coordinate is NaN, an infinity or beyond the range of a float is refused with an
+  error that names the file and the vertex (`requireFinite` of the new `src/nxsbuild/finite.h`).
+  The ASCII STL loader reads the numbers with `text::parseDouble` instead of `sscanf`, which
+  accepted `nan` and `inf`. The loaders keep the name of their file for the message.
+  `PlyLoader::cacheVertices` starts its `PlyVertex` from zero (it was uninitialised, and its alpha
+  was copied into the colour of a PLY without one).
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

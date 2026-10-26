@@ -23,6 +23,7 @@ private:
 	uint32_t getTrianglesBinary(uint32_t size, Triangle *buffer);
 
 	nx::InputFile file;
+	std::string filename;
 
 	bool ascii;
 	uint64_t n_vertices = 0;

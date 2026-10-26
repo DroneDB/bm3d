@@ -7,6 +7,7 @@
 // was read, 2 the input is invalid, 64 wrong command line).
 
 #include <cstdlib>
+#include <limits>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -227,6 +228,22 @@ TEST(CliExitCodes, aBrokenPlyExitsWithTwoAndWritesNoOutput) {
     writeTextFile(f.in / "bad.ply", "ply\nformat ascii 1.0\nelement vertex 3\n");
     const ProcessResult r = runBm3d({f.input("bad.ply"), f.output()});
     EXPECT_EQ(r.exitCode, 2) << r.output();
+    EXPECT_TRUE(f.dir.list("out").empty());
+}
+
+// A NaN in a binary STL used to make the build run for ever; the time limit makes that a failure
+// of the test, not of the whole run
+TEST(CliExitCodes, aCoordinateThatIsNotANumberExitsWithTwoAndNamesTheFile) {
+    Folders f;
+    auto triangles = waveTriangles(2);
+    triangles[3][1][0] = std::numeric_limits<float>::quiet_NaN();
+    writeBinaryFile(f.in / "nan.stl", binaryStl(triangles));
+    const ProcessResult r = runProcess(bm3dExecutable(), {f.input("nan.stl"), f.output()}, std::chrono::seconds(60));
+    EXPECT_FALSE(r.timedOut);
+    EXPECT_EQ(r.exitCode, 2) << r.output();
+    EXPECT_NE(r.err.find("invalid input"), std::string::npos) << r.err;
+    EXPECT_NE(r.err.find("nan.stl"), std::string::npos) << r.err;
+    EXPECT_NE(r.err.find("not a finite number"), std::string::npos) << r.err;
     EXPECT_TRUE(f.dir.list("out").empty());
 }
 

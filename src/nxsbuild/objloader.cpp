@@ -24,6 +24,7 @@ for more details.
 #include "../common/error.h"
 #include "../common/pathutil.h"
 #include "../common/textparse.h"
+#include "finite.h"
 
 using namespace nx;
 
@@ -245,11 +246,16 @@ void ObjLoader::cacheVertices() {
 		vcg::Point3d p;
 		const char *s = line + 2;
 		if(!text::parseDouble(s, p[0]) || !text::parseDouble(s, p[1]) || !text::parseDouble(s, p[2]))
-			throw Error("error parsing vertex line " + excerpt(line) + " while caching");
+			throw Error("error parsing vertex line " + excerpt(line) + " of obj file " + filename +
+			            " (three finite numbers are expected)");
 
 		vertex.v[0] = (float)p[0];
 		vertex.v[1] = (float)p[1];
 		vertex.v[2] = (float)p[2];
+		//parsed finite, but a double beyond the range of a float is an infinity once stored
+		requireFinite(vertex.v, [&]() {
+			return "vertex " + std::to_string(n_vertices - 1) + " of obj file " + filename;
+		});
 	}
 }
 

@@ -9,6 +9,8 @@
 // space that runs out while it is read.
 
 #include <algorithm>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -122,6 +124,68 @@ TEST(BuildFailure, aFileOfAnUnknownTypeIsInvalidInputThatNamesTheFormatsRead) {
 TEST(BuildFailure, aFolderAsTheInputIsInvalidInput) {
     Folders f;
     EXPECT_EQ(failureKind(f.in, f.out / "model.nxz"), ErrorKind::InvalidInput);
+    expectEmpty(f.dir, "out");
+}
+
+// A vertex whose coordinate is NaN or an infinity is refused by every loader, with the place in the
+// file: the model has no box to divide. Each format is first built without it, so that what fails
+// is the coordinate.
+TEST(BuildFailure, aCoordinateThatIsNotAFiniteNumberIsInvalidInputInEveryFormat) {
+    const float infinity = std::numeric_limits<float>::infinity();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const auto clean = waveTriangles(2);
+    const struct {
+        const char* name;
+        std::string (*write)(const std::vector<Triangle>&);
+        const char* message;  // what the error says besides the file
+    } formats[] = {
+        {"model.obj", objOf, "obj file"},
+        {"model.ply", plyOf, "ply file"},
+        {"binary.ply", binaryPlyOf, "not a finite number"},
+        {"ascii.stl", asciiStl, "finite"},
+        {"binary.stl", binaryStl, "not a finite number"},
+    };
+    for (const auto& format : formats) {
+        Folders f;
+        writeBinaryFile(f.in / format.name, format.write(clean));
+        ASSERT_NO_THROW(bm3d::build(f.in / format.name, f.out / "clean.nxz")) << format.name;
+        for (const float bad : {nan, infinity, -infinity}) {
+            auto triangles = clean;
+            triangles[3][1][2] = bad;
+            writeBinaryFile(f.in / format.name, format.write(triangles));
+            std::string message;
+            EXPECT_EQ(failureKind(f.in / format.name, f.out / "bad.nxz", &message), ErrorKind::InvalidInput)
+                << format.name << " " << bad;
+            EXPECT_NE(message.find(format.name), std::string::npos) << message;
+            EXPECT_NE(message.find(format.message), std::string::npos) << message;
+            EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"clean.nxz"}) << format.name;
+        }
+    }
+}
+
+// A number too large for a float is an infinity once stored: the OBJ and the PLY with double
+// coordinates refuse it as they do the others
+TEST(BuildFailure, aCoordinateBeyondTheRangeOfAFloatIsInvalidInput) {
+    Folders f;
+    writeTextFile(f.in / "big.obj", "v 0 0 0\nv 1 0 0\nv 0 1e39 0\nf 1 2 3\n");
+    std::string message;
+    EXPECT_EQ(failureKind(f.in / "big.obj", f.out / "big.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_NE(message.find("vertex 2 of obj file"), std::string::npos) << message;
+    EXPECT_NE(message.find("not a finite number"), std::string::npos) << message;
+
+    std::string ply = "ply\nformat binary_little_endian 1.0\nelement vertex 3\nproperty double x\nproperty double y\n"
+                      "property double z\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n";
+    for (const double v : {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1e39, 0.0}) {
+        uint64_t bits;
+        std::memcpy(&bits, &v, 8);
+        detail::putLittleEndian(ply, bits);
+    }
+    detail::putLittleEndian(ply, static_cast<uint8_t>(3));
+    for (int i = 0; i < 3; i++)
+        detail::putLittleEndian(ply, static_cast<int32_t>(i));
+    writeBinaryFile(f.in / "big.ply", ply);
+    EXPECT_EQ(failureKind(f.in / "big.ply", f.out / "big2.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_NE(message.find("vertex 2 of ply file"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
 

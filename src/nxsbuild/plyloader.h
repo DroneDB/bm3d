@@ -41,6 +41,7 @@ public:
 	uint32_t nVertices() { return n_vertices; }
 	uint32_t nTriangles() { return n_triangles; }
 private:
+	std::string filename;
 	vcg::ply::PlyFile pf;
 	bool double_coords = false;
 	bool has_vertex_tex_coords = false;

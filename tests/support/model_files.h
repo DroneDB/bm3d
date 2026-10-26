@@ -53,6 +53,8 @@ std::string binaryStl(const std::vector<Triangle>& triangles);
 // The same triangles as an OBJ and as an ASCII PLY, one vertex per corner
 std::string objOf(const std::vector<Triangle>& triangles);
 std::string plyOf(const std::vector<Triangle>& triangles);
+// The same as a binary little-endian PLY (float coordinates, a uchar count and int indices)
+std::string binaryPlyOf(const std::vector<Triangle>& triangles);
 
 // --- the template
 

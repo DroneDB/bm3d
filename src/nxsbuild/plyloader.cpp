@@ -21,6 +21,7 @@ for more details.
 #include "../common/error.h"
 #include "../common/pathutil.h"
 #include "../common/textparse.h"
+#include "finite.h"
 using namespace vcg;
 using namespace vcg::ply;
 
@@ -105,6 +106,7 @@ static bool addFaceList(PlyFile &pf, const char *name, int memtype, size_t offse
 }
 
 PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix):
+	filename(filename),
 	vertices_element(-1),
 	faces_element(-1),
 	vertices(cachePrefix),
@@ -244,7 +246,7 @@ void PlyLoader::cacheVertices() {
 	vertices.setElementsPerBlock(1<<20);
 	vertices.resize(n_vertices);
 
-	PlyVertex vertex;
+	PlyVertex vertex = {};
 	//caching vertices on temporary file
 	for(uint64_t i = 0; i < n_vertices; i++) {
 		Vertex &v = vertices[i];
@@ -258,6 +260,9 @@ void PlyLoader::cacheVertices() {
 			v.v[1] = vertex.v[1];
 			v.v[2] = vertex.v[2];
 		}
+		nx::requireFinite(v.v, [&]() {
+			return "vertex " + std::to_string(i) + " of ply file " + filename;
+		});
 		if(has_colors) {
 			v.c[0] = vertex.c[0];
 			v.c[1] = vertex.c[1];

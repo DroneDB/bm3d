@@ -138,4 +138,25 @@ std::string plyOf(const std::vector<Triangle>& triangles) {
     return s.str();
 }
 
+std::string binaryPlyOf(const std::vector<Triangle>& triangles) {
+    std::ostringstream header;
+    header << "ply\nformat binary_little_endian 1.0\nelement vertex " << 3 * triangles.size()
+           << "\nproperty float x\nproperty float y\nproperty float z\nelement face " << triangles.size()
+           << "\nproperty list uchar int vertex_indices\nend_header\n";
+    std::string s = header.str();
+    for (const Triangle& t : triangles)
+        for (const auto& c : t)
+            for (const float v : c) {
+                uint32_t bits;
+                std::memcpy(&bits, &v, 4);
+                detail::putLittleEndian(s, bits);
+            }
+    for (size_t i = 0; i < triangles.size(); i++) {
+        detail::putLittleEndian(s, static_cast<uint8_t>(3));
+        for (size_t k = 0; k < 3; k++)
+            detail::putLittleEndian(s, static_cast<int32_t>(3 * i + k));
+    }
+    return s;
+}
+
 }  // namespace bm3dtest

@@ -32,6 +32,12 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 - `third_party/vcg` holds 96 files, not 123: the ones that only the removed code read are no longer
   copied (VCGLib's importers and exporters, its kd-tree and a few mesh algorithms). The files left
   are the same bytes as before.
+- A vertex with a NaN, an infinity or a number beyond the range of a float as a coordinate is
+  invalid input (exit code 2) in every format, with the file and the vertex or triangle in the
+  message. Only OBJ refused it before; a PLY, a binary STL or an ASCII STL with one made the build
+  run for ever. The PLY loader also starts each vertex it reads from zero, not from the stack: the
+  alpha of the colour of a PLY that has red, green and blue and no alpha was whatever the stack
+  held (0 in the files built so far).
 
 ## 0.1.0
 
