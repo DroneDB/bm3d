@@ -7,6 +7,8 @@ patch: 226244aa45b65a52c52b104809e714cbfad459e069bcb2815ab3c5b841ae2922  0001-pl
 patch: 5990eca18e4a8c224bd88584581a4980726ee4164a09f93f8378460015b43d12  0002-plylib-can-bound-the-length-of-a-list-it-reads-into-.patch
 patch: 3d905cf212ea873bc79afe8ce1b7f7ee2930e5f7e7f5eae24326dbe6d93fcccf  0003-interpret_texture_name-cannot-write-past-its-buffer-.patch
 patch: 8ff32d2bce5ccf5b0114f5b742a48dc0eb5989115ebec86ea3f7a19a6944f52b  0004-plylib-reads-the-length-of-a-binary-list-as-the-type.patch
+patch: 2c157ea264c8bb8b60eb6d49816986e0d28ee5f016806efffef4ba733c9a06d5  0005-plylib-refuses-an-element-header-line-that-has-no-co.patch
+patch: 02fbcdc58763e5b97818664c1bc9c7cc7e7e76a15b01212356c65312578f1ee6  0006-plylib-refuses-an-element-count-that-is-negative-or-.patch
 files:
 7a03f602e1cd63e8845b3d261eebfca30d83000594176b3401f277a856541f81  vcg/complex/algorithms/clean.h
 a08171fc34147cbea0246a61532438f61e6361b650f037e64899ce4573a6126b  vcg/complex/algorithms/closest.h
@@ -102,5 +104,5 @@ e9e361c1c656b244a66aa7f6cd641ce7324764c43f0925a68e4528949499e162  vcg/space/texc
 928dcd39d5a14c958848487702fcbf2c3d74b6642923a5531b494110827b4588  vcg/space/triangle2.h
 d068da9f5d2a41412e7ce598c3d91f94f7f673f6d9493c59e8d177433d1fe212  vcg/space/triangle3.h
 eb3d49a11dbbb144f1582ad6406ed19460d665f499a31795bff280bff70f0a4f  wrap/callback.h
-5b68326010aa08e8043420d984fd0f5ed2cad393ed40efa9aa0342e11899b280  wrap/ply/plylib.cpp
+2f29e7eec263653f5aba8eaf296cceb2c232907abf7eecab7cb639939dacae49  wrap/ply/plylib.cpp
 50c08ff2183a2283c9fcd1b3cbe3f27a95c0789b862f7ececf667c1700f9aa96  wrap/ply/plylib.h

@@ -110,6 +110,26 @@ static bool addFaceList(PlyFile &pf, const char *name, int memtype, size_t offse
 	return false;
 }
 
+//what an error of PlyFile::Open says about the file: plylib reads the header a line at a time
+//into a buffer of 512 bytes, so a longer line (a long comment) is cut in two and the rest is
+//not a header line
+static std::string headerProblem(int error) {
+	switch(error) {
+	case vcg::ply::E_CANTOPEN:
+		return "cannot be opened";
+	case vcg::ply::E_NOTHEADER:
+		return "does not start with \"ply\"";
+	case vcg::ply::E_UNESPECTEDEOF:
+		return "ends inside its header";
+	case vcg::ply::E_NOFORMAT:
+		return "has no format line";
+	case vcg::ply::E_SYNTAX:
+		return "has a header line that is not valid, or is longer than 511 characters";
+	default:
+		return "has a header that is not valid (plylib error " + std::to_string(error) + ")";
+	}
+}
+
 PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix):
 	filename(filename),
 	vertices_element(-1),
@@ -121,11 +141,8 @@ PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix
 	face(new PlyFace()) {
 
 	int val = pf.Open(nx::systemPath(filename).c_str(), PlyFile::MODE_READ);
-	if(val == -1) {
-		int error = pf.GetError();
-		throw nx::Error("could not open file " + filename + ". Error: " + std::to_string(error));
-
-	}
+	if(val == -1)
+		throw nx::Error("ply file " + filename + " " + headerProblem(pf.GetError()));
 	init();
 	for(int co = 0; co < int(pf.comments.size()); ++co) {
 		std::string TFILE = "TEXTUREFILE";
@@ -187,7 +204,7 @@ void PlyLoader::init() {
 		if(pf.AddToRead(doublecoords[0])==-1 ||
 				pf.AddToRead(doublecoords[1])==-1 ||
 				pf.AddToRead(doublecoords[2])==-1) {
-			throw nx::Error("ply file is missing xyz coords");
+			throw nx::Error("ply file " + filename + " has no x, y and z coordinates for its vertices");
 		} else {
 			double_coords = true;
 		}
@@ -246,7 +263,7 @@ void PlyLoader::init() {
 
 void PlyLoader::readElement(void *element, const char *name, uint64_t index, uint64_t total) {
 	if(pf.Read(element) == -1)
-		throw nx::Error(std::string("ply file is truncated or malformed: could not read ") + name + " " +
+		throw nx::Error("ply file " + filename + " is truncated or malformed: could not read " + name + " " +
 		                std::to_string(index) + " of " + std::to_string(total));
 }
 
@@ -282,6 +299,10 @@ void PlyLoader::cacheVertices() {
 		if(has_textures) {
 			v.t[0] = vertex.t[0];
 			v.t[1] = vertex.t[1];
+			if(has_vertex_tex_coords)
+				nx::requireUsableTexCoords(v.t, 2, [&]() {
+					return "vertex " + std::to_string(i) + " of ply file " + filename;
+				});
 		}
 	}
 
@@ -295,7 +316,8 @@ void PlyLoader::setMaxMemory(uint64_t max_memory) {
 //reads the next face into face, checks it and starts its fan
 void PlyLoader::readFace() {
 	auto which = [&]() {
-		return "ply face " + std::to_string(current_triangle) + " of " + std::to_string(n_triangles);
+		return "face " + std::to_string(current_triangle) + " of " + std::to_string(n_triangles) + " in ply file " +
+		       filename;
 	};
 	auto badIndexCount = [&]() {
 		return nx::Error(which() + " has " + std::to_string(face->n) + " vertex indices; a face has 3 to " +
@@ -315,11 +337,14 @@ void PlyLoader::readFace() {
 		throw nx::Error(which() + " has " + std::to_string(face->nt) + " texture coordinates; a face has at most " +
 		                std::to_string(2*MAX_FACE_VERTICES));
 	if(!read)
-		throw nx::Error("ply file is truncated or malformed: could not read " + which());
+		throw nx::Error("ply file " + filename + " is truncated or malformed: could not read face " +
+		                std::to_string(current_triangle) + " of " + std::to_string(n_triangles));
 
 	for(int k = 0; k < face->n; k++)
 		if(face->f[k] >= n_vertices)
-			throw nx::Error("Bad index in triangle list.");
+			throw nx::Error(which() + " has the vertex index " + std::to_string(face->f[k]) +
+			                ", and the file has " + std::to_string(n_vertices) + " vertices");
+	nx::requireUsableTexCoords(face->t, face->nt, which);
 
 	//a u, v pair for each vertex, or none: a face without them gets 0, 0 (it used to get the
 	//pairs of the face read before it)
@@ -335,7 +360,7 @@ void PlyLoader::readFace() {
 
 uint32_t PlyLoader::getTriangles(uint32_t size, Triangle *buffer) {
 	if(faces_element == -1)
-		throw nx::Error("ply has no faces!");
+		throw nx::Error("ply file " + filename + " has no faces");
 
 	if(current_triangle == 0)
 		cacheVertices();

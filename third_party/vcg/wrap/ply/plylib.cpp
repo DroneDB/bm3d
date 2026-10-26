@@ -1233,12 +1233,21 @@ int PlyFile::OpenRead( const char * filename )
 #else
       token = strtok_r(0,SEP,&tokenPtr);
 #endif
-			if(name==0)
+			if(token==0)
 			{
 				error = E_SYNTAX;
 				goto error;
 			}
-			int number = atoi(token);
+			//a count is a whole number from 0 to INT_MAX: atoi takes a minus sign and gives an undefined
+			//value for one beyond an int, and PlyElement asserts that it is not negative
+			char * numberEnd;
+			const long long parsed = strtoll(token,&numberEnd,10);
+			if(numberEnd==token || *numberEnd!=0 || parsed<0 || parsed>INT_MAX)
+			{
+				error = E_SYNTAX;
+				goto error;
+			}
+			int number = int(parsed);
 
 			PlyElement t(name,number);
 			elements.push_back(t);

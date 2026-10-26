@@ -230,7 +230,11 @@ int NexusBuilder::textureBoundLevels(KDTreeSoup *tree) const {
 	const double density = tree->medianTexelsPerTriangle();
 	if(density <= balanced)
 		return 0;
-	return int(std::ceil(std::log(density / balanced) / std::log(4.0)));
+	//a texture cannot be halved more than 64 times (2^64 texels along a side), and the density of a
+	//model whose texture coordinates are huge is an infinity, or too large to count the levels of
+	const double kMaxLevels = 64;
+	const double levels = std::ceil(std::log(density / balanced) / std::log(4.0));
+	return levels < kMaxLevels ? int(levels) : int(kMaxLevels);
 }
 
 //The texels around the triangles that are kept as they are: bilinear filtering and the first

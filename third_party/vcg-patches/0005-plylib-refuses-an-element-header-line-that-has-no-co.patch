@@ -1,0 +1,25 @@
+From 4d6c1895060291d81f493618855fb1d577820109 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 19:12:30 +0100
+Subject: [PATCH] plylib refuses an "element" header line that has no count
+
+After reading the name of an element, the check of the count tested the name again (already
+known not to be null) instead of the count, so a header that ends inside the line "element vertex"
+passed a null pointer to atoi and crashed. It is now a syntax error like the missing name before it.
+---
+ wrap/ply/plylib.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/wrap/ply/plylib.cpp b/wrap/ply/plylib.cpp
+index a0e46593b..715e3a572 100644
+--- a/wrap/ply/plylib.cpp
++++ b/wrap/ply/plylib.cpp
+@@ -1233,7 +1233,7 @@ int PlyFile::OpenRead( const char * filename )
+ #else
+       token = strtok_r(0,SEP,&tokenPtr);
+ #endif
+-			if(name==0)
++			if(token==0)
+ 			{
+ 				error = E_SYNTAX;
+ 				goto error;

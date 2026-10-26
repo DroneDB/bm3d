@@ -109,11 +109,17 @@ void ObjLoader::cacheTextureUV() {
 			//vt u [v [w]]: v is optional and 0 when missing, w is not used
 			float vt0 = 0.0, vt1 = 0.0;
 			const char *p = line + 3;
-			if (!text::parseFloat(p, vt0))
-				throw Error("error parsing vtxt  line: " + excerpt(line));
+			//parseFloat refuses a NaN, an infinity and a number beyond a float
+			const auto bad = [&]() {
+				return Error("error parsing texture coordinate line " + excerpt(line) + " of obj file " + filename +
+				             " (numbers from -" + std::to_string(int(MAX_TEXTURE_COORDINATE)) + " to " +
+				             std::to_string(int(MAX_TEXTURE_COORDINATE)) + " are expected)");
+			};
+			if (!text::parseFloat(p, vt0) || !isUsableTexCoord(vt0))
+				throw bad();
 			p = text::skipSpaces(p);
-			if (!endsToken(*p) && !text::parseFloat(p, vt1))
-				throw Error("error parsing vtxt  line: " + excerpt(line));
+			if (!endsToken(*p) && (!text::parseFloat(p, vt1) || !isUsableTexCoord(vt1)))
+				throw bad();
 			vtxtuv.push_back(vt0);
 			vtxtuv.push_back(vt1);
 		}//skipping other properties in OBJ
@@ -406,7 +412,11 @@ uint32_t ObjLoader::getTriangles(uint32_t size, Triangle *faces) {
 		if (!text::startsWithWord(line, "f"))
 			continue;
 
-		parseFace(line);
+		try {
+			parseFace(line);
+		} catch(const Error &e) {
+			throw Error(std::string(e.what()) + " (obj file " + filename + ")");
+		}
 
 		//a face of n corners is cut into n - 2 triangles
 		const size_t valence = corners.size();

@@ -4,6 +4,16 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- Inputs that crashed or made a sanitizer report, found by the mutation loop of the new robustness
+  tests and now refused with exit code 2 and a message that names the file:
+  - a PLY header that ends inside the line `element vertex`, or whose element count is negative, beyond
+    an int or not a number (plylib: two patches in `third_party/vcg-patches/`);
+  - a PLY or OBJ texture coordinate that is a NaN, an infinity or beyond 16777216 in magnitude (the
+    PLY ones were not checked, and the OBJ ones only for being finite; a huge coordinate made the
+    simplification compute with infinities);
+  - an OBJ face index of 19 digits or more (overflow of the parser).
+  A PLY header line longer than 511 characters (a long comment) is refused with that reason, not
+  with `Error: 5`, and the PLY and OBJ messages name the file.
 - corto no longer has the undefined behaviour and the leak the sanitizers found in it, so the
   sanitizer workflow runs with no suppression. Five patches (`third_party/corto-patches/`, applied
   by `scripts/sync-corto.py` like the VCGLib ones): the octahedron encoding of a normal of length

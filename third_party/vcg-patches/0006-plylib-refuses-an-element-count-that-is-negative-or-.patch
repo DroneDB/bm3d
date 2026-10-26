@@ -1,0 +1,36 @@
+From d87483386386a94b742ee4a4f66a5b2de1c65e92 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 19:19:29 +0100
+Subject: [PATCH] plylib refuses an element count that is negative or not a
+ number
+
+The count after "element <name>" was read with atoi, which takes a minus sign (PlyElement
+asserts that the count is not negative, so a debug build aborted and a release build went on with
+a negative number of elements) and is undefined for a number beyond an int. It is now read with
+strtoll, and a count that is not all digits, or is outside 0 to INT_MAX, is a syntax error.
+---
+ wrap/ply/plylib.cpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/wrap/ply/plylib.cpp b/wrap/ply/plylib.cpp
+index 715e3a572..2e410204d 100644
+--- a/wrap/ply/plylib.cpp
++++ b/wrap/ply/plylib.cpp
+@@ -1238,7 +1238,16 @@ int PlyFile::OpenRead( const char * filename )
+ 				error = E_SYNTAX;
+ 				goto error;
+ 			}
+-			int number = atoi(token);
++			//a count is a whole number from 0 to INT_MAX: atoi takes a minus sign and gives an undefined
++			//value for one beyond an int, and PlyElement asserts that it is not negative
++			char * numberEnd;
++			const long long parsed = strtoll(token,&numberEnd,10);
++			if(numberEnd==token || *numberEnd!=0 || parsed<0 || parsed>INT_MAX)
++			{
++				error = E_SYNTAX;
++				goto error;
++			}
++			int number = int(parsed);
+ 
+ 			PlyElement t(name,number);
+ 			elements.push_back(t);

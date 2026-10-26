@@ -8,7 +8,7 @@ named by their commit names.
 | Part | Upstream | Fork or pin used here |
 |---|---|---|
 | Nexus builder | https://github.com/cnr-isti-vclab/nexus, `master` at `f29e8fd1182b2a1c0c512add99c7edfc8e146680` | https://github.com/DroneDB/nexus at `847f024bf7cc0beb078868749bc7669748c0aa3d` |
-| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 4 patches (`third_party/vcg-patches/`) |
+| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 6 patches (`third_party/vcg-patches/`) |
 | corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 5 patches (`third_party/corto-patches/`) |
 | API and command line wrapper | none | https://github.com/DroneDB/libnexus at `18acb8c161fd85d1eb614d8be0f8b4dae5fe16f1` (`nxs.cpp`, `nxs.h`, `ddb_nexus_main.cpp`) |
 | Web viewer (added with the release that ships `web/`) | the JavaScript in `html/js` of Nexus, commit `d805432` | the same, with fixes recorded in `web/` |
@@ -47,7 +47,11 @@ of upstream `0348454` touch only `wrap/ply/plylib.cpp` and `wrap/ply/plylib.h`:
 memory the caller allocated, `3306f50` keeps `interpret_texture_name` inside its buffer and adds a
 `std::string` form, and `42b35dd` reads the length of a binary list as the type the header
 declares. `third_party/vcg-patches/` holds them as made by `git format-patch 0348454..42b35dd`,
-with their authorship.
+with their authorship. Two more patches are ours (HeDo, `0005` and `0006`), found by the mutation
+loop of `tests/robustness` run under the sanitizers; both are in `PlyFile::OpenRead`: the check of
+the count after `element <name>` tested the name instead of the count, so a header that ended inside
+that line crashed, and the count is now read with `strtoll` and refused when it is negative, beyond
+an int or not a number (`atoi` took a minus sign and `PlyElement` asserts it away).
 
 ## Files taken and how to repeat it
 
@@ -82,7 +86,7 @@ used.
   `optimizeNode` begins with `return;` in the imported code, so the optimisation never ran
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
-- `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the 4 patches above.
+- `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the 6 patches above.
 - `third_party/corto/` `include/corto/normal_attribute.h`, `include/corto/cstream.h`,
   `src/bitstream.cpp`: the 5 corto patches above.
 - `src/common/dag.h`: every field of `Node` has a value from the start, and the empty sphere of
@@ -167,6 +171,18 @@ used.
   opaque; the `modf` of the texture coordinates is removed (`NexusBuilder` applies `fmod` to the
   coordinates of every format). `src/nxsbuild/objloader.{h,cpp}`: `v x y z r g b` is a vertex colour
   that wins over the colour of the material.
+
+- `src/nxsbuild/finite.h`, `plyloader.cpp`, `objloader.cpp`: a texture coordinate that is a NaN, an
+  infinity or beyond 2^24 in magnitude (above which a float has no fractional part to wrap) is
+  invalid input in the PLY (per vertex or per face) and the OBJ, with the file and the vertex or
+  face in the message (`requireUsableTexCoords`, `isUsableTexCoord`). The messages of the PLY
+  loader name the file (`face 3 of 9 in ply file x.ply has ...`), the failure of the header says
+  why (`headerProblem`: for example a header line longer than 511 characters, which plylib cuts
+  in two), and the OBJ face errors end with `(obj file x.obj)`.
+- `src/common/textparse.h`: `parseInteger` refuses the 19th digit before it multiplies, as it
+  claimed to (the multiplication overflowed an `int64_t` for a number of 19 digits or more).
+- `src/nxsbuild/nexusbuilder.cpp`: `textureBoundLevels` returns at most 64 levels; the number of
+  levels of a model whose texture density was an infinity or a NaN was converted to an `int`.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

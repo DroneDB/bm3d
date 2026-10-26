@@ -142,10 +142,10 @@ inline bool parseInteger(const char *&p, int64_t &value) {
 	const char *digits = q;
 	int64_t v = 0;
 	while(*q >= '0' && *q <= '9') {
+		if(q - digits == 18) //a 19th digit could overflow the int64_t, so it is not read
+			return false;
 		v = v * 10 + (*q - '0');
 		q++;
-		if(q - digits > 18)
-			return false;
 	}
 	if(q == digits)
 		return false;
