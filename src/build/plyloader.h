@@ -38,7 +38,7 @@ public:
 	void setMaxMemory(uint64_t max_memory);
 	uint32_t getTriangles(uint32_t size, Triangle *buffer);
 
-	uint32_t nVertices() { return n_vertices; }
+	uint64_t vertexCount() const override { return n_vertices; }
 	uint32_t nTriangles() { return n_triangles; }
 private:
 	std::string filename;

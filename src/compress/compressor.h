@@ -1,52 +1,70 @@
+/*
+Nexus
+
+Copyright(C) 2012 - Federico Ponchio
+ISTI - Italian National Research Council - Visual Computing Lab
+
+Copyright (C) 2026 Digipa
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
+for more details.
+*/
 #ifndef BM3D_COMPRESSOR_H
 #define BM3D_COMPRESSOR_H
 
-#include <string>
+#include <cstdint>
+#include <vector>
 
-#include "../common/textfile.h"
-
-#include <vcg/math/matrix44.h>
-
-#include "../common/traversal.h"
+#include "../format/bm3d_format.h"
 
 namespace bm3d::detail {
 
-class Compressor: public Traversal {
+//How corto quantises the attributes of a node
+struct CompressionSettings {
+	float errorQ = 0.1f;   //the step of the coordinates, as a fraction of the error of the nodes
+	int normalBits = 10;
+	int colorBits[4] = { 6, 6, 6, 5 };
+	float texStep = 0.25f; //in pixels
+};
+
+//The coordinate step of the model: errorQ times half the smallest error among the root (the node 0)
+//and the leaves
+float coordinateStep(float errorQ, float rootError, const std::vector<float> &leafErrors);
+
+//One node as corto wrote it. The encoder drops the triangles whose corners are not three
+//different vertices, and then the vertices no triangle uses, and moves the end of each group to
+//match: the counts and the ends of the groups are the ones to write in the file, not the ones
+//the node had when it went in.
+struct EncodedNode {
+	std::vector<unsigned char> stream;
+	uint16_t vertexCount = 0;
+	uint16_t faceCount = 0;
+	std::vector<uint32_t> groupEnds;   //one for each patch of the node, in order
+};
+
+class NodeCompressor {
 public:
-	//compression options
-	int coord_q;      //step of coord quantizations (a power of 2: 0 means 1 unit)
-	int color_bits[4];
-	int norm_bits;
-	float tex_step; //in pixel units
+	//coordinateExponent: the positions are quantised to steps of 2 to this power
+	NodeCompressor(const VertexLayout &layout, const CompressionSettings &settings, int coordinateExponent);
 
-	Compressor(Reader *input);
+	//memory holds what a node of the builder holds: the positions, then the texture coordinates,
+	//the normals and the colours the layout has, then the triangles (three 16-bit indexes each);
+	//patchEnds are the ends of the groups of triangles, one for each patch.
+	EncodedNode compress(const unsigned char *memory, uint32_t nvert, uint32_t nface,
+	                     const std::vector<uint32_t> &patchEnds) const;
 
-	int levelCount(); //return number of levels in the model (assuming it's a constant depth tree)
-	void setMatrix(vcg::Matrix44f m);
-	void selectBySize(uint64_t size);
-	void selectByLevel(int level); //select up to level included (zero based)
-	void selectByError(float error);
-	void selectByTriangles(uint64_t triangles);
-	void dropLevel();
-
-	void save(const std::string &output, Signature &signature);
-
-	virtual float nodeError(uint32_t node, bool &visible);
-	Traversal::Action expand(HeapNode h);
-
-protected:
-
-	bool transform;
-	vcg::Matrix44f matrix;
-	uint64_t max_size, current_size;
-	float min_error, current_error;
-	int max_level = -1, nlevels = 0;
-	uint64_t max_triangles, current_triangles;
-
-	uint64_t pad(uint64_t s);
-	int sinkDistance(int node);
-
-	void compress(OutputFile &file, Signature &signature, Node &node, NodeData &data, Patch *patches);
+private:
+	VertexLayout layout_;
+	CompressionSettings settings_;
+	int coordinateExponent_;
 };
 
 } //namespace

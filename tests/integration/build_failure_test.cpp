@@ -24,7 +24,7 @@
 #include "bm3d/bm3d.h"
 #include "env_var_guard.h"
 #include "model_files.h"
-#include "container_file.h"
+#include "bm3d_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -276,7 +276,7 @@ TEST(BuildFailure, aLargeModelThatCanBeMeasuredIsBuilt) {
     const Triangle triangle{{{0, 0, 0}, {6e8f, 0, 0}, {0, 6e8f, 0}}};
     writeBinaryFile(f.in / "large.stl", binaryStl({triangle}));
     ASSERT_NO_THROW(bm3d::build(f.in / "large.stl", f.out / "large.bm3d"));
-    EXPECT_EQ(readContainerFile(f.out / "large.bm3d").nface, 1u);
+    EXPECT_EQ(readBm3dFile(f.out / "large.bm3d").nface, 1u);
 }
 
 // The input is read (and has triangles) before this fails: it is a failure of the build
@@ -340,13 +340,8 @@ void expectAFailedSaveLeavesTheEarlierOutput(const std::string& nameInTheWay) {
     EXPECT_EQ(readBinaryFile(f.out / "model.bm3d"), "an earlier build");
 }
 
-// The builder writes the uncompressed container first
-TEST(BuildFailure, aSaveOfTheUncompressedFileThatFailsLeavesTheEarlierOutputAsItWas) {
-    expectAFailedSaveLeavesTheEarlierOutput("model.bm3d.tmp.bm3d");
-}
-
-// The compression reads that container back and writes the file that becomes the output
-TEST(BuildFailure, aSaveOfTheCompressedFileThatFailsLeavesTheEarlierOutputAsItWas) {
+// The file is written under the name of the output and ".part", and renamed when it is complete
+TEST(BuildFailure, aSaveThatFailsLeavesTheEarlierOutputAsItWas) {
     expectAFailedSaveLeavesTheEarlierOutput("model.bm3d.part");
 }
 
@@ -419,7 +414,7 @@ TEST(BuildFailure, aBuildThatWorksLeavesTheOutputAloneInItsFolder) {
     writeTexturedModel(f.in, "texture.png");
     ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.bm3d"));
     EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
-    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").magic, kContainerMagic);
+    EXPECT_EQ(readBm3dFile(f.out / "model.bm3d").formatVersion, 1u);
 }
 
 TEST(BuildFailure, aBuildThatWorksReplacesTheEarlierOutput) {
@@ -428,7 +423,7 @@ TEST(BuildFailure, aBuildThatWorksReplacesTheEarlierOutput) {
     writeTextFile(f.out / "model.bm3d", "an earlier build");
     ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.bm3d"));
     EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
-    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
+    EXPECT_EQ(readBm3dFile(f.out / "model.bm3d").nface, 1u);
 }
 
 }  // namespace

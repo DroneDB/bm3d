@@ -54,6 +54,7 @@ std::unique_ptr<MeshLoader> Stream::getLoader(const std::string &file, const std
 
 void Stream::load(MeshLoader *loader) {
 	loadMesh(loader);
+	vertex_count += loader->vertexCount();
 	has_colors &= loader->hasColors();
 	has_normals &= loader->hasNormals();
 	has_textures &= loader->hasTextures();
@@ -85,6 +86,7 @@ void Stream::clear() {
 	levels.clear();
 	order.clear();
 	textures.clear();
+	vertex_count = 0;
 	current_triangle = 0;
 	current_block = 0;
 	box = vcg::Box3f();

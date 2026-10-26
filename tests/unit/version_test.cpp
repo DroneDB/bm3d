@@ -23,8 +23,8 @@ TEST(Version, theVersionStartsWithMajorMinorAndPatch) {
     EXPECT_TRUE(std::regex_match(bm3d::version(), std::regex(R"(\d+\.\d+\.\d+([-+].+)?)"))) << bm3d::version();
 }
 
-TEST(Version, theFormatVersionIsZero) {
-    EXPECT_EQ(bm3d::formatVersion(), 0);
+TEST(Version, theFormatVersionIsOne) {
+    EXPECT_EQ(bm3d::formatVersion(), 1);
 }
 
 TEST(Version, theTwoAreStableFromOneCallToTheNext) {

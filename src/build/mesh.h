@@ -38,8 +38,9 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#include "../common/reader.h"
+#include "node.h"
 #include "../common/cone.h"
+#include "../format/bm3d_format.h"
 
 //Quadrics simplification structures.
 class AVertex;
@@ -114,9 +115,9 @@ public:
 	float simplify(uint16_t target_faces, Simplification method);
 
 	bm3d::detail::Node getNode();
-	uint32_t serializedSize(const bm3d::detail::Signature &sig);
+	uint32_t serializedSize(const bm3d::detail::VertexLayout &layout);
 	//appends nodes found in the mesh
-	void serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::vector<bm3d::detail::Patch> &patches);
+	void serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches);
 
 	vcg::Sphere3f boundingSphere();
 	bm3d::detail::Cone3s normalsCone();

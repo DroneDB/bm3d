@@ -4,6 +4,8 @@ Nexus
 Copyright(C) 2012 - Federico Ponchio
 ISTI - Italian National Research Council - Visual Computing Lab
 
+Copyright (C) 2026 Digipa
+
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation; either version 2 of the License, or
@@ -15,321 +17,79 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#include <cstring>
-#include <filesystem>
-#include <sstream>
-
 #include "compressor.h"
 
+#include <cmath>
+
 #include "../common/error.h"
-#include "../common/pathutil.h"
 
 #include <corto/corto.h>
 
-#include <vcg/space/triangle3.h>
-using namespace std;
 namespace bm3d::detail {
 
-Compressor::Compressor(Reader *input):
-	transform(false),
-	max_size(0), current_size(0),
-	min_error(0),current_error(0),
-	max_triangles(0), current_triangles(0) {
-
-	reader = input;
-	selected.resize(reader->header.n_nodes, true);
-	selected.back() = false;
-}
-
-int Compressor::sinkDistance(int node) {
-	int dist = 0;
-	int sink = reader->header.n_nodes - 1;
-	while(node != sink) {
-		Node &nodeData = reader->nodes[node];
-		node = reader->patches[nodeData.first_patch].node;
-		dist++;
-	}
-	return dist;
-
-}
-int Compressor::levelCount() {
-	return sinkDistance(0);
-}
-
-void Compressor::setMatrix(vcg::Matrix44f m) {
-	transform = true;
-	matrix = m;
-}
-
-void Compressor::selectBySize(uint64_t size) {
-	max_size = size;
-	traverse(reader);
-}
-
-void Compressor::selectByError(float error) {
-	min_error = error;
-	traverse(reader);
-}
-
-void Compressor::selectByTriangles(uint64_t triangles) {
-	max_triangles = triangles;
-	traverse(reader);
-}
-
-void Compressor::selectByLevel(int level) {
-	nlevels = levelCount();
-	if(level >= nlevels)
-		throw Error("Extracted level must be < than the number of levels: " + std::to_string(nlevels));
-	max_level = level;
-	traverse(reader);
-} //select up to level included (zero based)
-
-void Compressor::dropLevel() {
-	selected.resize(reader->header.n_nodes, true);
-	uint32_t n_nodes = reader->header.n_nodes;
-	uint32_t sink = n_nodes-1;
-	//unselect nodes which output is the sink (definition of last level :)
-	for(unsigned int i = 0; i < n_nodes-1; i++) {
-		Node &node = reader->nodes[i];
-		if(reader->patches[node.first_patch].node == sink)
-			selected[i] = false;
-
-	}
-	selected.back() = false; //sink unselection purely for coherence
-}
-
-void Compressor::save(const std::string &output, Signature &signature) {
-	OutputFile file;
-	file.open(output);
-
-	Header header = reader->header;
-	header.signature = signature;
-	header.nvert = 0;
-	header.nface = 0;
-
-	if(transform)
-		header.sphere.Center() = matrix * header.sphere.Center();
-
-	vector<Node> nodes;
-	vector<Patch> patches;
-	vector<Texture> textures;
-
-	unsigned int n_nodes = reader->header.n_nodes;
-	vector<int> node_remap(n_nodes, -1);
-
-
-	for(unsigned int i = 0; i < n_nodes-1; i++) {
-		if(!selected[i]) continue;
-		Node node = reader->nodes[i];
-		if(transform)
-			node.sphere.Center() = matrix * node.sphere.Center();
-		header.nvert += node.nvert;
-		header.nface += node.nface;
-
-		node_remap[i] = nodes.size();
-
-		node.first_patch = patches.size();
-		for(unsigned int k = reader->nodes[i].first_patch; k < reader->nodes[i].last_patch(); k++) {
-			Patch patch = reader->patches[k];
-			patches.push_back(patch);
-		}
-
-		nodes.push_back(node);
+float coordinateStep(float errorQ, float rootError, const std::vector<float> &leafErrors) {
+	float step = errorQ * rootError / 2.0f;
+	for(float error: leafErrors) {
+		const double e = errorQ * error / 2.0;
+		if(e < step && e > 0.0)
+			step = static_cast<float>(e);
 	}
 
-	Node sink = reader->nodes[n_nodes -1];
-	sink.first_patch = patches.size();
-	nodes.push_back(sink);
-
-	for(unsigned int i = 0; i < patches.size(); i++) {
-		Patch &patch = patches[i];
-		int remapped = node_remap[patch.node];
-		if(remapped == -1)
-			patch.node = nodes.size()-1;
-		else
-			patch.node = remapped;
-		assert(patch.node < nodes.size());
-	}
-
-	//cout << "Textures: " << reader->header.n_textures << endl;
-	textures.resize(reader->header.n_textures);
-
-	header.n_nodes = nodes.size();
-	header.n_patches = patches.size();
-	header.n_textures = textures.size();
-
-	uint64_t size = sizeof(Header)  +
-			nodes.size()*sizeof(Node) +
-			patches.size()*sizeof(Patch) +
-			textures.size()*sizeof(Texture);
-	size = pad(size);
-
-	for(unsigned int i = 0; i < nodes.size(); i++) {
-		nodes[i].offset += size/BM3D_PADDING;
-	}
-
-	//TODO should actually remove textures not used anymore.
-
-	file.write(&header, sizeof(header));
-	file.write(nodes.data(), sizeof(Node)*nodes.size());
-	file.write(patches.data(), sizeof(Patch)*patches.size());
-	file.write(textures.data(), sizeof(Texture)*textures.size());
-	file.padTo(size);
-
-	for(unsigned int i = 0; i < node_remap.size()-1; i++) {
-		int n = node_remap[i];
-		if(n == -1) continue;
-		Node &node = nodes[n];
-		node.offset = file.pos()/BM3D_PADDING;
-
-		reader->loadRam(i);
-
-		NodeData &data = reader->nodedata[i];
-		char *memory = data.memory;
-		int data_size = reader->nodes[i].getSize();
-		if(transform) {
-			memory = new char[node.getSize()];
-			memcpy(memory, data.memory, data_size);
-
-			for(int k = 0; k < node.nvert; k++) {
-				vcg::Point3f &v = ((vcg::Point3f *)memory)[k];
-				v = matrix * v;
-			}
-		}
-		if(signature.isCompressed())
-			compress(file, signature, node, reader->nodedata[i], &*patches.begin());
-		else
-			file.write(memory, data_size);
-		if(transform)
-			delete []memory;
-
-		reader->dropRam(i);
-	}
-	nodes.back().offset = file.pos()/BM3D_PADDING;
-
-	//save textures
-	if(textures.size()) {
-		for(uint32_t i = 0; i < textures.size()-1; i++) {
-			Texture &in = reader->textures[i];
-			Texture &out = textures[i] = in;
-
-			uint64_t start = in.getBeginOffset();
-			uint64_t size = in.getSize();
-			char *memory = (char *)reader->file->map(start, size);
-			if(!memory)
-				throw Error("could not read texture " + std::to_string(i) + " of the bm3d file");
-			
-			out.offset = file.pos()/BM3D_PADDING;
-			file.write(memory, size);
-
-			reader->file->unmap(memory);
-		}
-		textures.back().offset = file.pos()/BM3D_PADDING;
-	}
-
-	file.seek(sizeof(Header));
-	file.write(nodes.data(), sizeof(Node)*nodes.size());
-	file.write(patches.data(), sizeof(Patch)*patches.size());
-	file.write(textures.data(), sizeof(Texture)*textures.size());
-	file.close();
+	//the logarithm of a step that is not positive is not a number
+	if(step <= 0.0f)
+		step = 1.0f;
+	return step;
 }
 
-
-Traversal::Action Compressor::expand(Traversal::HeapNode h) {
-	Node &node = reader->nodes[h.node];
-	current_size += node.getEndOffset() - node.getBeginOffset();
-	current_triangles += node.nface;
-
-	//cout << "Max size: " << max_size << " Current size: " << current_size << endl;
-	if(max_triangles && current_triangles > max_triangles)
-		return STOP;
-	if(max_size && current_size > max_size)
-		return STOP;
-	if(min_error && node.error < min_error)
-		return STOP;
-	if(max_level >= 0 && nlevels- sinkDistance(h.node) > max_level)
-		return STOP;
-
-	return EXPAND;
+NodeCompressor::NodeCompressor(const VertexLayout &layout, const CompressionSettings &settings, int coordinateExponent):
+	layout_(layout), settings_(settings), coordinateExponent_(coordinateExponent) {
 }
 
-float Compressor::nodeError(uint32_t node, bool &visible) {
-	if(max_level >= 0) return sinkDistance(node);
-	return Traversal::nodeError(node, visible);
-}
+EncodedNode NodeCompressor::compress(const unsigned char *memory, uint32_t nvert, uint32_t nface,
+                                     const std::vector<uint32_t> &patchEnds) const {
+	if(nface == 0)
+		throw Error("a node without triangles cannot be compressed");
 
-
-uint64_t Compressor::pad(uint64_t s) {
-	const uint64_t padding = BM3D_PADDING;
-	uint64_t m = (s-1) & ~(padding -1);
-	return m + padding;
-}
-
-void Compressor::compress(OutputFile &file, Signature &signature, Node &node, NodeData &data, Patch *patches) {
-
-	if(signature.flags & Signature::CORTO) {
-
-		crt::Encoder encoder(node.nvert, node.nface);
-
-		for(uint32_t p = node.first_patch; p < node.last_patch(); p++)
-			encoder.addGroup(patches[p].triangle_offset);
-
-		if(node.nface == 0)
-			encoder.addPositions((float *)data.coords(), pow(2, coord_q));
-		else
-			encoder.addPositions((float *)data.coords(), data.faces(signature, node.nvert), pow(2, coord_q));
-
-		if(signature.vertex.hasNormals()) {
-			encoder.addNormals((int16_t *)data.normals(signature, node.nvert), norm_bits,
-							   node.nface == 0? crt::NormalAttr::DIFF : crt::NormalAttr::ESTIMATED);
-		}
-
-		if(signature.vertex.hasColors())
-			encoder.addColors((unsigned char *)data.colors(signature, node.nvert), color_bits[0], color_bits[1], color_bits[2], color_bits[3]);
-
-		if(signature.vertex.hasTextures())
-			encoder.addUvs((float *)data.texCoords(signature, node.nvert), tex_step/512);
-		encoder.encode();
-
-		/*
-		int nvert = encoder.nvert;
-		int nface = encoder.nface;
-		//cout << "Nvert: " << nvert << " Nface: " << nface << " (was: nv: " << node.nvert << " nf: " << node.nface << endl;
-		//cout << "Compressed to: " << encoder.stream.size() << endl;
-		//cout << "Ratio: " << 100.0f*encoder.stream.size()/(nvert*12 + nface*12) << "%" << endl;
-		//cout << "Bpv: " << 8.0f*encoder.stream.size()/nvert << endl << endl;
-
-		//cout << "Header: " << encoder.header_size << " bpv: " << (float)encoder.header_size/nvert << endl;
-
-		crt::VertexAttribute *coord = encoder.data["position"];
-		//cout << "Coord bpv; " << 8.0f*coord->size/nvert << " size: " << coord->size << endl;
-		//cout << "Coord q: " << coord->q << " bits: " << coord->bits << endl << endl;
-
-		crt::VertexAttribute *norm = encoder.data["normal"];
-		if(norm) {
-			//cout << "Normal bpv; " << 8.0f*norm->size/nvert << " size: " << norm->size << endl;
-			//cout << "Normal q: " << norm->q << " bits: " << norm->bits << endl << endl;
-		}
-
-		crt::ColorAttr *color = dynamic_cast<crt::ColorAttr *>(encoder.data["color"]);
-		if(color) {
-			//cout << "Color bpv; " << 8.0f*color->size/nvert << " size: " << color->size << endl;
-			//cout << "Color q: " << color->qc[0] << " " << color->qc[1] << " " << color->qc[2] << " " << color->qc[3] << endl;
-		}
-
-		crt::GenericAttr<int> *uv = dynamic_cast<crt::GenericAttr<int> *>(encoder.data["uv"]);
-		if(uv) {
-			//cout << "Uv bpv; " << 8.0f*uv->size/nvert << endl;
-			//cout << "Uv q: " << uv->q << " bits: " << uv->bits << endl << endl;
-		}
-
-		//cout << "Face bpv; " << 8.0f*encoder.index.size/nvert << " size: " << encoder.index.size << endl; */
-
-
-		if(encoder.stream.size() > 0)
-			file.write((char *)&*encoder.stream.data(), encoder.stream.size());
-		file.padTo(pad(file.pos()));
+	//the arrays of the node, one after the other
+	const float *coords = reinterpret_cast<const float *>(memory);
+	const unsigned char *next = memory + size_t(nvert) * 12;
+	const float *uvs = nullptr;
+	if(layout_.texCoords) {
+		uvs = reinterpret_cast<const float *>(next);
+		next += size_t(nvert) * 8;
 	}
+	const int16_t *normals = nullptr;
+	if(layout_.normals) {
+		normals = reinterpret_cast<const int16_t *>(next);
+		next += size_t(nvert) * 6;
+	}
+	const unsigned char *colors = nullptr;
+	if(layout_.colors) {
+		colors = next;
+		next += size_t(nvert) * 4;
+	}
+	const uint16_t *faces = reinterpret_cast<const uint16_t *>(next);
+
+	crt::Encoder encoder(nvert, nface);
+	for(uint32_t end: patchEnds)
+		encoder.addGroup(end);
+
+	encoder.addPositions(coords, faces, static_cast<float>(std::pow(2, coordinateExponent_)));
+	if(normals)
+		encoder.addNormals(normals, settings_.normalBits, crt::NormalAttr::ESTIMATED);
+	if(colors)
+		encoder.addColors(colors, settings_.colorBits[0], settings_.colorBits[1], settings_.colorBits[2], settings_.colorBits[3]);
+	if(uvs)
+		encoder.addUvs(uvs, settings_.texStep/512);
+	encoder.encode();
+
+	EncodedNode out;
+	out.stream.assign(encoder.stream.data(), encoder.stream.data() + encoder.stream.size());
+	out.vertexCount = static_cast<uint16_t>(encoder.nvert);
+	out.faceCount = static_cast<uint16_t>(encoder.nface);
+	for(const crt::Group &group: encoder.index.groups)
+		out.groupEnds.push_back(group.end);
+	return out;
 }
 
 } //namespace

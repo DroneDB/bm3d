@@ -21,7 +21,7 @@
 #include "bm3d/bm3d.h"
 #include "imageio.h"
 #include "model_files.h"
-#include "container_file.h"
+#include "bm3d_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -29,9 +29,9 @@ namespace {
 
 using namespace bm3dtest;
 
-void expectContainerMagic(const ContainerFile& h) {
-    // 'N' 'x' 's' ' ' in a little-endian word
-    EXPECT_EQ(h.magic, kContainerMagic);
+// The reader opened the file, so it begins with BM3D; this is the version it says
+void expectFormatVersion(const Bm3dFile& h) {
+    EXPECT_EQ(h.formatVersion, 1u);
 }
 
 // The pictures the decoders have to get right and not only to read: a gray PNG with an alpha
@@ -87,8 +87,8 @@ TEST_P(TextureFormat, theTextureEndsUpInTheFile) {
     const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
 
-    const ContainerFile h = readContainerFile(out);
-    expectContainerMagic(h);
+    const Bm3dFile h = readBm3dFile(out);
+    expectFormatVersion(h);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_EQ(h.nvert, 4u);
     ASSERT_GE(h.nTextures, 1u) << "no texture in the file";
@@ -276,7 +276,7 @@ TEST_P(TextureColor, theNodeTextureHasTheColorOfThePicture) {
     const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
 
-    const ContainerFile h = readContainerFile(out);
+    const Bm3dFile h = readBm3dFile(out);
     ASSERT_FALSE(h.textures.empty());
     const DecodedImage texture = decodeWebp(h.textures.front());
     ASSERT_GT(texture.width, 3);
@@ -308,8 +308,8 @@ TEST(TextureFormats, aModelWithoutTexturesHasNone) {
     writeTextFile(dir.file("model.obj"), kTriangleObj);
     const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
-    const ContainerFile h = readContainerFile(out);
-    expectContainerMagic(h);
+    const Bm3dFile h = readBm3dFile(out);
+    expectFormatVersion(h);
     EXPECT_EQ(h.nface, 1u);
     EXPECT_EQ(h.nTextures, 0u);
 }
@@ -345,9 +345,9 @@ TEST(TextureFormats, aPlyQuadHasTheFacesOfTwoTriangles) {
 
     ASSERT_NO_THROW(bm3d::build(dir.file("quad.ply"), dir.file("quad.bm3d")));
     ASSERT_NO_THROW(bm3d::build(dir.file("tris.ply"), dir.file("tris.bm3d")));
-    const ContainerFile quad = readContainerFile(dir.file("quad.bm3d"));
-    const ContainerFile tris = readContainerFile(dir.file("tris.bm3d"));
-    expectContainerMagic(quad);
+    const Bm3dFile quad = readBm3dFile(dir.file("quad.bm3d"));
+    const Bm3dFile tris = readBm3dFile(dir.file("tris.bm3d"));
+    expectFormatVersion(quad);
     EXPECT_EQ(quad.nface, 2u);
     EXPECT_EQ(quad.nface, tris.nface);
     EXPECT_EQ(quad.nvert, tris.nvert);
@@ -360,8 +360,8 @@ TEST(TextureFormats, aTextureThatCannotBePackedBuildsWithoutTextures) {
     const fs::path out = dir.file("model.bm3d");
     // The warning "textures could not be packed" goes to stderr: only the outcome is asserted here
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
-    const ContainerFile h = readContainerFile(out);
-    expectContainerMagic(h);
+    const Bm3dFile h = readBm3dFile(out);
+    expectFormatVersion(h);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_EQ(h.nTextures, 0u);
 }

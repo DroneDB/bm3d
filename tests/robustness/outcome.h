@@ -34,7 +34,7 @@ Outcome runOn(const TempDir& dir, const fs::path& input,
 bool isResourceFailure(const std::string& stderrText);
 
 // The rule for any input: the program ends in time and does not crash; it exits 0 and writes a file
-// with the magic of the container, or exits 2 (invalid input) or 1 for want of memory or scratch
+// with the magic number BM3D, or exits 2 (invalid input) or 1 for want of memory or scratch
 // space, and writes nothing; and neither a sanitizer nor an assertion has anything to say. Returns
 // what is wrong, or an empty string.
 std::string whatIsWrong(const Outcome& outcome);

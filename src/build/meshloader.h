@@ -42,6 +42,9 @@ public:
 	virtual bool hasColors() { return has_colors; } //call this
 	virtual bool hasNormals() { return has_normals; } //call this
 	virtual bool hasTextures() { return has_textures; }
+	//the vertices the file defines, once the whole mesh has been read (an STL file repeats a vertex
+	//for each of the triangles that has it, and defines three for each)
+	virtual uint64_t vertexCount() const = 0;
 	
 	std::vector<LoadTexture> texture_filenames;
 	int texOffset; //when returning triangles add texOffset to refer to the correct texture in stream.

@@ -19,7 +19,7 @@
 #include "cli_support.h"
 #include "env_var_guard.h"
 #include "model_files.h"
-#include "container_file.h"
+#include "bm3d_file.h"
 #include "temp_dir.h"
 #include "version_file.h"
 
@@ -77,7 +77,7 @@ TEST(CliInfo, theVersionIsPrintedAsTheNameTheVersionAndTheFormat) {
     ASSERT_FALSE(version.empty());
     const ProcessResult r = runBm3d({"--version"});
     EXPECT_EQ(r.exitCode, 0);
-    EXPECT_EQ(r.out, "bm3d " + version + " (format 0)\n");
+    EXPECT_EQ(r.out, "bm3d " + version + " (format 1)\n");
     EXPECT_TRUE(r.err.empty()) << r.err;
 }
 
@@ -150,8 +150,8 @@ TEST(CliArguments, theToolTakesAThreadCountOfOneOrMore) {
         const std::string out = f.output(std::string("threads") + threads + ".bm3d");
         const ProcessResult r = runBm3d({"--threads", threads, f.input(), out});
         EXPECT_EQ(r.exitCode, 0) << threads << "\n" << r.output();
-        const ContainerFile h = readContainerFile(pathFromUtf8(out));
-        EXPECT_EQ(h.magic, kContainerMagic) << threads;
+        const Bm3dFile h = readBm3dFile(pathFromUtf8(out));
+        EXPECT_EQ(h.formatVersion, 1u) << threads;
         EXPECT_EQ(h.nface, 1u) << threads;
     }
 }
@@ -180,8 +180,8 @@ TEST(CliExitCodes, aBuildThatWorksExitsWithZeroAndWritesTheOutput) {
     EXPECT_EQ(r.exitCode, 0) << r.output();
     EXPECT_TRUE(r.err.empty()) << r.err;
     EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
-    const ContainerFile h = readContainerFile(f.out / "model.bm3d");
-    EXPECT_EQ(h.magic, kContainerMagic);
+    const Bm3dFile h = readBm3dFile(f.out / "model.bm3d");
+    EXPECT_EQ(h.formatVersion, 1u);
     EXPECT_EQ(h.nface, 1u);
 }
 
@@ -235,7 +235,7 @@ TEST(CliExitCodes, aModelWithAnUpperCaseExtensionIsBuilt) {
     writeTextFile(f.in / "MODEL.OBJ", kTriangleObj);
     const ProcessResult r = runBm3d({f.input("MODEL.OBJ"), f.output()});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
+    EXPECT_EQ(readBm3dFile(f.out / "model.bm3d").nface, 1u);
 }
 
 TEST(CliExitCodes, aBrokenPlyExitsWithTwoAndWritesNoOutput) {
@@ -391,7 +391,7 @@ TEST(CliMetadata, aJsonObjectIsAccepted) {
     writeTextFile(f.in / "metadata.json", "{\"title\":\"Модель\",\"tags\":[1,2,{\"k\":null}]}\n");
     const ProcessResult r = runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output()});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
+    EXPECT_EQ(readBm3dFile(f.out / "model.bm3d").nface, 1u);
 }
 
 TEST(CliMetadata, anObjectWithAByteOrderMarkIsAccepted) {
@@ -430,6 +430,80 @@ TEST(CliMetadata, aMetadataFileThatCannotBeReadIsAUsageError) {
     expectUsageError(r, "absent.json");
     EXPECT_NE(r.err.find("absent.json"), std::string::npos) << r.err;
     EXPECT_TRUE(f.dir.list("out").empty());
+}
+
+// The members of the file are stored in the metadata block of the output, after the ones the
+// program writes, as they are
+TEST(CliMetadata, theMembersAreStoredAfterTheOnesOfTheProgram) {
+    Folders f;
+    f.writeTriangle();
+    writeTextFile(f.in / "metadata.json", "{ \"crs\" : \"EPSG:32633\", \"origin\":[ 1.50, 2e3 ], \"title\":\"Модель\" }");
+    const ProcessResult r = runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output()});
+    ASSERT_EQ(r.exitCode, 0) << r.output();
+    const std::string metadata = readMetadata(f.out / "model.bm3d");
+    EXPECT_EQ(metadata.rfind("{\"generator\":\"bm3d " + versionFileText() + "\",\"buildOptions\":{", 0), 0u) << metadata;
+    const std::string tail = ",\"crs\":\"EPSG:32633\",\"origin\":[ 1.50, 2e3 ],\"title\":\"Модель\"}";
+    ASSERT_GT(metadata.size(), tail.size());
+    EXPECT_EQ(metadata.substr(metadata.size() - tail.size()), tail);
+    EXPECT_NE(metadata.find("\"source\":{\"name\":\"model.obj\",\"vertices\":3,\"faces\":1,\"bounds\":{\"min\":[0,0,0],\"max\":[1,1,0]}}"),
+              std::string::npos)
+        << metadata;
+}
+
+TEST(CliMetadata, theMetadataDoesNotChangeTheContentOfTheFile) {
+    Folders f;
+    f.writeTriangle();
+    writeTextFile(f.in / "metadata.json", "{\"crs\":\"EPSG:4326\"}");
+    ASSERT_EQ(runBm3d({f.input(), f.output("plain.bm3d")}).exitCode, 0);
+    ASSERT_EQ(runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output("with.bm3d")}).exitCode, 0);
+    EXPECT_NE(readBinaryFile(f.out / "plain.bm3d"), readBinaryFile(f.out / "with.bm3d"));
+    EXPECT_EQ(readBm3dFile(f.out / "plain.bm3d").contentHash, readBm3dFile(f.out / "with.bm3d").contentHash);
+}
+
+// generator, buildOptions and source are the program's, and the names that start with bm3d are kept
+// for later versions; a name given twice is read differently by different readers of JSON
+TEST(CliMetadata, aReservedKeyOrARepeatedOneIsAUsageErrorThatNamesItAndNothingIsBuilt) {
+    Folders f;
+    f.writeTriangle();
+    const std::vector<std::pair<std::string, std::string>> bad = {
+        {"{\"generator\":\"mine\"}", "generator"},
+        {"{\"ok\":1,\"buildOptions\":{}}", "buildOptions"},
+        {"{\"source\":null}", "source"},
+        {"{\"bm3d\":1}", "bm3d"},
+        {"{\"bm3dFlavour\":1}", "bm3dFlavour"},
+        {"{\"gen\\u0065rator\":1}", "generator"},
+        {"{\"crs\":1,\"crs\":2}", "crs"},
+    };
+    for (const auto& [text, key] : bad) {
+        writeTextFile(f.in / "metadata.json", text);
+        const ProcessResult r = runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output()});
+        expectUsageError(r, text);
+        EXPECT_NE(r.err.find("\"" + key + "\""), std::string::npos) << text << "\n" << r.err;
+    }
+    EXPECT_TRUE(f.dir.list("out").empty());
+}
+
+TEST(CliMetadata, keysNestedInAValueAreNotExamined) {
+    Folders f;
+    f.writeTriangle();
+    writeTextFile(f.in / "metadata.json", "{\"info\":{\"generator\":1,\"source\":2,\"bm3d\":3,\"x\":1,\"x\":2}}");
+    EXPECT_EQ(runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output()}).exitCode, 0);
+}
+
+// The block is at most 1 MiB, and one that would be longer is refused before anything is built
+TEST(CliMetadata, aBlockOfAboutOneMebibyteIsStoredAndOneBeyondItIsAUsageError) {
+    Folders f;
+    f.writeTriangle();
+    writeTextFile(f.in / "fits.json", "{\"k\":\"" + std::string(1048576 - 1000, 'a') + "\"}");
+    const ProcessResult fits = runBm3d({"--metadata", pathToUtf8(f.in / "fits.json"), f.input(), f.output("fits.bm3d")});
+    ASSERT_EQ(fits.exitCode, 0) << fits.output();
+    EXPECT_LE(readMetadata(f.out / "fits.bm3d").size(), 1048576u);
+
+    writeTextFile(f.in / "large.json", "{\"k\":\"" + std::string(1048576, 'a') + "\"}");
+    const ProcessResult r = runBm3d({"--metadata", pathToUtf8(f.in / "large.json"), f.input(), f.output("large.bm3d")});
+    expectUsageError(r, "large.json");
+    EXPECT_NE(r.err.find("1048576"), std::string::npos) << r.err;
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"fits.bm3d"});
 }
 
 // The command line is checked as a whole before the model is touched

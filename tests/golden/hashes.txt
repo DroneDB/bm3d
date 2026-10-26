@@ -1,0 +1,9 @@
+# The content hashes (docs/FORMAT.md, section 9) of the golden files, one "name hash" line each.
+# tests/golden/golden_test.cpp compares them; a hash that has to change on purpose is replaced
+# by the one the failure prints.
+cube ee98995a59c7577ce5e85f8124b3c7df46c7207424ce2868480f62c4ae36cb91
+pyramid-colors 6630a314e8cc8d19729af62fa9157cf4027e6fe7180d440bae9f7e388bb09b8a
+wave 3452d17c3daa0be3fa73e215c1230b71220de8c578da6645af5d3f4995c67b5a
+degenerate 78f225240b74a2b295d05692e9f72160618a8fb92e5d2e4007291c7a13c16a13
+textured b02511fc6601774e098ee03c4319468c67b99929a8245b5e11f4741db2aaa328
+grid 1cd177d6d6c62ad0256b9c205e79f97435c2864cd34f052de4204062bd7b8d3b

@@ -156,7 +156,7 @@ float Mesh::simplify(uint16_t target_faces, Simplification method) {
 bm3d::detail::Node Mesh::getNode()
 {
 	bm3d::detail::Node node;
-	node.offset = -1;
+	node.chunk = -1;
 	node.nface = face.size();
 	node.nvert = vert.size();
 	node.error = -1;
@@ -167,64 +167,41 @@ bm3d::detail::Node Mesh::getNode()
 	return node;
 }
 
-uint32_t Mesh::serializedSize(const bm3d::detail::Signature &sig) {
+uint32_t Mesh::serializedSize(const bm3d::detail::VertexLayout &layout) {
 	assert(vn == (int)vert.size());
 	assert(fn == (int)face.size());
 	uint16_t nvert = vn;
 	uint16_t nface = fn;
-	return nvert*sig.vertex.size() + nface*sig.face.size();
+	return nvert*bm3d::detail::decodedVertexBytes(layout) + nface*bm3d::detail::kDecodedTriangleBytes;
 }
 
-void Mesh:: serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::vector<bm3d::detail::Patch> &patches) {
+void Mesh:: serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches) {
 
-
-	uint32_t current_node = 0;
 	//find patches and triangle (splat) offsets
-	if(sig.face.hasIndex()) {
-		//sort face by node.
-		std::sort(face.begin(), face.end());
+	//sort face by node.
+	std::sort(face.begin(), face.end());
 
-		//remember triangle_offset is the END of the triangles in the patch
-		current_node = face[0].node;
-		for(unsigned int i = 0; i < face.size(); i++) {
-			AFace &f = face[i];
-			if(f.node != current_node) {
-				bm3d::detail::Patch patch;
-				patch.node = current_node;
-				patch.triangle_offset  = i;
-				patch.texture = 0xffffffff;
-				patches.push_back(patch);
-				current_node  = f.node;
-			}
-		}
-	} else {
-		std::sort(vert.begin(), vert.end(), VertexNodeCompare());
-		current_node = vert[0].node;
-		for(unsigned int i = 0; i < vert.size(); i++) {
-			AVertex &v = vert[i];
-			if(v.node != current_node) {
-				bm3d::detail::Patch patch;
-				patch.node = current_node;
-				patch.triangle_offset  = i;
-				patch.texture = 0xffffffff;
-				patches.push_back(patch);
-				current_node  = v.node;
-			}
+	//remember triangleOffset is the END of the triangles in the patch
+	uint32_t current_node = face[0].node;
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &f = face[i];
+		if(f.node != current_node) {
+			bm3d::detail::PatchRecord patch;
+			patch.node = current_node;
+			patch.triangleOffset  = i;
+			patch.texture = 0xffffffff;
+			patches.push_back(patch);
+			current_node  = f.node;
 		}
 	}
 
-
-	bm3d::detail::Patch patch;
+	bm3d::detail::PatchRecord patch;
 	patch.node = current_node;
-	if(sig.face.hasIndex()) {
-		patch.triangle_offset  = face.size();
-	} else {
-		patch.triangle_offset  = vert.size();
-	}
+	patch.triangleOffset  = face.size();
 	patch.texture = 0xffffffff;
 	patches.push_back(patch);
 
-	if(sig.vertex.hasNormals() && sig.face.hasIndex())
+	if(layout.normals)
 		vcg::tri::UpdateNormal<Mesh>::PerVertexNormalized(*this);
 
 	vcg::Point3f *c = (vcg::Point3f *)buffer;
@@ -233,9 +210,7 @@ void Mesh:: serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 
 	buffer += vert.size()*sizeof(vcg::Point3f);
 
-	//assert(!sig.vertex.hasTextures());
-
-	if(sig.vertex.hasNormals()) {
+	if(layout.normals) {
 		vcg::Point3s *nstart = (vcg::Point3s *)buffer;
 		for(unsigned int i = 0; i < vert.size(); i++) {
 			vcg::Point3f nf = vert[i].N();
@@ -247,7 +222,7 @@ void Mesh:: serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 		buffer += vert.size() * sizeof(vcg::Point3s);
 	}
 
-	if(sig.vertex.hasColors()) {
+	if(layout.colors) {
 		vcg::Color4b *cstart = (vcg::Color4b *)buffer;
 		for(unsigned int i = 0; i < vert.size(); i++)
 			cstart[i] = vert[i].C();

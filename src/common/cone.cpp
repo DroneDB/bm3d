@@ -144,10 +144,16 @@ void AnchoredCone3f::AddAnchors(vector<Point3f> &anchors) {
 }
 
 void Cone3s::Import(const AnchoredCone3f &c) {
+	for(int i = 0; i < 4; i++)
+		n[i] = 0;
+
 	Point3f normal = c.scaledNormal;
 	float len = normal.Norm();
-	if(len > 0.001)
-		normal /= len;
+	//the file says: all four values are 0 when the axis is not longer than 0.001, that is when there
+	//is no cone (no normal, or one so wide that it culls nothing)
+	if(!(len > 0.001))
+		return;
+	normal /= len;
 
 	for(int i = 0; i < 3; i++) {
 		assert(normal[i] < 1.01 && normal[i] > -1.01);
@@ -160,7 +166,6 @@ void Cone3s::Import(const AnchoredCone3f &c) {
 	n[2] = (short)(normal[2] * 32766);
 	//i want to represent numbers from -10 to 10
 	if(len > 10.0f) len = 10.0f;
-	if(len < -10.0f) len = -10.0f;
 	n[3] = (short)(len * 3276);
 }
 

@@ -11,7 +11,7 @@
 
 #include "cli_support.h"
 #include "model_files.h"
-#include "container_file.h"
+#include "bm3d_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -28,7 +28,7 @@ TEST(CliPaths, aModelAndItsOutputUnderFoldersInOtherAlphabetsAreBuilt) {
     const ProcessResult r = runBm3d({pathToUtf8(in / pathFromUtf8("модель.obj")), pathToUtf8(dir.file("выход/出力/результат.bm3d"))});
     EXPECT_EQ(r.exitCode, 0) << r.output();
     EXPECT_EQ(dir.list("выход/出力"), std::vector<std::string>{"результат.bm3d"});
-    EXPECT_EQ(readContainerFile(dir.file("выход/出力/результат.bm3d")).nface, 1u);
+    EXPECT_EQ(readBm3dFile(dir.file("выход/出力/результат.bm3d")).nface, 1u);
 }
 
 TEST(CliPaths, theHeartbeatNamesTheInputInUtf8) {
@@ -52,7 +52,7 @@ TEST(CliPaths, aTextureAndMetadataWithNamesInOtherAlphabetsAreRead) {
     const ProcessResult r = runBm3d({"--metadata", pathToUtf8(folder / pathFromUtf8("метаданные.json")),
                                      pathToUtf8(folder / "model.obj"), output});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    const ContainerFile h = readContainerFile(dir.file("результат.bm3d"));
+    const Bm3dFile h = readBm3dFile(dir.file("результат.bm3d"));
     EXPECT_EQ(h.nface, 2u);
     EXPECT_GE(h.nTextures, 1u);
 }

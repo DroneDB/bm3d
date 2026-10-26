@@ -18,7 +18,7 @@
 
 #include "bm3d/bm3d.h"
 #include "model_files.h"
-#include "container_file.h"
+#include "bm3d_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -53,7 +53,7 @@ struct TexelCount {
     int largestSide = 0;
 };
 
-TexelCount countTexels(const ContainerFile& n) {
+TexelCount countTexels(const Bm3dFile& n) {
     TexelCount c;
     std::vector<DecodedImage> images;
     for (const auto& t : n.textures)
@@ -73,7 +73,7 @@ TexelCount countTexels(const ContainerFile& n) {
 
 TEST(TextureResolution, theNodeTexturesAreWebp) {
     TempDir dir;
-    const ContainerFile n = readContainerFile(buildGrid(dir, 4, 64, detail));
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, 4, 64, detail));
     ASSERT_FALSE(n.textures.empty());
     for (const auto& t : n.textures)
         EXPECT_TRUE(isWebp(t));
@@ -84,7 +84,7 @@ TEST(TextureResolution, theNodeTexturesAreWebp) {
 TEST(TextureResolution, theLeavesKeepTheResolutionOfAFewTrianglesWithALargeTexture) {
     TempDir dir;
     const int side = 4096;
-    const ContainerFile n = readContainerFile(buildGrid(dir, 32, side, detail));
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, 32, side, detail));
     const TexelCount c = countTexels(n);
     EXPECT_GE(c.leaves, 0.9 * side * side) << "the leaves hold " << c.leaves << " texels";
     EXPECT_LE(c.largestSide, kMaxNodeTextureSide);
@@ -97,7 +97,7 @@ TEST(TextureResolution, theLeavesKeepTheResolutionOfAFewTrianglesWithALargeTextu
 TEST(TextureResolution, theErrorOfALeafIsTheSizeOfItsTexels) {
     TempDir dir;
     const int cells = 32, side = 4096;
-    const ContainerFile n = readContainerFile(buildGrid(dir, cells, side, detail));
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, cells, side, detail));
     const double texel = double(cells) / side;  // the grid squares have a side of 1
     bool sawLeaf = false;
     for (size_t node = 0; node < n.leaf.size(); node++) {
@@ -116,7 +116,7 @@ TEST(TextureResolution, theErrorOfALeafIsTheSizeOfItsTexels) {
 TEST(TextureResolution, theCoarserLevelsKeepTheTrianglesWhileTheTextureIsFinerThanThem) {
     TempDir dir;
     const int cells = 32, triangles = 2 * cells * cells;
-    const ContainerFile n = readContainerFile(buildGrid(dir, cells, 4096, detail));
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, cells, 4096, detail));
     EXPECT_GE(n.nface, uint64_t(4 * triangles)) << "the levels hold " << n.nface << " triangles";
     const TexelCount c = countTexels(n);
     EXPECT_LT(c.inner, c.leaves) << "the coarser levels hold " << c.inner << " texels";
@@ -130,7 +130,7 @@ TEST(TextureResolution, theCoarserLevelsKeepTheTrianglesWhileTheTextureIsFinerTh
 TEST(TextureResolution, theCoarserLevelsHoldAThirdOfTheTexelsOfTheLeaves) {
     TempDir dir;
     const int side = 4096;
-    const ContainerFile n = readContainerFile(buildGrid(dir, 72, side, detail));
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, 72, side, detail));
     const TexelCount c = countTexels(n);
     EXPECT_GE(c.leaves, 0.9 * side * side) << "the leaves hold " << c.leaves << " texels";
     EXPECT_GE(c.inner, 0.2 * c.leaves) << "the coarser levels hold " << c.inner << " texels";
@@ -151,7 +151,7 @@ TEST(TextureResolution, theTexelsNoTriangleDrawsAreBlank) {
     writeTextFile(dir.file("half.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd texture.bmp\n");
     const fs::path out = dir.file("half.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("half.obj"), out));
-    const ContainerFile n = readContainerFile(out);
+    const Bm3dFile n = readBm3dFile(out);
     ASSERT_FALSE(n.textures.empty());
     const DecodedImage img = decodeWebp(n.textures.front());
     ASSERT_GE(img.width, 64);
@@ -183,7 +183,7 @@ TEST(TextureResolution, eachNodeHasTheTextureOfItsPlace) {
     TempDir dir;
     const int cells = 72, side = 2048;
     // bands count from 1, and texture rows run from v = 1 at the top
-    const ContainerFile n = readContainerFile(buildGrid(dir, cells, side, [side](int band, int x, int y) {
+    const Bm3dFile n = readBm3dFile(buildGrid(dir, cells, side, [side](int band, int x, int y) {
         return band == 1 ? 255.0 * x / side : band == 2 ? 255.0 * (side - 1 - y) / side : 128.0;
     }));
     ASSERT_GT(n.textures.size(), 4u);
@@ -206,8 +206,8 @@ TEST(TextureResolution, eachNodeHasTheTextureOfItsPlace) {
 // resize picks
 TEST(TextureResolution, aCoarserTextureAveragesTheDetailsOfTheFinerOne) {
     TempDir dir;
-    const ContainerFile n =
-        readContainerFile(buildGrid(dir, 72, 1024, [](int, int x, int y) { return ((x + y) % 2) ? 255.0 : 0.0; }));
+    const Bm3dFile n =
+        readBm3dFile(buildGrid(dir, 72, 1024, [](int, int x, int y) { return ((x + y) % 2) ? 255.0 : 0.0; }));
     bool sawInner = false;
     for (size_t node = 0; node < n.nodeTexture.size(); node++) {
         if (n.leaf[node])

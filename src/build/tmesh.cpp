@@ -163,7 +163,7 @@ float TMesh::simplify(uint32_t target_faces, Simplification method) {
 bm3d::detail::Node TMesh::getNode()
 {
 	bm3d::detail::Node node;
-	node.offset = -1;
+	node.chunk = -1;
 	node.nface = face.size();
 	node.nvert = vert.size();
 	node.error = -1;
@@ -174,9 +174,9 @@ bm3d::detail::Node TMesh::getNode()
 	return node;
 }
 //we have textures stored on wedge texture coordinates, we split vertices where wedges coords are different.
-void TMesh::splitSeams(bm3d::detail::Signature &sig) {
+void TMesh::splitSeams(const bm3d::detail::VertexLayout &layout) {
 
-	if(sig.vertex.hasNormals() && sig.face.hasIndex())
+	if(layout.normals)
 		vcg::tri::UpdateNormal<TMesh>::PerVertexNormalized(*this);
 
 	//std::vector<bool> visited(vert.size(), false);
@@ -235,64 +235,42 @@ void TMesh::splitSeams(bm3d::detail::Signature &sig) {
 	}
 }
 
-uint32_t TMesh::serializedSize(bm3d::detail::Signature &sig) {
+uint32_t TMesh::serializedSize(const bm3d::detail::VertexLayout &layout) {
 	//This should take into account duplicated vertices due to texture seams.
 	//let's created the replicated vertices.
 	assert(vn == (int)vert.size());
 	assert(fn == (int)face.size());
 	uint16_t nvert = vn;
 	uint16_t nface = fn;
-	uint32_t size = nvert*sig.vertex.size() + nface*sig.face.size();
+	uint32_t size = nvert*bm3d::detail::decodedVertexBytes(layout) + nface*bm3d::detail::kDecodedTriangleBytes;
 	return size;
 }
 
-void TMesh::serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::vector<bm3d::detail::Patch> &patches) {
+void TMesh::serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches) {
 	assert(vn == (int)vert.size());
 	assert(fn == (int)face.size());
 
-	uint32_t current_node = 0;
 	//find patches and triangle (splat) offsets
-	if(sig.face.hasIndex()) {
-		//sort face by node.
-		std::sort(face.begin(), face.end());
+	//sort face by node.
+	std::sort(face.begin(), face.end());
 
-		//remember triangle_offset is the END of the triangles in the patch
-		current_node = face[0].node;
-		for(int i = 0; i < fn; i++) {
-			TFace &f = face[i];
-			if(f.node != current_node) {
-				bm3d::detail::Patch patch;
-				patch.node = current_node;
-				patch.triangle_offset  = i;
-				patch.texture = 0xffffffff;
-				patches.push_back(patch);
-				current_node  = f.node;
-			}
-		}
-	} else {
-		std::sort(vert.begin(), vert.end(), TVertexNodeCompare());
-		current_node = vert[0].node;
-		for(int i = 0; i < vn; i++) {
-			TVertex &v = vert[i];
-			if(v.node != current_node) {
-				bm3d::detail::Patch patch;
-				patch.node = current_node;
-				patch.triangle_offset  = i;
-				patch.texture = 0xffffffff;
-				patches.push_back(patch);
-				current_node  = v.node;
-			}
+	//remember triangleOffset is the END of the triangles in the patch
+	uint32_t current_node = face[0].node;
+	for(int i = 0; i < fn; i++) {
+		TFace &f = face[i];
+		if(f.node != current_node) {
+			bm3d::detail::PatchRecord patch;
+			patch.node = current_node;
+			patch.triangleOffset  = i;
+			patch.texture = 0xffffffff;
+			patches.push_back(patch);
+			current_node  = f.node;
 		}
 	}
 
-
-	bm3d::detail::Patch patch;
+	bm3d::detail::PatchRecord patch;
 	patch.node = current_node;
-	if(sig.face.hasIndex()) {
-		patch.triangle_offset  = face.size();
-	} else {
-		patch.triangle_offset  = vert.size();
-	}
+	patch.triangleOffset  = face.size();
 	patch.texture = 0xffffffff;
 	patches.push_back(patch);
 
@@ -301,7 +279,7 @@ void TMesh::serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 		c[i] = vert[i].P();
 	buffer += vert.size()*sizeof(vcg::Point3f);
 
-	if(sig.vertex.hasTextures()) {
+	if(layout.texCoords) {
 		vcg::Point2f *tstart = (vcg::Point2f *)buffer;
 		for(int i = 0; i < vn; i++) {
 			//assert(vert[i].T().P()[0] >= 0.0 && vert[i].T().P()[0] <= 1.0);
@@ -310,7 +288,7 @@ void TMesh::serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 		buffer += vert.size() * sizeof(vcg::Point2f);
 	}
 
-	if(sig.vertex.hasNormals()) {
+	if(layout.normals) {
 		vcg::Point3s *nstart = (vcg::Point3s *)buffer;
 		for(int i = 0; i < vn; i++) {
 			vcg::Point3f nf = vert[i].N();
@@ -322,7 +300,7 @@ void TMesh::serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 		buffer += vert.size() * sizeof(vcg::Point3s);
 	}
 
-	if(sig.vertex.hasColors()) {
+	if(layout.colors) {
 		vcg::Color4b *cstart = (vcg::Color4b *)buffer;
 		for(int i = 0; i < vn; i++)
 			cstart[i] = vert[i].C();
@@ -338,21 +316,6 @@ void TMesh::serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::
 		}
 		//cout << endl;
 	}
-
-	/*
-	buffer += face.size() * 6;
-	if(sig.face.hasTextures()) {
-		float *texts = (float *)buffer;
-		for(unsigned int i = 0; i < face.size(); i++) {
-			TFace &f = face[i];
-			for(int k = 0; k < 3; k++) {
-				texts[i*6 + k*2] = f.WT(k).U();
-				texts[i*6 + k*2 + 1] = f.WT(k).V();
-			}
-		}
-		buffer += face.size() * sizeof(float)*6;
-	}
-	*/
 }
 
 vcg::Sphere3f TMesh::boundingSphere() {

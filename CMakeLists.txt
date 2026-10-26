@@ -16,8 +16,9 @@ if(NOT BM3D_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)")
 endif()
 set(BM3D_VERSION_NUMERIC "${CMAKE_MATCH_1}")
 
-# The version of the file format the program writes: 0 is the container Nexus wrote.
-set(BM3D_FORMAT_VERSION 0)
+# The version of the file format the program writes (docs/FORMAT.md; 0 was the container of Nexus).
+# src/format/bm3d_format.h holds the same number, and the library checks that the two agree.
+set(BM3D_FORMAT_VERSION 1)
 
 # PROJECT_IS_TOP_LEVEL does not exist before project(), which reads the toolchain file, so the
 # same test is made by hand for the two things that must be known before it.
@@ -131,11 +132,8 @@ add_library(bm3d_core STATIC
     src/build/tmesh.cpp
     src/common/cone.cpp
     src/common/mappedfile.cpp
-    src/common/reader.cpp
     src/common/scratchfile.cpp
-    src/common/stdfile.cpp
     src/common/textfile.cpp
-    src/common/traversal.cpp
     src/common/virtualarray.cpp
     src/compress/compressor.cpp
     src/format/bm3d_format.cpp

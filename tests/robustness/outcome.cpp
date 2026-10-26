@@ -7,7 +7,6 @@
 #include <system_error>
 
 #include "model_files.h"
-#include "container_file.h"
 
 namespace bm3dtest {
 
@@ -58,12 +57,8 @@ std::string whatIsWrong(const Outcome& outcome) {
     if (p.exitCode == 0) {
         if (left.size() != 1 || !fs::exists(outcome.output))
             return "it exited 0 and the output folder holds " + std::to_string(left.size()) + " files, not the output";
-        const std::string head = readBinaryFile(outcome.output).substr(0, 4);
-        uint32_t magic = 0;  // a little-endian word
-        for (size_t i = 0; i < head.size(); i++)
-            magic |= uint32_t(uint8_t(head[i])) << (8 * i);
-        if (magic != kContainerMagic)
-            return "it exited 0 and the output does not start with the magic of the container";
+        if (readBinaryFile(outcome.output).substr(0, 4) != "BM3D")
+            return "it exited 0 and the output does not start with the magic number BM3D";
         return "";
     }
     if (!left.empty())

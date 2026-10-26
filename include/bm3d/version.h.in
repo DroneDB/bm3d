@@ -11,5 +11,5 @@
 #define BM3D_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define BM3D_VERSION_PATCH @PROJECT_VERSION_PATCH@
 
-// The format build() writes (0: the container of Nexus)
+// The format build() writes (docs/FORMAT.md)
 #define BM3D_FORMAT_VERSION @BM3D_FORMAT_VERSION@

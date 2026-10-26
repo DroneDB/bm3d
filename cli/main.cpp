@@ -110,10 +110,11 @@ void printUsage(std::ostream& out) {
         << "       " << kProgram << " --version\n"
         << "       " << kProgram << " --help\n"
         << "Builds a multiresolution model from an OBJ, PLY or STL mesh (and the textures it names),\n"
-        << "corto-compressed. The output is in format 0.\n"
+        << "corto-compressed. The output is a .bm3d file, format " << bm3d::formatVersion() << ".\n"
         << "  --threads N          keep at most N threads busy, from 1 to " << kMaxThreads
         << " (default: one per core)\n"
-        << "  --metadata <file>    a JSON object to store in the file; checked, and not stored yet in format 0\n"
+        << "  --metadata <file>    a JSON object whose members are stored in the metadata of the file\n"
+        << "                       (not generator, buildOptions, source or a name that starts with bm3d)\n"
         << "Exit codes: 0 done, 1 the build failed, 2 the input is missing or invalid, 64 wrong command line.\n";
 }
 
@@ -161,12 +162,13 @@ private:
     std::thread thread_;  // last: starts running when the members above are ready
 };
 
-// The reason the file is not a JSON object, or an empty string when it is one
-std::string metadataProblem(const std::string& file) {
+// Reads the metadata file into `text`. The reason it cannot be, or is not a JSON object, or an
+// empty string when it is one
+std::string readMetadata(const std::string& file, std::string& text) {
     std::ifstream in(pathFromUtf8(file), std::ios::binary);
     if (!in)
         return "cannot read the metadata file " + file;
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (in.bad())
         return "cannot read the metadata file " + file;
     const std::string problem = bm3d::jsonObjectError(text);
@@ -224,7 +226,12 @@ int run(const std::vector<std::string>& args) {
         return usageError(paths.size() < 2 ? "an input and an output are needed" : "too many arguments");
 
     if (hasMetadata) {
-        const std::string problem = metadataProblem(metadata);
+        std::string problem = readMetadata(metadata, options.metadata);
+        if (problem.empty()) {
+            problem = bm3d::metadataError(options.metadata);
+            if (!problem.empty())
+                problem = "the metadata file " + metadata + ": " + problem;
+        }
         if (!problem.empty())
             return usageError(problem);
     }

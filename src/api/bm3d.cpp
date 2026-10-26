@@ -26,11 +26,13 @@
 
 #include "bm3d/version.h"
 #include "../common/error.h"
-#include "../common/reader.h"
 #include "../common/pathutil.h"
-#include "../common/traversal.h"
 #include "../build/builder.h"
 #include "../compress/compressor.h"
+#include "../format/bm3d_format.h"
+#include "../format/bm3d_writer.h"
+#include "../format/format_error.h"
+#include "../format/metadata.h"
 #include "kdtree.h"
 #include "meshstream.h"
 
@@ -39,9 +41,9 @@ namespace bm3d {
 namespace {
 
 using detail::Builder;
-using detail::Compressor;
-using detail::Reader;
-using detail::Signature;
+using detail::CompressionSettings;
+
+static_assert(BM3D_FORMAT_VERSION == detail::kFormatVersion, "the format the library writes is the one src/format implements");
 
 // More than any machine has cores; a larger value is a mistake, not a request
 constexpr int kMaxThreads = 4096;
@@ -102,36 +104,6 @@ public:
 
 private:
     std::string oldLocale_;
-};
-
-// RAII: remove a file on destruction if path is not empty.
-class TempFileGuard {
-public:
-    TempFileGuard() = default;
-
-    void setPath(const std::string& path) { path_ = path; }
-    // The file is complete: leave it in place
-    void keep() { path_.clear(); }
-
-    ~TempFileGuard() {
-        if (path_.empty())
-            return;
-        // A destructor must not throw, and the path conversion can (see build). A folder
-        // is never what the guard is for: it is the path of an output that could not be opened.
-        try {
-            const auto path = detail::nativePath(path_);
-            std::error_code ec;
-            if (!std::filesystem::is_directory(path, ec))
-                std::filesystem::remove(path, ec);
-        } catch (...) {
-        }
-    }
-
-    TempFileGuard(const TempFileGuard&) = delete;
-    TempFileGuard& operator=(const TempFileGuard&) = delete;
-
-private:
-    std::string path_;
 };
 
 // The share of a node texture that the texture charts of the node's triangles fill once packed.
@@ -261,55 +233,85 @@ void loadTextures(Builder& builder, std::vector<LoadTexture>& textures, const Sc
     });
 }
 
-// The coordinate step of the compression: a fraction of the smallest error among the nodes that
-// the sink follows.
-float coordinateStep(Reader& reader) {
-    const uint32_t sink = reader.header.n_nodes - 1;
-    float step = kErrorQ * reader.nodes[0].error / 2.0f;
-    for (uint32_t i = 0; i < sink; ++i) {
-        detail::Node& n = reader.nodes[i];
-        detail::Patch& patch = reader.patches[n.first_patch];
-        if (patch.node != sink)
-            continue;
-        const double e = kErrorQ * n.error / 2.0;
-        if (e < step && e > 0.0)
-            step = static_cast<float>(e);
-    }
-
-    // Fallback to avoid log2(0) if the step is still <= 0
-    if (step <= 0.0f) {
-        step = 1.0f;
-    }
-    return step;
+// How corto quantises the nodes
+CompressionSettings compressionSettings() {
+    CompressionSettings settings;
+    settings.errorQ = kErrorQ;
+    settings.normalBits = kNormalBits;
+    settings.colorBits[0] = kLumaBits;
+    settings.colorBits[1] = kChromaBits;
+    settings.colorBits[2] = kChromaBits;
+    settings.colorBits[3] = kAlphaBits;
+    settings.texStep = kTexStep;
+    return settings;
 }
 
-// Compresses the uncompressed container `source` with corto into `target`
-void compress(const std::string& source, const std::string& target) {
-    Reader reader;  // its constructor creates and owns the file reader
-
-    if (!reader.open(source.c_str())) {
-        throw detail::Error("Could not open file: " + source);
+// What the builder read of the input
+detail::SourceInfo sourceOf(const std::string& input, StreamSoup& stream) {
+    detail::SourceInfo source;
+    source.name = detail::pathToUtf8(detail::pathFromUtf8(input).filename());
+    source.vertices = stream.vertexCount();
+    source.faces = stream.size();
+    for (int k = 0; k < 3; k++) {
+        source.boundsMin[k] = stream.box.min[k];
+        source.boundsMax[k] = stream.box.max[k];
     }
-
-    Signature signature = reader.header.signature;
-    signature.flags |= Signature::CORTO;
-
-    Compressor compressor(&reader);
-    compressor.coord_q = static_cast<int>(std::log2(coordinateStep(reader)));
-    compressor.norm_bits = kNormalBits;
-
-    compressor.color_bits[0] = kLumaBits;
-    compressor.color_bits[1] = kChromaBits;
-    compressor.color_bits[2] = kChromaBits;
-    compressor.color_bits[3] = kAlphaBits;
-
-    compressor.tex_step = kTexStep;
-
-    compressor.save(target, signature);
+    return source;
 }
 
-// Builds the model into the format 0 container with corto-compressed nodes; throws on failure.
-void buildOnce(const std::string& input, const std::string& output, const Attempt& attempt) {
+// What the metadata block says of the build: the settings that made the file, and what was read
+// of the input. The block is not part of the content identity of the file (docs/FORMAT.md).
+// The block that does not fit in a file is the fault of the extra members, since the rest is a few
+// hundred bytes: it is refused as an invalid argument.
+std::string composeMetadata(const Attempt& attempt, const detail::SourceInfo& source,
+                            const std::vector<JsonMember>& extras) {
+    using detail::BuildOption;
+    const std::vector<BuildOption> options = {
+        BuildOption::whole("threads", attempt.threads),
+        BuildOption::whole("nodeFaces", attempt.nodeFaces),
+        BuildOption::whole("topNodeFaces", kTopNodeFaces),
+        BuildOption::whole("textureQuality", kTextureQuality),
+        BuildOption::whole("maxNodeTextureSide", kMaxNodeTextureSide),
+        BuildOption::fractional("scaling", kScaling),
+        BuildOption::fractional("adaptive", kAdaptive),
+        BuildOption::whole("skipLevels", kSkipLevels),
+        BuildOption::fractional("errorQ", kErrorQ),
+        BuildOption::whole("normalBits", kNormalBits),
+        BuildOption::whole("lumaBits", kLumaBits),
+        BuildOption::whole("chromaBits", kChromaBits),
+        BuildOption::whole("alphaBits", kAlphaBits),
+        BuildOption::fractional("texStep", kTexStep),
+    };
+
+    const std::string metadata = detail::composeMetadata(std::string("bm3d ") + BM3D_VERSION, options, source, extras);
+    try {
+        detail::checkMetadataLength(metadata.size());
+    } catch (const detail::MetadataTooLargeError& e) {
+        throw Error(ErrorKind::InvalidArgument, e.what());
+    }
+    return metadata;
+}
+
+// The members to store, from the text of BuildOptions::metadata. Returns what is wrong with it:
+// not a JSON object, a key that is the program's or repeated, or so large that the block cannot
+// fit in a file whatever the input is (the smallest block the program writes, with these members)
+std::string parseMetadata(const std::string& json, std::vector<JsonMember>& extras) {
+    if (json.empty())
+        return {};
+    const std::string problem = detail::parseExtraMetadata(json, extras);
+    if (!problem.empty())
+        return problem;
+    try {
+        composeMetadata(Attempt(), detail::SourceInfo(), extras);
+    } catch (const Error& e) {
+        return e.what();
+    }
+    return {};
+}
+
+// Builds the model into a .bm3d file with corto-compressed nodes; throws on failure.
+void buildOnce(const std::string& input, const std::string& output, const Attempt& attempt,
+               const std::vector<JsonMember>& extraMetadata) {
     const uint64_t maxMemory = (uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 4;
 
     // Build a somewhat unique base name for cache files.
@@ -335,7 +337,7 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     stream.setMaxMemory(maxMemory);
     loadInput(stream, input, scratch);
 
-    uint32_t components = Builder::FACES | Builder::NORMALS;
+    uint32_t components = Builder::NORMALS;
     if (stream.hasColors())
         components |= Builder::COLORS;
     if (stream.hasTextures() && attempt.withTextures)
@@ -346,20 +348,8 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
         stream.textures.clear();
     }
 
-    // The output is written under another name in its folder and given its name only once it
-    // is complete: a save that fails (or a process killed while saving) leaves no half file
-    // under the output name, and does not remove one an earlier build left there. The builder
-    // writes the uncompressed container first and the compression reads it back.
-    const std::string writtenOutput = output + ".part";
-    const std::string builderOutput = output + ".tmp.bm3d";
-
-    // Remove the temporary files the saves below write, whatever happens. They are declared
-    // before the builder, which keeps its file open until it is destroyed when its save throws:
-    // on Windows an open file cannot be removed.
-    TempFileGuard writtenOutputGuard;
-    TempFileGuard temporaryOutputGuard;
-    writtenOutputGuard.setPath(writtenOutput);
-    temporaryOutputGuard.setPath(builderOutput);
+    // The block is made before the hierarchy, so that one that does not fit is refused at once
+    const std::string metadata = composeMetadata(attempt, sourceOf(input, stream), extraMetadata);
 
     // Place the builder's out-of-core caches (chunks + per-node texture file)
     // in the same directory as the output (the per-build temp folder), so they
@@ -387,14 +377,10 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     // Build the hierarchy
     builder.create(tree.get(), &stream, kTopNodeFaces);
 
-    builder.save(builderOutput);
-    compress(builderOutput, writtenOutput);
-
-    std::error_code ec;
-    std::filesystem::rename(detail::nativePath(writtenOutput), detail::nativePath(output), ec);
-    if (ec)
-        throw detail::Error("could not rename " + writtenOutput + " to " + output + ": " + ec.message());
-    writtenOutputGuard.keep();
+    // The file is written under another name in its folder and given its name only once it is
+    // complete: a save that fails (or a process killed while saving) leaves no half file under
+    // the output name, and does not remove one an earlier build left there.
+    builder.save(output, compressionSettings(), metadata);
 }
 
 // How many times a build whose nodes turn out to have too many vertices is tried again, each
@@ -409,13 +395,14 @@ constexpr int kSmallerNodeAttempts = 3;
 //  - A node has more vertices than a node holds (a fragmented texture parametrization): the
 //    model is built with smaller nodes. Leaving the node out, which Nexus did, leaves a hole in
 //    the model.
-void buildWithFallbacks(const std::string& input, const std::string& output, int threads) {
+void buildWithFallbacks(const std::string& input, const std::string& output, int threads,
+                        const std::vector<JsonMember>& extraMetadata) {
     Attempt attempt;
     attempt.threads = threads > 0 ? threads : int(std::max(1u, std::thread::hardware_concurrency()));
     int smallerNodeAttempts = 0;
     for (;;) {
         try {
-            buildOnce(input, output, attempt);
+            buildOnce(input, output, attempt, extraMetadata);
             break;
         } catch (const detail::TexturePackingError& error) {
             if (!attempt.withTextures)
@@ -465,6 +452,12 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
     if (output.empty())
         throw Error(ErrorKind::InvalidArgument, "Output path is empty");
 
+    // The metadata to store is checked before anything is built
+    std::vector<JsonMember> extraMetadata;
+    const std::string metadataProblem = parseMetadata(options.metadata, extraMetadata);
+    if (!metadataProblem.empty())
+        throw Error(ErrorKind::InvalidArgument, metadataProblem);
+
     std::string inputPath, outputPath;
     try {
         inputPath = detail::pathToUtf8(input);
@@ -479,12 +472,17 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
         // Use "C" numeric locale for this operation only.
         NumericLocaleGuard numericLocaleGuard;
 
-        buildWithFallbacks(inputPath, outputPath, options.threads);
+        buildWithFallbacks(inputPath, outputPath, options.threads, extraMetadata);
     } catch (const Error&) {
         throw;  // already classified
     } catch (...) {
         throw Error(ErrorKind::BuildFailed, describeCurrentException());
     }
+}
+
+std::string metadataError(const std::string& json) {
+    std::vector<JsonMember> extras;
+    return parseMetadata(json, extras);
 }
 
 const char* version() noexcept {

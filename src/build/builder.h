@@ -26,10 +26,10 @@ for more details.
 #include <vcg/space/box3.h>
 
 #include "../common/scratchfile.h"
-#include "../common/signature.h"
-#include "../common/dag.h"
-#include "../common/textfile.h"
 #include "../common/virtualarray.h"
+#include "../compress/compressor.h"
+#include "../format/bm3d_format.h"
+#include "node.h"
 #include "texpyramid.h"
 
 
@@ -72,16 +72,16 @@ public:
 
 class Builder {
 public:
-	enum Components { FACES = 1, NORMALS = 2, COLORS = 4, TEXTURES = 8 };
+	enum Components { NORMALS = 1, COLORS = 2, TEXTURES = 4 };
 	// cacheDir, when non-empty, is the directory where the out-of-core caches
 	// (chunks and the per-node texture file) are created. An absolute path keeps
 	// the (possibly multi-GB) scratch on the same volume as the output and lets it
 	// be cleaned up as a unit. When empty, historical defaults are used.
 	Builder(uint32_t components, const std::string &cacheDir = std::string());
 
-	bool hasNormals() { return header.signature.vertex.hasNormals(); }
-	bool hasColors() { return header.signature.vertex.hasColors(); }
-	bool hasTextures() const { return header.signature.vertex.hasTextures(); }
+	bool hasNormals() { return layout.normals; }
+	bool hasColors() { return layout.colors; }
+	bool hasTextures() const { return layout.texCoords; }
 
 	void initAtlas(std::vector<Image>& textures);
 	bool initAtlas(std::vector<LoadTexture>& textures);
@@ -100,17 +100,18 @@ public:
 	void saturate();
 
 	void reverseDag();
-	void save(const std::string &filename);
-
-	OutputFile file;
+	//Writes the model to the file `filename`, nodes compressed with corto as the settings say;
+	//metadata is the JSON object of the metadata block (see Bm3dWriter::finish). The file is
+	//written under another name and renamed when it is complete.
+	void save(const std::string &filename, const CompressionSettings &compression, const std::string &metadata);
 
 	VirtualChunks chunks;
 	std::vector<NodeBox> boxes; //a box for each node
 
-	Header header;
+	VertexLayout layout;
 	std::vector<Node> nodes;
-	std::vector<Patch> patches;
-	std::vector<Texture> textures;
+	std::vector<PatchRecord> patches;
+	std::vector<TextureRecord> textures; //where the image of each node is in nodeTex
 
 	TexAtlas atlas;
 	ScratchFile nodeTex; //texure images for each node stored here.

@@ -35,6 +35,7 @@ public:
 
 	void setMaxMemory(uint64_t max_memory);
 	uint32_t getTriangles(uint32_t size, Triangle *buffer);
+	uint64_t vertexCount() const override { return n_vertices; }
 
 private:
 	//the vertex, texture coordinate and normal of one corner of a face as zero based indices,

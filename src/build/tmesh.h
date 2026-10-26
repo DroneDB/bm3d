@@ -39,8 +39,9 @@ for more details.
 #include <vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h>
 
 
-#include "../common/reader.h"
+#include "node.h"
 #include "../common/cone.h"
+#include "../format/bm3d_format.h"
 
 //Quadrics simplification structures.
 class TVertex;
@@ -115,14 +116,14 @@ public:
 	void save(Soup &soup, uint32_t node);
 	void getTriangles(Triangle *triangles, uint32_t node);
 
-	void splitSeams(bm3d::detail::Signature &sig);
+	void splitSeams(const bm3d::detail::VertexLayout &layout);
 
 	float simplify(uint32_t target_faces, Simplification method);
 
 	bm3d::detail::Node getNode();
-	uint32_t serializedSize(bm3d::detail::Signature &sig);
+	uint32_t serializedSize(const bm3d::detail::VertexLayout &layout);
 	//appends nodes found in the TMesh
-	void serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::vector<bm3d::detail::Patch> &patches);
+	void serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches);
 
 	vcg::Sphere3f boundingSphere();
 	bm3d::detail::Cone3s normalsCone();

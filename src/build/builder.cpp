@@ -25,9 +25,9 @@ for more details.
 #include "meshstream.h"
 #include "mesh.h"
 #include "tmesh.h"
-#include "../common/reader.h"
 #include "../common/error.h"
 #include "../common/pathutil.h"
+#include "../format/bm3d_writer.h"
 #include "imageio.h"
 
 #include <vcg/math/similarity2.h>
@@ -37,14 +37,6 @@ for more details.
 using namespace std;
 
 namespace bm3d::detail {
-
-static int64_t pad(int64_t s) {
-	const int64_t padding = BM3D_PADDING;
-	int64_t m = (s-1) & ~(padding -1);
-	return m + padding;
-}
-
-
 
 NodeBox::NodeBox(KDTree *tree, uint32_t block) {
 	for(int k = 0; k < 3; k++)
@@ -87,20 +79,9 @@ Builder::Builder(uint32_t components, const std::string &cacheDir):
 	chunks(cacheTemplate(cacheDir, "cache_chunks")), scaling(0.5),
 	tex_quality(92) {
 
-	Signature &signature = header.signature;
-	signature.vertex.setComponent(VertexElement::COORD, Attribute(Attribute::FLOAT, 3));
-	if(components & FACES)     //ignore normals for meshes
-		signature.face.setComponent(FaceElement::INDEX, Attribute(Attribute::UNSIGNED_SHORT, 3));
-	if(components & NORMALS)
-		signature.vertex.setComponent(VertexElement::NORM, Attribute(Attribute::SHORT, 3));
-	if(components & COLORS)
-		signature.vertex.setComponent(VertexElement::COLOR, Attribute(Attribute::BYTE, 4));
-	if(components & TEXTURES)
-		signature.vertex.setComponent(FaceElement::TEX, Attribute(Attribute::FLOAT, 2));
-
-	header.version = 2;
-	header.signature = signature;
-	header.nvert = header.nface = header.n_nodes = header.n_patches = header.n_textures = 0;
+	layout.normals = components & NORMALS;
+	layout.colors = components & COLORS;
+	layout.texCoords = components & TEXTURES;
 
 	nodeTex.create(cacheTemplate(cacheDir, "cache_tex"));
 	//the texture tiles that do not fit in memory are kept next to the other caches too
@@ -628,9 +609,8 @@ void Builder::finishNodeTex() {
 }
 
 void Builder::appendNodeTex(size_t texture, const std::vector<unsigned char> &encoded) {
-	textures[texture].offset = nodeTex.size()/BM3D_PADDING;
-	nodeTex.append(encoded.data(), encoded.size());
-	nodeTex.padTo(pad(nodeTex.size()));
+	textures[texture].offset = nodeTex.append(encoded.data(), encoded.size());
+	textures[texture].length = encoded.size();
 }
 
 std::vector<unsigned char> Builder::encodeNodeTex(const Image &image) const {
@@ -668,7 +648,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 	if(!hasTextures()) {
 		//no need to mutex the input, it won't change anything.
 		input->lock(mesh1, block);
-		mesh_size = mesh1.serializedSize(header.signature);
+		mesh_size = mesh1.serializedSize(layout);
 
 	} else {
 		input->lock(mesh, block);
@@ -679,7 +659,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 			tmp.face[i].node = mesh.face[i].node;
 			tmp.face[i].tex = mesh.face[i].tex;
 		}
-		tmp.splitSeams(header.signature);
+		tmp.splitSeams(layout);
 		//an error, not a node left out: skipping the block would leave a hole in the model, at
 		//this level and at every coarser one built from it
 		if(tmp.vert.size() > MAX_NODE_VERTICES)
@@ -689,18 +669,17 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 			                            " a node holds (the texture parametrization is too fragmented)");
 
 		//save node in the temporary structure
-		mesh_size = tmp.serializedSize(header.signature);
+		mesh_size = tmp.serializedSize(layout);
 	}
-	mesh_size = pad(mesh_size);
 	std::vector<unsigned char> storage(mesh_size);
 	unsigned char *buffer = storage.data();
 
-	std::vector<Patch> node_patches;
+	std::vector<PatchRecord> node_patches;
 
 	float error;
 	float pixelXedge;
 	if(!hasTextures()) {
-		mesh1.serialize(buffer, header.signature, node_patches);
+		mesh1.serialize(buffer, layout, node_patches);
 
 
 	} else {
@@ -708,11 +687,11 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 		Image nodetex = extractNodeTex(tmp, level, skipSimplifyLevels <= 0, error, pixelXedge);
 		if(nodetex.isNull())
 			throw Error("could not create the texture of a node");
-		tmp.serialize(buffer, header.signature, node_patches);
+		tmp.serialize(buffer, layout, node_patches);
 
-		textures.push_back(Texture());
+		textures.push_back(TextureRecord());
 		const size_t texture = textures.size()-1;
-		for(Patch &patch: node_patches)
+		for(PatchRecord &patch: node_patches)
 			patch.texture = texture;
 		storeNodeTex(texture, nodetex);
 
@@ -768,13 +747,13 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 
 	uint32_t current_node;
 	{
-		//patches will be reverted later, but the local order is important because of triangle_offset
+		//patches will be reverted later, but the local order is important because of triangleOffset
 		uint32_t patch_offset = patches.size();
 		std::reverse(node_patches.begin(), node_patches.end());
 		patches.insert(patches.end(), node_patches.begin(), node_patches.end());
 
 		current_node = nodes.size();
-		node.offset = chunk;          //temporarily remember which chunk belongs to which node
+		node.chunk = chunk;           //which chunk belongs to which node
 		node.error = error;
 
 
@@ -836,7 +815,7 @@ void Builder::testSaturation() {
 		Node &node = nodes[n];
 		vcg::Sphere3f &sphere = node.sphere;
 		for(unsigned int p = node.first_patch; p < node.last_patch(); p++) {
-			Patch &patch = patches[p];
+			PatchRecord &patch = patches[p];
 			Node &child = nodes[patch.node];
 			vcg::Sphere3f s = child.sphere;
 			float dist = (sphere.Center() - s.Center()).Norm();
@@ -870,91 +849,79 @@ void Builder::reverseDag() {
 }
 
 
-void Builder::save(const std::string &filename) {
+void Builder::save(const std::string &filename, const CompressionSettings &compression, const std::string &metadata) {
 
-	file.open(filename);
-
-	if(header.signature.vertex.hasNormals() && header.signature.face.hasIndex())
+	if(layout.normals)
 		uniformNormals();
 
-	if(textures.size())
-		textures.push_back(Texture());
-
-	header.nface = 0;
-	header.nvert = 0;
-	header.n_nodes = nodes.size();
-	header.n_patches = patches.size();
-
-	header.n_textures = textures.size();
-	header.version = 2;
-
 	//find roots and adjust error
-	uint32_t nroots = countDagRoots(nodes.data(), patches.data(), header.n_nodes);
+	const uint32_t nodeCount = nodes.size();
+	const uint32_t sink = nodeCount - 1;
+	const uint32_t nroots = countRoots(nodeCount,
+		[&](uint32_t n) { return nodes[n].first_patch; },
+		[&](uint32_t p) { return patches[p].node; });
 	for(uint32_t j = 0; j < nroots; j++)
 		nodes[j].error = nodes[j].tight_radius;
 
-	header.sphere = emptySphere();
+	vcg::Sphere3f modelSphere = emptySphere();
 	for(uint32_t i = 0; i < nroots; i++)
-		header.sphere.Add(nodes[i].tightSphere());
+		modelSphere.Add(nodes[i].tightSphere());
 
-	for(unsigned int i = 0; i < nodes.size()-1; i++) {
-		Node &node = nodes[i];
-		header.nface += node.nface;
-		header.nvert += node.nvert;
-	}
+	//the step of the coordinates comes from the errors of the root and of the leaves
+	std::vector<float> leafErrors;
+	for(uint32_t i = 0; i < sink; i++)
+		if(patches[nodes[i].first_patch].node == sink)
+			leafErrors.push_back(nodes[i].error);
+	const float step = coordinateStep(compression.errorQ, nodes[0].error, leafErrors);
+	const NodeCompressor compressor(layout, compression, static_cast<int>(std::log2(step)));
 
-	uint64_t size = sizeof(Header)  +
-			nodes.size()*sizeof(Node) +
-			patches.size()*sizeof(Patch) +
-			textures.size()*sizeof(Texture);
-	size = pad(size);
-	uint64_t index_size = size;
-
-	std::vector<uint32_t> node_chunk; //for each node the corresponding chunk
-	for(uint32_t i = 0; i < nodes.size()-1; i++)
-		node_chunk.push_back(nodes[i].offset);
-
-	//compute offsets and store them in nodes
-	for(unsigned int i = 0; i < nodes.size()-1; i++) {
-		nodes[i].offset = size/BM3D_PADDING;
-		uint32_t chunk = node_chunk[i];
-		size += chunks.chunkSize(chunk);
-	}
-	nodes.back().offset = size/BM3D_PADDING;
-
-	if(textures.size()) {
-		//texture.offset keeps the index in the nodeTex temporary file (already padded and in BM3D_PADDING units)
-		for(unsigned int i = 0; i < textures.size()-1; i++)
-			textures[i].offset += size/BM3D_PADDING;
-		size += nodeTex.size();
-		textures.back().offset = size/BM3D_PADDING;
-	}
-
-	file.write(&header, sizeof(Header));
-	assert(nodes.size());
-	file.write(nodes.data(), sizeof(Node)*nodes.size());
-	file.write(patches.data(), sizeof(Patch)*patches.size());
-	file.write(textures.data(), sizeof(Texture)*textures.size());
-	file.padTo(index_size);
+	Bm3dWriter writer(filename, layout, {sink, static_cast<uint32_t>(patches.size()), static_cast<uint32_t>(textures.size())});
 
 	//NODES
-	for(unsigned int i = 0; i < node_chunk.size(); i++) {
-		uint32_t chunk = node_chunk[i];
-		unsigned char *buffer = chunks.getChunk(chunk);
-		file.write(buffer, chunks.chunkSize(chunk));
+	for(uint32_t i = 0; i < sink; i++) {
+		const Node &node = nodes[i];
+		std::vector<uint32_t> patchEnds;
+		for(uint32_t p = node.first_patch; p < nodes[i + 1].first_patch; p++)
+			patchEnds.push_back(patches[p].triangleOffset);
+
+		const unsigned char *memory = chunks.getChunk(node.chunk);
+		const EncodedNode encoded = compressor.compress(memory, node.nvert, node.nface, patchEnds);
+
+		//the counts and the ends of the patches are the encoder's: it dropped the degenerate triangles
+		NodeRecord record;
+		record.error = node.error;
+		record.vertexCount = encoded.vertexCount;
+		record.faceCount = encoded.faceCount;
+		for(int k = 0; k < 4; k++)
+			record.cone[k] = node.cone.n[k];
+		for(int k = 0; k < 3; k++)
+			record.sphere.center[k] = node.sphere.Center()[k];
+		record.sphere.radius = node.sphere.Radius();
+		record.tightRadius = node.tight_radius;
+
+		std::vector<PatchRecord> nodePatches(patches.begin() + node.first_patch, patches.begin() + nodes[i + 1].first_patch);
+		if(nodePatches.size() != encoded.groupEnds.size())
+			throw Error("the encoder of node " + std::to_string(i) + " returned " + std::to_string(encoded.groupEnds.size()) +
+			            " groups for " + std::to_string(nodePatches.size()) + " patches");
+		for(size_t p = 0; p < nodePatches.size(); p++)
+			nodePatches[p].triangleOffset = encoded.groupEnds[p];
+
+		writer.addNode(record, nodePatches.data(), nodePatches.size(), encoded.stream.data(), encoded.stream.size());
 	}
 
 	//TEXTURES
-	if(textures.size()) {
-		std::vector<char> buffer(64*1<<20); //64 MB
-		for(uint64_t offset = 0; offset < nodeTex.size(); ) {
-			size_t count = size_t(std::min<uint64_t>(buffer.size(), nodeTex.size() - offset));
-			nodeTex.read(offset, buffer.data(), count);
-			file.write(buffer.data(), count);
-			offset += count;
-		}
+	std::vector<unsigned char> image;
+	for(const TextureRecord &texture: textures) {
+		image.resize(texture.length);
+		nodeTex.read(texture.offset, image.data(), image.size());
+		writer.addTexture(image.data(), image.size());
 	}
-	file.close();
+
+	SphereRecord sphere;
+	for(int k = 0; k < 3; k++)
+		sphere.center[k] = modelSphere.Center()[k];
+	sphere.radius = modelSphere.Radius();
+	writer.finish(sphere, metadata);
 }
 
 
@@ -964,7 +931,7 @@ void Builder::saturateNode(uint32_t n) {
 
 	Node &node = nodes[n];
 	for(uint32_t i = node.first_patch; i < node.last_patch(); i++) {
-		Patch &patch = patches[i];
+		PatchRecord &patch = patches[i];
 		if(patch.node == nodes.size()-1) //sink, get out
 			return;
 
@@ -986,16 +953,16 @@ void Builder::saturateNode(uint32_t n) {
 /* extracts vertices in origin which intersects destination box */
 void Builder::appendBorderVertices(uint32_t origin, uint32_t destination, std::vector<NVertex> &vertices) {
 	Node &node = nodes[origin];
-	uint32_t chunk = node.offset; //chunk index was stored here.
+	uint32_t chunk = node.chunk;
 
 
 	//if origin != destination do not flush cache, it would invalidate pointers.
 	unsigned char *buffer = chunks.getChunk(chunk, origin != destination);
 
 	vcg::Point3f *point = (vcg::Point3f *)buffer;
-	int size = sizeof(vcg::Point3f) + header.signature.vertex.hasTextures()*sizeof(vcg::Point2f);
+	int size = sizeof(vcg::Point3f) + layout.texCoords*sizeof(vcg::Point2f);
 	vcg::Point3s *normal = (vcg::Point3s *)(buffer + size * node.nvert);
-	uint16_t *face = (uint16_t *)(buffer + header.signature.vertex.size()*node.nvert);
+	uint16_t *face = (uint16_t *)(buffer + decodedVertexBytes(layout)*node.nvert);
 
 	NodeBox &nodebox = boxes[origin];
 
