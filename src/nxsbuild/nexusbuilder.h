@@ -162,7 +162,6 @@ public:
 	void finishNodeTex();
 	void invertNodes(); //
 	void saturateNode(uint32_t n);
-	void optimizeNode(uint32_t node, unsigned char *chunk);
 	void uniformNormals();
 	void appendBorderVertices(uint32_t origin, uint32_t destination, std::vector<NVertex> &vertices);
 

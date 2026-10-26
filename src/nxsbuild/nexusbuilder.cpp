@@ -19,7 +19,6 @@ for more details.
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include "vertex_cache_optimizer.h"
 
 #include "nexusbuilder.h"
 #include "kdtree.h"
@@ -1066,7 +1065,6 @@ void NexusBuilder::save(const std::string &filename) {
 	for(unsigned int i = 0; i < node_chunk.size(); i++) {
 		uint32_t chunk = node_chunk[i];
 		unsigned char *buffer = chunks.getChunk(chunk);
-		optimizeNode(i, buffer);
 		if(header.signature.flags & Signature::Flags::DEEPZOOM) {
 			nx::OutputFile nodefile;
 			nodefile.open(basename + "/" + std::to_string(i) + ".nxn");
@@ -1145,31 +1143,6 @@ void NexusBuilder::saturateNode(uint32_t n) {
 		}
 	}
 	node.sphere.Radius() *= epsilon;
-}
-
-void NexusBuilder::optimizeNode(uint32_t n, unsigned char *chunk) {
-	return;
-	Node &node = nodes[n];
-	assert(node.nface);
-
-	uint16_t *faces = (uint16_t  *)(chunk + node.nvert*header.signature.vertex.size());
-
-	unsigned int start =  0;
-	for(unsigned int i = node.first_patch; i < node.last_patch(); i++) {
-		Patch &patch = patches[i];
-		unsigned int end = patch.triangle_offset;
-		unsigned int nface = end - start;
-		//optimizing vertex cache.
-		uint16_t *triangles = new uint16_t[nface*3];
-
-		bool success = vmath::vertex_cache_optimizer::optimize_post_tnl(24, faces + 3*start, nface, node.nvert,  triangles);
-		if(success)
-			memcpy(faces + start, triangles, 3*sizeof(uint16_t)*nface);
-		else
-			cout << "Failed cache optimization" << endl;
-		delete []triangles;
-		start = end;
-	}
 }
 
 /* extracts vertices in origin which intersects destination box */
