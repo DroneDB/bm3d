@@ -8,9 +8,10 @@
 // BM3D_GOLDEN_DIR (by default <build folder>/golden), with the hash in <name>.sha256 next to it.
 //
 // A hash that has to change on purpose is replaced in hashes.txt by the one the failure prints.
-// The inputs are written by the tests with integer coordinates, so that nothing in them depends
-// on the machine.
+// The inputs are written by the tests with coordinates that are exact in a float and no call of the
+// mathematical library, so that nothing in them depends on the machine.
 
+#include <array>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -110,6 +111,24 @@ const char* kPyramidPly =
     "0 0 0 255 0 0 255\n4 0 0 0 255 0 255\n4 4 0 0 0 255 255\n0 4 0 255 255 0 255\n2 2 3 255 255 255 255\n"
     "4 0 3 2 1\n3 0 1 4\n3 1 2 4\n3 2 3 4\n3 3 0 4\n";
 
+// An n x n grid of squares, two triangles each, over a surface with a height at every corner. The
+// coordinates are multiples of 1/8 and the heights come from integer arithmetic: nothing in the
+// input depends on the mathematical library of the machine (waveTriangles of the other tests
+// does: it uses sin and cos, which differ in the last bit between platforms).
+std::vector<Triangle> heightField(int n) {
+    const auto corner = [](int x, int y) {
+        const int height = (7 * x + 3 * y + (x * y) % 5 + (x / 3) * (y / 2)) % 9;
+        return std::array<float, 3>{float(x) * 0.25f, float(y) * 0.25f, float(height) * 0.125f};
+    };
+    std::vector<Triangle> triangles;
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++) {
+            triangles.push_back({corner(x, y), corner(x + 1, y), corner(x + 1, y + 1)});
+            triangles.push_back({corner(x, y), corner(x + 1, y + 1), corner(x, y + 1)});
+        }
+    return triangles;
+}
+
 // A square, and a triangle whose first two corners are the same point: the encoder drops it, and
 // the corner that only it has
 std::vector<Triangle> degenerateTriangles() {
@@ -148,7 +167,7 @@ TEST(GoldenFixtures, aPyramidWithColoursFromAPly) {
 
 TEST(GoldenFixtures, aWavySurfaceFromABinaryStl) {
     TempDir dir;
-    writeBinaryFile(dir.file("wave.stl"), binaryStl(waveTriangles(4)));
+    writeBinaryFile(dir.file("wave.stl"), binaryStl(heightField(4)));
     const fs::path file = buildGolden(dir, "wave", dir.file("wave.stl"));
     const Bm3dFile f = readBm3dFile(file);
     EXPECT_EQ(f.nNodes, 2u);
@@ -189,7 +208,7 @@ TEST(GoldenFixtures, aTexturedSquareFromAnObj) {
 // More triangles than a node holds: a hierarchy of several nodes, whose patches name children
 TEST(GoldenFixtures, aSurfaceOfSeveralNodesFromABinaryStl) {
     TempDir dir;
-    writeBinaryFile(dir.file("grid.stl"), binaryStl(waveTriangles(100)));
+    writeBinaryFile(dir.file("grid.stl"), binaryStl(heightField(100)));
     const fs::path file = buildGolden(dir, "grid", dir.file("grid.stl"));
     const Bm3dFile f = readBm3dFile(file);
     EXPECT_GT(f.nNodes, 3u);
