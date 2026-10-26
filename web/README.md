@@ -55,7 +55,7 @@ coarsest level.
 
 | Option | Meaning |
 |---|---|
-| `decoderPath` | The folder that holds `corto-worker.js` and `corto.wasm`, as a URL or a path (absolute, or relative to the page). Default: the folder the bundle was loaded from (`new URL('.', import.meta.url)`). The folder must be on the page's origin, since a worker cannot be started from another one. A bundler that moves the bundle (or an application that serves the worker and the wasm file from elsewhere) sets it. |
+| `decoderPath` | The folder that holds `corto-worker.js` and `corto.wasm`, as a URL or a path (absolute, or relative to the page). Default: the folder the bundle was loaded from (found from `import.meta.url` when a decoder starts). The folder must be on the page's origin, since a worker cannot be started from another one. An application that bundles the viewer (webpack, Vite and the like copy the worker and the wasm file wherever they are told to, or not at all), or that serves them from elsewhere, sets it. |
 | `cache` | `false` (default) or `true`: keep the index, the node payloads and the textures read from the server in IndexedDB, keyed by URL, format version and ETag of the file. A file whose server gives no readable ETag is not cached. A store of your own (see `src/cache.js`) can be passed instead of `true`. |
 | `onError(error, node)` | Called when the model cannot be opened (no `node`), or when a node or texture fails (its number): a `Bm3dError`. Default: `console.error`. A node that fails is not asked for again (for good when its bytes are corrupt, after 10 seconds when the network failed). |
 | `requestInit`, `fetch` | Options for every request (`credentials`, `headers`), or another `fetch`. |

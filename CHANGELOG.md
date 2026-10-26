@@ -26,6 +26,9 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   bytes; all seven differed before. The output changes: the meshes
   without texture are simplified in another order, and the pieces of the node textures sit at other
   places (the same pieces: the textures of a node have the same size and, sorted, the same pixels).
+- Size of the new container against the Nexus one, measured: the benchmark model (`TexturedModel`)
+  358 059 008 -> 356 620 936 bytes (-0.40 %), `OfficePlan` 761 587 200 -> 754 435 514 (-0.94 %)
+  (`docs/FORMAT.md`, section 14).
 - **Viewer.** The default `decoderPath` is found from `import.meta.url` when a decoder starts, not
   with `new URL('.', import.meta.url)`, which webpack takes for a file to bundle and stops on
   ("Can't resolve '.'"); a test bundles the package with rollup and the rule of those bundlers.

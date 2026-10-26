@@ -6,18 +6,28 @@
 
 import { Bm3dError, ErrorCode } from './format.js';
 
-/** The folder the bundle was loaded from: where corto-worker.js and corto.wasm are by default. */
-const DEFAULT_DECODER_PATH = new URL('.', import.meta.url);
+/**
+ * The URL of this module, or of the bundle it is part of. It is kept in a variable and the folder is
+ * found from it when it is needed: a bundler (webpack, Vite, Parcel) reads `new URL('<file>',
+ * import.meta.url)` written out as a file to put in the bundle, and webpack stops on `'.'`, a
+ * folder ("Can't resolve '.'"). An application that bundles the viewer gives a `decoderPath`.
+ */
+const moduleUrl = import.meta.url;
+
+/** The folder the module was loaded from: where corto-worker.js and corto.wasm are by default. */
+function defaultDecoderPath() {
+	return new URL('./', moduleUrl);
+}
 
 /**
  * The URLs of the worker and of the wasm file for a `decoderPath`: the folder that holds both
  * (a URL or a path, absolute or relative to the page; the slash at its end is optional).
  */
 export function decoderUrls(decoderPath) {
-	let base = DEFAULT_DECODER_PATH;
+	let base = defaultDecoderPath();
 	if (decoderPath) {
 		const folder = String(decoderPath).replace(/\/*$/, '/');
-		base = new URL(folder, globalThis.location ? globalThis.location.href : DEFAULT_DECODER_PATH);
+		base = new URL(folder, globalThis.location ? globalThis.location.href : base);
 	}
 	return { workerUrl: new URL('corto-worker.js', base).href, wasmUrl: new URL('corto.wasm', base).href };
 }
