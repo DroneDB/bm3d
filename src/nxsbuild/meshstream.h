@@ -42,7 +42,6 @@ public:
 	std::vector<LoadTexture> textures;
 	vcg::Point3d origin = vcg::Point3d(0, 0, 0);
 	vcg::Point3d scale = vcg::Point3d(1, 1, 1);
-	std::vector<std::string> colormap; //used to convert a value into a color, .ts only: the property and the palette
 
 	//cachePrefix: where the loaders that need a scratch file put it (see VirtualMemory), the prefix
 	//of the stream's own scratch file

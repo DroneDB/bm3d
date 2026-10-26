@@ -202,6 +202,26 @@ TEST(CliExitCodes, aTextFileNamedObjExitsWithTwoAndWritesNoOutput) {
     EXPECT_TRUE(f.dir.list("out").empty());
 }
 
+TEST(CliExitCodes, aFileOfAFormatTheProgramDoesNotReadExitsWithTwoAndNamesTheFormatsItReads) {
+    Folders f;
+    writeTextFile(f.in / "model.off", "OFF\n3 1 0\n0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n");
+    const ProcessResult r = runBm3d({f.input("model.off"), f.output()});
+    EXPECT_EQ(r.exitCode, 2) << r.output();
+    EXPECT_NE(r.err.find("invalid input"), std::string::npos) << r.err;
+    EXPECT_NE(r.err.find("model.off"), std::string::npos) << r.err;
+    for (const char* format : {"obj", "ply", "stl"})
+        EXPECT_NE(r.err.find(format), std::string::npos) << r.err;
+    EXPECT_TRUE(f.dir.list("out").empty());
+}
+
+TEST(CliExitCodes, aModelWithAnUpperCaseExtensionIsBuilt) {
+    Folders f;
+    writeTextFile(f.in / "MODEL.OBJ", kTriangleObj);
+    const ProcessResult r = runBm3d({f.input("MODEL.OBJ"), f.output()});
+    EXPECT_EQ(r.exitCode, 0) << r.output();
+    EXPECT_EQ(readNexusFile(f.out / "model.nxz").nface, 1u);
+}
+
 TEST(CliExitCodes, aBrokenPlyExitsWithTwoAndWritesNoOutput) {
     Folders f;
     writeTextFile(f.in / "bad.ply", "ply\nformat ascii 1.0\nelement vertex 3\n");

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 
@@ -18,6 +19,11 @@ void writeBinaryFile(const fs::path& file, const std::string& bytes) {
     out.close();
     if (!out)
         throw std::runtime_error("cannot write " + pathToUtf8(file));
+}
+
+std::string readBinaryFile(const fs::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
 void writeTextFile(const fs::path& file, const std::string& text) {

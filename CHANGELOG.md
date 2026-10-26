@@ -12,6 +12,11 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   (`src/nxszip`), the flag name and the unused error factor of the extractor. The program has
   always written corto only; flag value 0x2 stays unused in the container header. Output does not
   change.
+- The program reads three formats, OBJ, PLY and STL, and says so. The extension is read in any
+  case (`MODEL.OBJ` is an OBJ). A file with another extension (`.ts`, `.tsp`, `.off`, none) is
+  invalid input, exit code 2, with a message that names `obj`, `ply` and `stl`; it used to be tried
+  with a VCGLib importer. The loaders for Nexus' `.ts` and `.tsp` files, its colormap and the
+  VCGLib importer loader are removed, and with them `TMesh::loadPly`. Output does not change.
 
 ## 0.1.0
 

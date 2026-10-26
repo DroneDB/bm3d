@@ -22,21 +22,12 @@ for more details.
 
 #include "tmesh.h"
 #include <vcg/space/index/kdtree/kdtree.h>
-#include <wrap/io_trimesh/import.h>
 
 #include <iostream>
 
 using namespace std;
 
 //using namespace vcg;
-
-void TMesh::loadPly(const std::string& filename) {
-	int loadmask = 0;
-	vcg::tri::io::ImporterPLY<TMesh>::Open(*this, filename.c_str(), loadmask);
-	vcg::tri::UpdateNormal<TMesh>::PerVertexNormalized(*this);
-	vcg::tri::UpdateNormal<TMesh>::PerFaceNormalized(*this);
-}
-
 
 void TMesh::load(Soup &soup) {
 	vcg::tri::Allocator<TMesh>::AddVertices(*this, soup.size() * 3);

@@ -115,7 +115,6 @@ add_library(bm3d_core STATIC
     src/common/textfile.cpp
     src/common/traversal.cpp
     src/common/virtualarray.cpp
-    src/nxsbuild/colormap.cpp
     src/nxsbuild/image.cpp
     src/nxsbuild/imageio.cpp
     src/nxsbuild/imagejpeg.cpp
@@ -129,8 +128,6 @@ add_library(bm3d_core STATIC
     src/nxsbuild/stlloader.cpp
     src/nxsbuild/texpyramid.cpp
     src/nxsbuild/tmesh.cpp
-    src/nxsbuild/tsloader.cpp
-    src/nxsbuild/tsploader.cpp
     src/nxsedit/extractor.cpp)
 add_library(bm3d::bm3d ALIAS bm3d_core)
 set_target_properties(bm3d_core PROPERTIES

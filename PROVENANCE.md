@@ -87,6 +87,14 @@ used.
   selects; its two call sites (`extractor.cpp`, `nexusdata.cpp`), the `MECO` name in
   `src/common/signature.h` and the extractor's `error_factor`, which only MECO read, go with it.
   The flag values of the container are unchanged.
+- `src/nxsbuild/tsloader.{h,cpp}`, `tsploader.{h,cpp}`, `colormap.{h,cpp}`, `vcgloader.h`,
+  `vcgloadermesh.h`: removed. They read Nexus' `.ts` and `.tsp` files, coloured a `.ts` by a
+  colormap, and fell back on VCGLib's importers for any other extension; bm3d reads OBJ, PLY and
+  STL only.
+- `src/nxsbuild/meshstream.{h,cpp}`: the loader is chosen by the extension in any case, and an
+  unknown one is an error that names the formats read; the colormap of the stream goes.
+- `src/nxsbuild/tmesh.{h,cpp}`: `loadPly` (uncalled) and the include of VCGLib's `import.h` that
+  served it are removed.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
@@ -121,10 +129,10 @@ GPL-3.0-or-later; the project as a whole is distributed under version 3 of the G
 - `src/common/stdnexusfile.{h,cpp}` were written for the Qt-free fork (by HeDo, on the model of
   upstream's `nexusfile.h`) and have no header; they are covered by the licence of this
   repository.
-- `src/nxsbuild/` `colormap.{h,cpp}`, `texpyramid.{h,cpp}`, `stlloader.{h,cpp}`, `tsloader.h`,
-  `vcgloader.h`, `vcgloadermesh.h`, `src/nxsedit/extractor.h` and `src/common/nexusfile.h` are
-  upstream Nexus files (Federico Ponchio and the Nexus contributors) whose upstream version has no
-  header either; they are covered by Nexus' licence (`licenses/Nexus.LICENSE`).
+- `src/nxsbuild/` `texpyramid.{h,cpp}`, `stlloader.{h,cpp}`, `src/nxsedit/extractor.h` and
+  `src/common/nexusfile.h` are upstream Nexus files (Federico Ponchio and the Nexus contributors)
+  whose upstream version has no header either; they are covered by Nexus' licence
+  (`licenses/Nexus.LICENSE`).
 - `third_party/corto/` `src/corto_codec.{h,cpp}` and `include/corto/corto.h` have no header; the
   other corto files carry a header by Federico Ponchio that names the GNU Lesser General Public
   License, version 3 or later. corto's repository is under the MIT licence

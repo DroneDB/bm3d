@@ -123,8 +123,6 @@ public:
 	std::vector<TVertex> simplifyCloud(uint16_t target_vertices); //return removed vertices
 	float averageDistance();
 
-	void loadPly(const std::string& filename);
-	
 	nx::Node getNode();
 	uint32_t serializedSize(nx::Signature &sig);
 	//appends nodes found in the TMesh

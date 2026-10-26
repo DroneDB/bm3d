@@ -65,6 +65,45 @@ TEST(MeshFormats, aBinaryStlBuildsTheTrianglesItHolds) {
     EXPECT_EQ(h.nface, triangles.size());
 }
 
+// The extension is read in any case: a model kept as MODEL.OBJ is built like the same model in lower
+// case
+TEST(MeshFormats, theExtensionIsReadInAnyCase) {
+    TempDir dir;
+    const auto triangles = waveTriangles(kSquares);
+    const std::string obj = objOf(triangles);
+    const std::string ply = plyOf(triangles);
+    const std::string ascii = asciiStl(triangles);
+    const std::string binary = binaryStl(triangles);
+
+    const struct {
+        const char* lower;
+        const char* upper;
+        const char* mixed;
+        const std::string& bytes;
+    } cases[] = {
+        {"wave.obj", "WAVE.OBJ", "wave.Obj", obj},
+        {"wave.ply", "WAVE.PLY", "wave.pLy", ply},
+        {"wave.stl", "WAVE.STL", "wave.StL", ascii},
+        {"binary.stl", "BINARY.STL", "binary.Stl", binary},
+    };
+    for (const auto& c : cases) {
+        writeBinaryFile(dir.file(c.lower), c.bytes);
+        writeBinaryFile(dir.file(c.upper), c.bytes);
+        writeBinaryFile(dir.file(c.mixed), c.bytes);
+        const NexusFile lower = buildFile(dir, c.lower, std::string(c.lower) + ".nxz");
+        for (const char* name : {c.upper, c.mixed}) {
+            const NexusFile other = buildFile(dir, name, std::string(name) + ".nxz");
+            EXPECT_EQ(other.nface, triangles.size()) << name;
+            EXPECT_EQ(other.nface, lower.nface) << name;
+            EXPECT_EQ(other.nvert, lower.nvert) << name;
+            EXPECT_EQ(other.nNodes, lower.nNodes) << name;
+            // the same loader reads it, so the file is the same byte for byte
+            EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".nxz")), readBinaryFile(dir.file(std::string(c.lower) + ".nxz")))
+                << name;
+        }
+    }
+}
+
 TEST(MeshFormats, theSameSurfaceInEveryFormatGivesTheSameModel) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);

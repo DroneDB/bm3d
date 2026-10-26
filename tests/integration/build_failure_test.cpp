@@ -9,8 +9,6 @@
 // space that runs out while it is read.
 
 #include <algorithm>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <vector>
 
@@ -66,11 +64,6 @@ void expectEmpty(const TempDir& dir, const std::string& folder) {
     EXPECT_TRUE(dir.list(folder).empty()) << "left in " << folder << ": " << ::testing::PrintToString(dir.list(folder));
 }
 
-std::string contentOf(const fs::path& file) {
-    std::ifstream in(file, std::ios::binary);
-    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-}
-
 // A file where the temporary folder should be: the OBJ loader keeps its vertex cache in that
 // folder, and cannot create it while it reads the input
 fs::path writeFileForTemporaryFolder(const TempDir& dir) {
@@ -110,11 +103,20 @@ TEST(BuildFailure, aTruncatedPlyIsInvalidInputAndLeavesNoFile) {
     expectEmpty(f.dir, "out");
 }
 
-TEST(BuildFailure, aFileOfAnUnknownTypeIsInvalidInput) {
-    Folders f;
-    writeTextFile(f.in / "model.xyz", kTriangleObj);
-    EXPECT_EQ(failureKind(f.in / "model.xyz", f.out / "model.nxz"), ErrorKind::InvalidInput);
-    expectEmpty(f.dir, "out");
+// The formats are told by the extension. Whatever else a file is named, the error says which are
+// read, so that a person who gave a .ts, a .tsp or an .off (formats the program once tried) knows
+// to convert the model.
+TEST(BuildFailure, aFileOfAnUnknownTypeIsInvalidInputThatNamesTheFormatsRead) {
+    for (const char* name : {"model.xyz", "model.ts", "model.tsp", "model.off", "model.txt", "model"}) {
+        Folders f;
+        writeTextFile(f.in / name, kTriangleObj);
+        std::string message;
+        EXPECT_EQ(failureKind(f.in / name, f.out / "model.nxz", &message), ErrorKind::InvalidInput) << name;
+        for (const char* format : {"obj", "ply", "stl"})
+            EXPECT_NE(message.find(format), std::string::npos) << name << ": " << message;
+        EXPECT_NE(message.find(name), std::string::npos) << name << ": " << message;
+        expectEmpty(f.dir, "out");
+    }
 }
 
 TEST(BuildFailure, aFolderAsTheInputIsInvalidInput) {
@@ -154,7 +156,7 @@ TEST(BuildFailure, aFailedBuildLeavesTheEarlierOutputAsItWas) {
     writeTextFile(f.out / "model.nxz", "an earlier build");
     EXPECT_EQ(failureKind(f.in / "same.obj", f.out / "model.nxz"), ErrorKind::BuildFailed);
     EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(contentOf(f.out / "model.nxz"), "an earlier build");
+    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
 }
 
 TEST(BuildFailure, aRefusedInputLeavesTheEarlierOutputAsItWas) {
@@ -163,7 +165,7 @@ TEST(BuildFailure, aRefusedInputLeavesTheEarlierOutputAsItWas) {
     writeTextFile(f.out / "model.nxz", "an earlier build");
     EXPECT_EQ(failureKind(f.in / "x.obj", f.out / "model.nxz"), ErrorKind::InvalidInput);
     EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(contentOf(f.out / "model.nxz"), "an earlier build");
+    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
 }
 
 // The whole model is built and the file the save writes, under a temporary name next to the
@@ -181,7 +183,7 @@ void expectAFailedSaveLeavesTheEarlierOutput(const std::string& nameInTheWay) {
     std::sort(expected.begin(), expected.end());
     EXPECT_EQ(f.dir.list("out"), expected);
     EXPECT_TRUE(f.dir.list("out/" + nameInTheWay).empty());
-    EXPECT_EQ(contentOf(f.out / "model.nxz"), "an earlier build");
+    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
 }
 
 // The builder writes the uncompressed container first

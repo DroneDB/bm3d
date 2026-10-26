@@ -18,6 +18,8 @@ namespace bm3dtest {
 
 void writeTextFile(const fs::path& file, const std::string& text);
 void writeBinaryFile(const fs::path& file, const std::string& bytes);
+// The bytes of a file; an empty string for one that is not there
+std::string readBinaryFile(const fs::path& file);
 
 // The smallest model the build accepts: one triangle
 constexpr const char* kTriangleObj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";

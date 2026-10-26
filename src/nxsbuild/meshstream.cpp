@@ -20,12 +20,9 @@ for more details.
 #include "meshstream.h"
 #include "meshloader.h"
 #include "plyloader.h"
-#include "tsploader.h"
 #include "objloader.h"
 #include "stlloader.h"
-#include "vcgloadermesh.h"
-#include "vcgloader.h"
-#include "tsloader.h"
+#include "../common/error.h"
 #include "../common/pathutil.h"
 
 
@@ -47,35 +44,17 @@ void Stream::setVertexQuantization(double q) {
 	vertex_quantization = q;
 }
 
+//The loader for the format of a file, told by the extension of its name (any case). The formats are
+//the ones bm3d reads: anything else is refused, naming them.
 std::unique_ptr<MeshLoader> Stream::getLoader(const std::string &file, const std::string &material) {
-	std::unique_ptr<MeshLoader> loader;
-	if(nx::endsWith(file, ".ply"))
-		loader.reset(new PlyLoader(file, cache_prefix + "_plyvertex"));
-
-	else if(nx::endsWith(file, ".tsp"))
-		loader.reset(new TspLoader(file));
-
-	else if(nx::endsWith(file, ".obj"))
-		loader.reset(new ObjLoader(file, material));
-
-	else if(nx::endsWith(file, ".stl"))
-		loader.reset(new STLLoader(file));
-
-	else if(nx::endsWith(file, ".ts")) {
-		TsLoader *ts = new TsLoader(file);
-		loader.reset(ts);
-		if(colormap.size() >= 2)
-			ts->useColormapFor(colormap[0], colormap[1]);
-	}
-
-	else
-		loader.reset(new VcgLoader<VcgMesh>(file));
-	/*        else if(file.endsWith(".off"))
-		loader = new OffLoader(file, vertex_quantization, max_memory);*/
-
-//	else
-//		throw nx::Error("Input format for file " + file + " is not supported at the moment");
-	return loader;
+	if(nx::endsWithNoCase(file, ".ply"))
+		return std::unique_ptr<MeshLoader>(new PlyLoader(file, cache_prefix + "_plyvertex"));
+	if(nx::endsWithNoCase(file, ".obj"))
+		return std::unique_ptr<MeshLoader>(new ObjLoader(file, material));
+	if(nx::endsWithNoCase(file, ".stl"))
+		return std::unique_ptr<MeshLoader>(new STLLoader(file));
+	throw nx::Error("unsupported input file " + file + ": the formats read are obj, ply and stl, told by the "
+	                "extension of the name");
 }
 
 vcg::Box3d Stream::getBox(const std::vector<std::string> &paths) {
