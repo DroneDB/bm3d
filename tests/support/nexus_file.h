@@ -40,6 +40,7 @@ NexusFile readNexusFile(const fs::path& path);
 // The geometry of one node, decoded with corto (the library the program compresses it with)
 struct NodeMesh {
     std::vector<std::array<float, 3>> positions;
+    std::vector<std::array<float, 3>> normals;   // empty when the file holds none
     std::vector<std::array<uint8_t, 4>> colors;  // red, green, blue, alpha; empty when the file holds none
     std::vector<uint32_t> indices;               // three per triangle
 };

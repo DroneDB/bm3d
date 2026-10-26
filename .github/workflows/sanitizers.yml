@@ -7,7 +7,8 @@
 # imported sources are instrumented.
 #
 # No suppressions: any report of the sanitizers is a failure. The undefined behaviour and the leak
-# that corto had are fixed by third_party/corto-patches/.
+# that corto had are fixed by third_party/corto-patches/. The robustness tests run their mutation
+# loop with more runs here than in ci.yml, on the instrumented program.
 #
 # The vcpkg binary cache is the one of the linux-clang job of ci.yml, saved by whichever job gets
 # past its configure step first, even when the tests fail afterwards.
@@ -30,6 +31,8 @@ env:
   VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
   VCPKG_DISABLE_METRICS: "1"
   TEST_LABELS: unit|integration|cli|robustness|golden|determinism
+  # Runs of the mutation loop of the robustness tests (ci.yml runs fewer)
+  BM3D_MUTATION_RUNS: "500"
 
 jobs:
   asan-ubsan:

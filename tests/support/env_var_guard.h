@@ -8,6 +8,9 @@
 
 namespace bm3dtest {
 
+// The value of an environment variable; nothing when it is not set
+std::optional<std::string> readEnvironmentVariable(const std::string& name);
+
 // Sets an environment variable for its lifetime and puts the previous state back after it (the
 // variable absent, or its old value). Processes started meanwhile inherit it.
 class EnvVarGuard {

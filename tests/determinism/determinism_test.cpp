@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../cli/cli_support.h"
+#include "cli_support.h"
 #include "model_files.h"
 #include "nexus_file.h"
 #include "pictures.h"

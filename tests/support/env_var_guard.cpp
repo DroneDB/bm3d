@@ -24,19 +24,26 @@ void setVariable(const std::string& name, const char* value) {
 
 }  // namespace
 
-EnvVarGuard::EnvVarGuard(std::string name, const std::string& value) : name_(std::move(name)) {
+std::optional<std::string> readEnvironmentVariable(const std::string& name) {
 #ifdef _WIN32
     // getenv is flagged as unsafe by MSVC and there is no need for the thread safety it lacks
-    char* old = nullptr;
+    char* value = nullptr;
     size_t size = 0;
-    if (_dupenv_s(&old, &size, name_.c_str()) == 0 && old != nullptr) {
-        previous_ = std::string(old);
-        std::free(old);
+    if (_dupenv_s(&value, &size, name.c_str()) == 0 && value != nullptr) {
+        std::string result(value);
+        std::free(value);
+        return result;
     }
+    return std::nullopt;
 #else
-    if (const char* old = std::getenv(name_.c_str()))
-        previous_ = std::string(old);
+    if (const char* value = std::getenv(name.c_str()))
+        return std::string(value);
+    return std::nullopt;
 #endif
+}
+
+EnvVarGuard::EnvVarGuard(std::string name, const std::string& value)
+    : name_(std::move(name)), previous_(readEnvironmentVariable(name_)) {
     setVariable(name_, value.c_str());
 }
 

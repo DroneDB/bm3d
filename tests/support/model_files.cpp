@@ -160,4 +160,58 @@ std::string binaryPlyOf(const std::vector<Triangle>& triangles) {
     return s;
 }
 
+std::string texturedObjOf(const std::vector<Triangle>& triangles, const std::string& mtl) {
+    std::ostringstream s;
+    s << std::setprecision(9) << "mtllib " << mtl << "\n";
+    for (const Triangle& t : triangles)
+        for (const auto& c : t)
+            s << "v " << c[0] << " " << c[1] << " " << c[2] << "\n";
+    for (const Triangle& t : triangles)
+        for (const auto& c : t)
+            s << "vt " << c[0] << " " << c[1] << "\n";
+    s << "usemtl m\n";
+    for (size_t i = 0; i < triangles.size(); i++) {
+        s << "f";
+        for (size_t k = 1; k <= 3; k++)
+            s << " " << 3 * i + k << "/" << 3 * i + k;
+        s << "\n";
+    }
+    return s.str();
+}
+
+std::string texturedPlyOf(const std::vector<Triangle>& triangles, const std::string& texture, bool binary) {
+    std::ostringstream header;
+    header << "ply\nformat " << (binary ? "binary_little_endian" : "ascii") << " 1.0\ncomment TextureFile " << texture
+           << "\nelement vertex " << 3 * triangles.size()
+           << "\nproperty float x\nproperty float y\nproperty float z\nproperty float s\nproperty float t\n"
+           << "element face " << triangles.size() << "\nproperty list uchar int vertex_indices\nend_header\n";
+    std::string s = header.str();
+    auto putFloat = [&](float v) {
+        uint32_t bits;
+        std::memcpy(&bits, &v, 4);
+        detail::putLittleEndian(s, bits);
+    };
+    for (const Triangle& t : triangles)
+        for (const auto& c : t) {
+            if (binary) {
+                for (const float v : {c[0], c[1], c[2], c[0], c[1]})
+                    putFloat(v);
+            } else {
+                std::ostringstream line;
+                line << std::setprecision(9) << c[0] << " " << c[1] << " " << c[2] << " " << c[0] << " " << c[1] << "\n";
+                s += line.str();
+            }
+        }
+    for (size_t i = 0; i < triangles.size(); i++) {
+        if (binary) {
+            detail::putLittleEndian(s, static_cast<uint8_t>(3));
+            for (size_t k = 0; k < 3; k++)
+                detail::putLittleEndian(s, static_cast<int32_t>(3 * i + k));
+        } else {
+            s += "3 " + std::to_string(3 * i) + " " + std::to_string(3 * i + 1) + " " + std::to_string(3 * i + 2) + "\n";
+        }
+    }
+    return s;
+}
+
 }  // namespace bm3dtest

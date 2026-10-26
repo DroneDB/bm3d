@@ -5,10 +5,9 @@
 // PLY with a parser of its own. These tests build small models made inside the test, one
 // texture file format at a time, and read the header of what was written: the formats the
 // textures come in (the node textures written are WebP whatever they were), the polygons of a
-// PLY, an OBJ with one-dimensional texture coordinates, and the failures that must leave no
-// file behind.
+// PLY, and the failures that must leave no file behind. The inputs that are not what the loaders
+// expect are in the robustness tests.
 
-#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <ostream>
@@ -30,11 +29,6 @@ using namespace bm3dtest;
 void expectNexusMagic(const NexusFile& h) {
     // 'N' 'x' 's' ' ' in a little-endian word
     EXPECT_EQ(h.magic, kNexusMagic);
-}
-
-// What a failed build leaves in the folder of the output: nothing, no half file and no scratch
-void expectNothingLeftBehind(const TempDir& dir, const std::string& folder) {
-    EXPECT_TRUE(dir.list(folder).empty()) << "left in " << folder << ": " << ::testing::PrintToString(dir.list(folder));
 }
 
 struct TextureCase {
@@ -97,17 +91,6 @@ TEST(TextureFormats, aModelWithoutTexturesHasNone) {
     EXPECT_EQ(h.nTextures, 0u);
 }
 
-TEST(TextureFormats, textureCoordinatesWithOnlyUAreAccepted) {
-    TempDir dir;
-    writePng(dir.file("texture.png"), gradientRaster(3));
-    writeTexturedModel(dir.path(), "texture.png", "vt 0\nvt 1\nvt 1\nvt 0\n");
-    const fs::path out = dir.file("model.nxz");
-    ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
-    const NexusFile h = readNexusFile(out);
-    expectNexusMagic(h);
-    EXPECT_EQ(h.nface, 2u);
-}
-
 TEST(TextureFormats, aPlyQuadHasTheFacesOfTwoTriangles) {
     TempDir dir;
     writeTextFile(dir.file("quad.ply"), plyHeader(1) + "4 0 1 2 3\n");
@@ -123,60 +106,6 @@ TEST(TextureFormats, aPlyQuadHasTheFacesOfTwoTriangles) {
     EXPECT_EQ(quad.nvert, tris.nvert);
 }
 
-TEST(TextureFormats, aPlyFaceWithAThousandIndicesFailsAndLeavesNoFile) {
-    TempDir dir;
-    dir.makeDir("in");
-    dir.makeDir("out");
-    std::string ply =
-        "ply\nformat ascii 1.0\nelement vertex 1000\nproperty float x\nproperty float y\nproperty float z\n"
-        "element face 1\nproperty list ushort int vertex_indices\nend_header\n";
-    for (int i = 0; i < 1000; i++)
-        ply += std::to_string(i) + " " + std::to_string(i * 7 % 13) + " 0\n";
-    ply += "1000";
-    for (int i = 0; i < 1000; i++)
-        ply += " " + std::to_string(i);
-    ply += "\n";
-    writeTextFile(dir.file("in/big.ply"), ply);
-
-    try {
-        bm3d::build(dir.file("in/big.ply"), dir.file("out/big.nxz"));
-        FAIL() << "the build should have failed";
-    } catch (const bm3d::Error& e) {
-        EXPECT_EQ(e.kind(), bm3d::ErrorKind::InvalidInput);
-        EXPECT_NE(std::string(e.what()).find("face"), std::string::npos) << e.what();
-    }
-    expectNothingLeftBehind(dir, "out");
-}
-
-TEST(TextureFormats, anObjWithAGarbageFaceFailsCleanly) {
-    TempDir dir;
-    dir.makeDir("out");
-    writeTextFile(dir.file("bad.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 two 99999\nf -77 0 3\n");
-    EXPECT_THROW(bm3d::build(dir.file("bad.obj"), dir.file("out/bad.nxz")), bm3d::Error);
-    expectNothingLeftBehind(dir, "out");
-}
-
-TEST(TextureFormats, coincidentTrianglesFailWithTooSmallToDivideAndLeaveNoFile) {
-    TempDir dir;
-    dir.makeDir("out");
-    std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n";
-    for (int i = 0; i < 100000; i++)
-        obj += "f 1 2 3\n";
-    writeTextFile(dir.file("same.obj"), obj);
-
-    const auto start = std::chrono::steady_clock::now();
-    try {
-        bm3d::build(dir.file("same.obj"), dir.file("out/same.nxz"));
-        FAIL() << "the build should have failed";
-    } catch (const bm3d::Error& e) {
-        EXPECT_EQ(e.kind(), bm3d::ErrorKind::BuildFailed);
-        EXPECT_NE(std::string(e.what()).find("too small to divide"), std::string::npos) << e.what();
-    }
-    const auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    EXPECT_LT(seconds, 10.0);
-    expectNothingLeftBehind(dir, "out");
-}
-
 TEST(TextureFormats, aTextureThatCannotBePackedBuildsWithoutTextures) {
     TempDir dir;
     writeBmp(dir.file("wide.bmp"), makeRaster(20000, 8, 3, [](int band, int x, int y) { return double((x + y * 30 + band) & 0xff); }));
@@ -188,44 +117,6 @@ TEST(TextureFormats, aTextureThatCannotBePackedBuildsWithoutTextures) {
     expectNexusMagic(h);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_EQ(h.nTextures, 0u);
-}
-
-TEST(TextureFormats, aPlyFaceListWithAnyCountAndIndexTypeBuildsTheSameModel) {
-    TempDir dir;
-    writeBinaryPly<uint8_t, int32_t>(dir.file("uchar_int.ply"), "uchar", "int");
-    writeBinaryPly<int32_t, int32_t>(dir.file("int_int.ply"), "int", "int");
-    writeBinaryPly<uint16_t, uint32_t>(dir.file("ushort_uint.ply"), "ushort", "uint");
-
-    ASSERT_NO_THROW(bm3d::build(dir.file("uchar_int.ply"), dir.file("uchar_int.nxz")));
-    const NexusFile reference = readNexusFile(dir.file("uchar_int.nxz"));
-    expectNexusMagic(reference);
-    EXPECT_EQ(reference.nface, 2u);
-    EXPECT_EQ(reference.nvert, 4u);
-
-    for (const char* name : {"int_int", "ushort_uint"}) {
-        ASSERT_NO_THROW(bm3d::build(dir.file(std::string(name) + ".ply"), dir.file(std::string(name) + ".nxz"))) << name;
-        const NexusFile h = readNexusFile(dir.file(std::string(name) + ".nxz"));
-        expectNexusMagic(h);
-        EXPECT_EQ(h.nface, reference.nface) << name;
-        EXPECT_EQ(h.nvert, reference.nvert) << name;
-    }
-}
-
-TEST(TextureFormats, aPlyWithAVeryLongTextureFileCommentDoesNotCrash) {
-    TempDir dir;
-    dir.makeDir("out");
-    writeTextFile(dir.file("long.ply"),
-                  "ply\nformat ascii 1.0\ncomment TextureFile " + std::string(480, 'a') + ".png\n" +
-                      "element vertex 4\nproperty float x\nproperty float y\nproperty float z\n"
-                      "element face 2\nproperty list uchar int vertex_indices\nend_header\n"
-                      "0 0 0\n1 0 0\n1 1 0\n0 1 0\n3 0 1 2\n3 0 2 3\n");
-    try {
-        bm3d::build(dir.file("long.ply"), dir.file("out/long.nxz"));
-    } catch (const bm3d::Error& e) {
-        const std::string m = e.what();
-        for (const char* bad : {"signal", "crash", "Segmentation", "SIGSEGV", "SIGABRT"})
-            EXPECT_EQ(m.find(bad), std::string::npos) << m;
-    }
 }
 
 }  // namespace

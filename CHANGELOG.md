@@ -4,6 +4,16 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- Robustness tests (`ctest -L robustness`, `tests/robustness`): the PLY face-list bound and every
+  count and index type, long header comments, garbage OBJ faces, texture coordinates with only u or
+  not usable, coincident and zero-area triangles, truncated and `solid`-prefixed STL, and the pieces
+  of corto that the sanitizers found at fault; and a seeded mutation loop over an OBJ, a PLY (text
+  and binary) and an STL (text and binary), 500 runs by default (`BM3D_MUTATION_RUNS`,
+  `BM3D_MUTATION_SEED`). Each run must end in time, not crash, report nothing to a sanitizer, and
+  either build a file (exit 0) or refuse the input (exit 2) with no output left; exit 1 only when
+  memory or a scratch file runs out. `ci.yml` runs 100 runs, `sanitizers.yml` 500 with ASan and UBSan
+  and no suppression. Moved here from the integration tests: the PLY face list, long comment,
+  coincident triangle and garbage OBJ face cases.
 - Inputs that crashed or made a sanitizer report, found by the mutation loop of the new robustness
   tests and now refused with exit code 2 and a message that names the file:
   - a PLY header that ends inside the line `element vertex`, or whose element count is negative, beyond

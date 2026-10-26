@@ -60,6 +60,12 @@ std::string plyOf(const std::vector<Triangle>& triangles);
 // The same as a binary little-endian PLY (float coordinates, a uchar count and int indices)
 std::string binaryPlyOf(const std::vector<Triangle>& triangles);
 
+// The same triangles with a texture: an OBJ whose material `mtl` is in the same folder, and a PLY
+// (ASCII or binary little-endian) that names the texture file `texture` in a comment. Each corner
+// has the texture coordinates (x, y) of its position, which lie in 0..1 for waveTriangles.
+std::string texturedObjOf(const std::vector<Triangle>& triangles, const std::string& mtl);
+std::string texturedPlyOf(const std::vector<Triangle>& triangles, const std::string& texture, bool binary);
+
 // --- the template
 
 namespace detail {

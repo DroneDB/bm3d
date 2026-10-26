@@ -29,6 +29,8 @@ env:
   # Labels the tests carry (tests/CMakeLists.txt); a label that matches no test is fine, a run
   # that matches none at all is an error.
   TEST_LABELS: unit|integration|cli|robustness|golden|determinism
+  # Runs of the mutation loop of the robustness tests (sanitizers.yml runs 500)
+  BM3D_MUTATION_RUNS: "100"
 
 jobs:
   source-checks:

@@ -6,7 +6,9 @@
 #   integration  models built through the library and read back from the file
 #   cli          the program run as a process: arguments, exit codes, output, paths
 #   determinism  the same input built again, and with another thread count, gives the same file
-# ctest -L unit (or integration, or cli, or determinism) runs one label. A test that takes more than ten
+#   robustness   inputs that are not what the loaders expect, one at a time and damaged at random
+#                (BM3D_MUTATION_RUNS sets the number of runs of the random ones, 500 by default)
+# ctest -L unit (or integration, or cli, or determinism, or robustness) runs one label. A test that takes more than ten
 # seconds would carry the label slow as well; none does yet.
 
 find_package(GTest CONFIG REQUIRED)
@@ -85,3 +87,14 @@ bm3d_add_tests(bm3d_determinism_tests determinism
 # Each build is a run of the program, as in the cli tests, so that no state is shared between them
 add_dependencies(bm3d_determinism_tests bm3d)
 target_compile_definitions(bm3d_determinism_tests PRIVATE "BM3D_TEST_EXE=\"$<TARGET_FILE:bm3d>\"")
+
+# The inputs are run through the program, as in the cli tests. The mutation loop is a test for each seed
+# so that ctest -j can run them together; with the sanitizers a run takes a good part of a second.
+bm3d_add_tests(bm3d_robustness_tests robustness
+    robustness/mutation_test.cpp
+    robustness/outcome.cpp
+    robustness/robustness_test.cpp)
+target_link_libraries(bm3d_robustness_tests PRIVATE bm3d_corto)
+target_include_directories(bm3d_robustness_tests PRIVATE robustness)
+add_dependencies(bm3d_robustness_tests bm3d)
+target_compile_definitions(bm3d_robustness_tests PRIVATE "BM3D_TEST_EXE=\"$<TARGET_FILE:bm3d>\"")

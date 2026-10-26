@@ -95,6 +95,10 @@ NodeMesh readNode(const fs::path& path, uint32_t node) {
     EXPECT_EQ(decoder.nface, nface);
     mesh.positions.resize(decoder.nvert);
     decoder.setPositions(&mesh.positions[0][0]);
+    if (decoder.hasAttr("normal")) {
+        mesh.normals.resize(decoder.nvert);
+        decoder.setNormals(&mesh.normals[0][0]);
+    }
     if (decoder.hasAttr("color")) {
         mesh.colors.resize(decoder.nvert);
         decoder.setColors(&mesh.colors[0][0]);
