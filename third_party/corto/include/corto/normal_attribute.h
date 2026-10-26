@@ -73,8 +73,12 @@ public:
 	//Conversion to Octahedron encoding.
 
 	static Point2i toOcta(Point3f v, int unit) {
+		auto len = fabs(v[0]) + fabs(v[1]) + fabs(v[2]);
+		if(len == 0)
+			return Point2i(0, 0);
+
 		Point2f p(v[0], v[1]);
-		p /= (fabs(v[0]) + fabs(v[1]) + fabs(v[2]));
+		p /= len;
 
 		if(v[2] < 0) {
 			p = Point2f(1.0f - fabs(p[1]), 1.0f - fabs(p[0]));

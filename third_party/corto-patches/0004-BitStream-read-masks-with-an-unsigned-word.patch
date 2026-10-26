@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 18:57:34 +0100
+Subject: [PATCH 4/5] BitStream::read masks with an unsigned word
+
+The mask of the bits left in the word was (1<<bits)-1 in int: for bits == 31 that is
+INT_MIN - 1, signed overflow (UBSan: "signed integer overflow: -2147483648 - 1 cannot be
+represented in type 'int'") when a stream is decoded. 1u<<bits has the same bits for every
+bits from 0 to 31, which are the values this function holds there, so the decoded values
+do not change.
+---
+ src/bitstream.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/bitstream.cpp b/src/bitstream.cpp
+index 4cf955c..1b85303 100644
+--- a/src/bitstream.cpp
++++ b/src/bitstream.cpp
+@@ -108,14 +108,14 @@ uint32_t BitStream::read(int numbits) {
+ 
+ 		buff = *pos++;
+ 		result |= (buff >> bits);
+-		buff = (buff & ((1<<bits)-1)); //slighting faster than mask.
++		buff = (buff & ((1u<<bits)-1)); //slighting faster than mask.
+ 		return result;
+ 
+ 	} else {
+ 		bits -= numbits;
+ 		uint32_t result = (buff >> bits);
+ 		//buff -= result << bits; //same as below.
+-		buff = (buff & ((1<<bits)-1)); //slighting faster than mask,
++		buff = (buff & ((1u<<bits)-1)); //slighting faster than mask,
+ 		return result;
+ 	}
+ }

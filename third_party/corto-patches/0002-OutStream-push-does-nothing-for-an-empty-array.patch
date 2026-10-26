@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 18:57:29 +0100
+Subject: [PATCH 2/5] OutStream::push does nothing for an empty array
+
+It called memcpy(pos, b, 0) for an empty array, and an empty BitStream (one that nothing was
+written to) has a null buffer: memcpy with a null source is undefined even when it copies no
+byte (UBSan: "null pointer passed as argument 2, which is declared to never be null"). Nothing
+is added to the stream for an empty array, so the output does not change.
+---
+ include/corto/cstream.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/corto/cstream.h b/include/corto/cstream.h
+index 54c79ed..71cf935 100644
+--- a/include/corto/cstream.h
++++ b/include/corto/cstream.h
+@@ -97,6 +97,8 @@ public:
+ 	}
+ 
+ 	void push(const void *b, size_t s) {
++		if(s == 0)
++			return;
+ 		uchar *pos = grow(s);
+ 		memcpy(pos, b, s);
+ 	}

@@ -9,7 +9,7 @@ named by their commit names.
 |---|---|---|
 | Nexus builder | https://github.com/cnr-isti-vclab/nexus, `master` at `f29e8fd1182b2a1c0c512add99c7edfc8e146680` | https://github.com/DroneDB/nexus at `847f024bf7cc0beb078868749bc7669748c0aa3d` |
 | VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 4 patches (`third_party/vcg-patches/`) |
-| corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the upstream commit unchanged |
+| corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 5 patches (`third_party/corto-patches/`) |
 | API and command line wrapper | none | https://github.com/DroneDB/libnexus at `18acb8c161fd85d1eb614d8be0f8b4dae5fe16f1` (`nxs.cpp`, `nxs.h`, `ddb_nexus_main.cpp`) |
 | Web viewer (added with the release that ships `web/`) | the JavaScript in `html/js` of Nexus, commit `d805432` | the same, with fixes recorded in `web/` |
 
@@ -23,6 +23,21 @@ resolution of the model's textures as WebP node textures. The DroneDB fork of li
 wrapped the builder for DroneDB, has its own history by the same three authors (Piero Toffanin
 started it in 2022; the 2026 changes are by HeDo). Its wrapper was relicensed from AGPL-3.0 to
 GPL-3.0 (version 3 only) in October 2026, before it was used here.
+
+### The corto patches
+
+The 5 patches in `third_party/corto-patches/` are ours (HeDo, `git format-patch d240e69..`), made
+to fix what AddressSanitizer and UndefinedBehaviorSanitizer reported in the encoder when the
+tests and the mutation loop of `tests/robustness` ran with no suppression. They touch
+`include/corto/normal_attribute.h` (`toOcta` of a float vector returns (0, 0) for a vector of
+length zero, as the integer form does), `include/corto/cstream.h` (`push` of an empty array copies
+nothing; `write<T>` stores with `memcpy`, not through an unaligned pointer), `src/bitstream.cpp`
+(`read` masks with an unsigned word; `reserve` frees the buffer it replaces and allocates nothing
+for zero words, which was a leak of one allocation per node of fewer than 4 vertices). Only the
+first can change the bytes written, and only in the nodes with a vertex whose normals sum to zero
+(a vertex of degenerate triangles only): the encoder predicted that vertex's normal from
+`INT_MIN` instead of from (0, 0), so its stored difference was larger; the normals read back are
+the same.
 
 ### The VCGLib patches
 
@@ -68,6 +83,8 @@ used.
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
 - `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the 4 patches above.
+- `third_party/corto/` `include/corto/normal_attribute.h`, `include/corto/cstream.h`,
+  `src/bitstream.cpp`: the 5 corto patches above.
 - `src/common/dag.h`: every field of `Node` has a value from the start, and the empty sphere of
   `Header` and `Node` has its centre at the origin (`emptySphere()`). The sink node that ends the
   node table set only `first_patch`, so the file got the rest of it as it lay on the stack, and

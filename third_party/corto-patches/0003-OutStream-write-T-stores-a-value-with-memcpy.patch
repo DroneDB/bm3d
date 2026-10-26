@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 18:57:29 +0100
+Subject: [PATCH 3/5] OutStream::write<T> stores a value with memcpy
+
+It stored the value through a T pointer into the byte buffer, at an offset that is not a
+multiple of sizeof(T) once a 1 or 2 byte value or a string precedes it: an unaligned store,
+undefined in C++ (UBSan: "store to misaligned address ... which requires 4 byte alignment").
+memcpy of sizeof(T) bytes writes the same bytes, in host order as before, and the compiler turns
+it into the same single store where the target allows it.
+---
+ include/corto/cstream.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/corto/cstream.h b/include/corto/cstream.h
+index 71cf935..47ce22a 100644
+--- a/include/corto/cstream.h
++++ b/include/corto/cstream.h
+@@ -64,7 +64,7 @@ public:
+ 
+ 	template<class T> void write(T c) {
+ 		uchar *pos = grow(sizeof(T));
+-		*(T *)pos = c;
++		memcpy(pos, &c, sizeof(T));
+ 	}
+ 	template<class T> void writeArray(int count, T *c) {
+ 		push(c, count*sizeof(T));

@@ -44,7 +44,7 @@ static uint32_t bmask[] = {
 
 //TODO is it faster using bmask or using ~((1L<<d)-1)?
 
-BitStream::BitStream(int reserved) { //for write
+BitStream::BitStream(int reserved): allocated(0) { //for write
 	reserve(reserved);
 
 
@@ -70,8 +70,10 @@ void BitStream::init(int _size, uint32_t *_buffer) { //in uint32_t units for rea
 }
 
 void BitStream::reserve(int reserved) { //in uint32_t units for reading
+	if(allocated)
+		delete []buffer;
 	allocated = reserved;
-	pos = buffer = new uint32_t[allocated];
+	buffer = allocated ? new uint32_t[allocated] : 0;
 	size = 0;
 	buff = 0;
 	bits = BITS_PER_WORD;
@@ -108,14 +110,14 @@ uint32_t BitStream::read(int numbits) {
 
 		buff = *pos++;
 		result |= (buff >> bits);
-		buff = (buff & ((1<<bits)-1)); //slighting faster than mask.
+		buff = (buff & ((1u<<bits)-1)); //slighting faster than mask.
 		return result;
 
 	} else {
 		bits -= numbits;
 		uint32_t result = (buff >> bits);
 		//buff -= result << bits; //same as below.
-		buff = (buff & ((1<<bits)-1)); //slighting faster than mask,
+		buff = (buff & ((1u<<bits)-1)); //slighting faster than mask,
 		return result;
 	}
 }

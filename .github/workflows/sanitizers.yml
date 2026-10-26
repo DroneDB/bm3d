@@ -6,9 +6,8 @@
 # compiler flag of its own. The ports come from vcpkg uninstrumented; the project's code and the
 # imported sources are instrumented.
 #
-# The imported corto sources and the STL loader have known reports (unaligned reads, overflowing
-# integer arithmetic, a NaN cast to an int, one empty allocation that is never freed);
-# .github/sanitizers/*.supp lists those and nothing else.
+# No suppressions: any report of the sanitizers is a failure. The undefined behaviour and the leak
+# that corto had are fixed by third_party/corto-patches/.
 #
 # The vcpkg binary cache is the one of the linux-clang job of ci.yml, saved by whichever job gets
 # past its configure step first, even when the tests fail afterwards.
@@ -75,9 +74,9 @@ jobs:
           cmake --preset release
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DBM3D_BUILD_TESTS=ON
-          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined,float-cast-overflow -fno-omit-frame-pointer"
           "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O1 -g"
-          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined,float-cast-overflow"
 
       - name: Build
         run: cmake --build build --parallel
@@ -90,11 +89,7 @@ jobs:
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-          # print_suppressions=0: LeakSanitizer would print the suppressions it used to the
-          # stderr of every process, and the cli tests check that a build that works writes
-          # nothing there
-          LSAN_OPTIONS: print_suppressions=0:suppressions=${{ github.workspace }}/.github/sanitizers/lsan.supp
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/.github/sanitizers/ubsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: ctest --test-dir build -L "$TEST_LABELS" --no-tests=error --output-on-failure
 
       - name: Keep the logs of a failure

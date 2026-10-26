@@ -28,7 +28,8 @@ VCGLib
 
 corto
   Copyright (c) 2015-2022, Visual Computing Lab, ISTI - CNR (Federico Ponchio). MIT licence,
-  licenses/corto.LICENSE. Files under third_party/corto.
+  licenses/corto.LICENSE. Files under third_party/corto, modified by the patches in
+  third_party/corto-patches (the undefined behaviour and the leak the sanitizers found).
 
 Eigen
   Copyright (C) the Eigen authors. Mozilla Public License 2.0 (parts under the BSD licence).

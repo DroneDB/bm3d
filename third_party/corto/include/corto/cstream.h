@@ -64,7 +64,7 @@ public:
 
 	template<class T> void write(T c) {
 		uchar *pos = grow(sizeof(T));
-		*(T *)pos = c;
+		memcpy(pos, &c, sizeof(T));
 	}
 	template<class T> void writeArray(int count, T *c) {
 		push(c, count*sizeof(T));
@@ -97,6 +97,8 @@ public:
 	}
 
 	void push(const void *b, size_t s) {
+		if(s == 0)
+			return;
 		uchar *pos = grow(s);
 		memcpy(pos, b, s);
 	}

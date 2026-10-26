@@ -4,6 +4,15 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- corto no longer has the undefined behaviour and the leak the sanitizers found in it, so the
+  sanitizer workflow runs with no suppression. Five patches (`third_party/corto-patches/`, applied
+  by `scripts/sync-corto.py` like the VCGLib ones): the octahedron encoding of a normal of length
+  zero is (0, 0) (it divided 0 by 0 and converted the NaN to an int, which made the deltas and bit
+  widths of the normals overflow); an empty array is not copied (`memcpy` of a null pointer); values are
+  stored with `memcpy` instead of through unaligned pointers; the decoder's bit mask is unsigned; and
+  `BitStream::reserve` frees what it replaces and allocates nothing for zero words (a node of fewer
+  than 4 vertices leaked one allocation). Nodes that had a vertex whose normals add up to zero are a
+  few hundred bytes smaller (those vertices cost less to store); every node reads back the same.
 - Removed the code that exported a mesh as PLY or STL for debugging (`Mesh::savePly`,
   `TMesh::savePly`, `TMesh::savePlyTex`, and `Extractor::savePly`, `saveStl`, `saveUnifiedPly`
   with the code only they used) and the VCGLib export header that came with it. Output does not

@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 18:57:44 +0100
+Subject: [PATCH 5/5] BitStream::reserve frees the buffer it replaces, and
+ allocates nothing for zero words
+
+reserve() allocated the new buffer and recorded its size in `allocated`, which is also the flag
+that says the stream owns its buffer (the destructor deletes only when it is non-zero). So
+reserve(0), which Encoder::encodeMesh() calls for a node of fewer than 4 vertices
+(nvert / 4 == 0), allocated an empty array that no destructor freed, and the first write()
+then saw `!allocated`, called reserve(256) and dropped the empty array: a leak of one
+allocation for every such node (LeakSanitizer: "Direct leak ... crt::BitStream::reserve").
+
+reserve() now deletes the buffer it owns before it allocates, and does not allocate for zero
+words: the stream stays without a buffer, and write() reserves its 256 words at the first
+write, as it did. A stream that holds a buffer it does not own (init(), for reading) is not
+deleted. BitStream(int) starts with allocated = 0, because it never set it before it called
+reserve(). The bytes written do not change.
+---
+ src/bitstream.cpp | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/bitstream.cpp b/src/bitstream.cpp
+index 1b85303..b5ca4ea 100644
+--- a/src/bitstream.cpp
++++ b/src/bitstream.cpp
+@@ -44,7 +44,7 @@ static uint32_t bmask[] = {
+ 
+ //TODO is it faster using bmask or using ~((1L<<d)-1)?
+ 
+-BitStream::BitStream(int reserved) { //for write
++BitStream::BitStream(int reserved): allocated(0) { //for write
+ 	reserve(reserved);
+ 
+ 
+@@ -70,8 +70,10 @@ void BitStream::init(int _size, uint32_t *_buffer) { //in uint32_t units for rea
+ }
+ 
+ void BitStream::reserve(int reserved) { //in uint32_t units for reading
++	if(allocated)
++		delete []buffer;
+ 	allocated = reserved;
+-	pos = buffer = new uint32_t[allocated];
++	buffer = allocated ? new uint32_t[allocated] : 0;
+ 	size = 0;
+ 	buff = 0;
+ 	bits = BITS_PER_WORD;
