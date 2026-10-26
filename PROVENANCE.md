@@ -75,6 +75,12 @@ used.
 - `src/common/cone.h`: `Cone3s::n` starts at zero, for the same reason (the cone of the sink node).
 - `src/nxsbuild/nexusbuilder.cpp`: the bounding sphere of the header starts from `emptySphere()`
   instead of vcg's empty sphere, whose centre is not set.
+- `src/nxsbuild/mesh.{h,cpp}`, `src/nxsbuild/tmesh.{h,cpp}`: the debug export of a mesh to a PLY
+  file (`savePly`, `savePlyTex`) and the include of VCGLib's `export.h` that served it are removed;
+  nothing called them.
+- `src/nxsedit/extractor.{h,cpp}`: `savePly`, `saveStl`, `saveUnifiedPly` and `countElements`
+  (which only they used) are removed, with the small PLY structures of `saveUnifiedPly`. The
+  program never wrote an extracted mesh.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

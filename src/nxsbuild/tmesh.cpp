@@ -266,16 +266,6 @@ float TMesh::averageDistance() {
 	return avgDist/count;
 }
 
-void TMesh::savePly(const std::string &filename) {
-	int savemask = vcg::tri::io::Mask::IOM_VERTCOORD | vcg::tri::io::Mask::IOM_VERTNORMAL | vcg::tri::io::Mask::IOM_FACEINDEX;
-	vcg::tri::io::ExporterPLY<TMesh>::Save(*this, filename.c_str(), savemask, false);
-}
-
-void TMesh::savePlyTex(const std::string &filename, const std::string &tex) {
-	int savemask = vcg::tri::io::Mask::IOM_VERTCOORD | vcg::tri::io::Mask::IOM_VERTNORMAL | vcg::tri::io::Mask::IOM_FACEINDEX | vcg::tri::io::Mask::IOM_VERTTEXCOORD;
-	vcg::tri::io::ExporterPLY<TMesh>::Save(*this, filename.c_str(), savemask, false);
-}
-
 nx::Node TMesh::getNode()
 {
 	nx::Node node;

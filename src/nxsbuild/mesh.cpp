@@ -250,12 +250,6 @@ float Mesh::averageDistance() {
 	return avgDist/count;
 }
 
-void Mesh::savePly(const std::string &filename) {
-	int savemask = vcg::tri::io::Mask::IOM_VERTCOORD | vcg::tri::io::Mask::IOM_VERTNORMAL |
-			vcg::tri::io::Mask::IOM_FACEINDEX;
-	vcg::tri::io::ExporterPLY<Mesh>::Save(*this, filename.c_str(), savemask, false);
-}
-
 nx::Node Mesh::getNode()
 {
 	nx::Node node;

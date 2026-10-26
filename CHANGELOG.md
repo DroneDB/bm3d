@@ -2,6 +2,13 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## Unreleased
+
+- Removed the code that exported a mesh as PLY or STL for debugging (`Mesh::savePly`,
+  `TMesh::savePly`, `TMesh::savePlyTex`, and `Extractor::savePly`, `saveStl`, `saveUnifiedPly`
+  with the code only they used) and the VCGLib export header that came with it. Output does not
+  change.
+
 ## 0.1.0
 
 First version. It is the multiresolution mesh builder of Nexus, imported from the DroneDB fork

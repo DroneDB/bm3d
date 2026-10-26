@@ -25,7 +25,6 @@ for more details.
 
 // stuff to define the TMesh
 #include <vcg/complex/complex.h>
-#include <wrap/io_trimesh/export.h> //DEBUG
 
 #include <vcg/math/quadric.h>
 
@@ -125,8 +124,6 @@ public:
 	float averageDistance();
 
 	void loadPly(const std::string& filename);
-	void savePly(const std::string &filename);
-	void savePlyTex(const std::string &filename, const std::string &tex);
 	
 	nx::Node getNode();
 	uint32_t serializedSize(nx::Signature &sig);

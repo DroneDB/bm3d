@@ -8,7 +8,6 @@
 
 // stuff to define the mesh
 #include <vcg/complex/complex.h>
-#include <wrap/io_trimesh/export.h> //DEBUG
 
 #include <vcg/math/quadric.h>
 
@@ -118,7 +117,6 @@ public:
 	std::vector<AVertex> simplifyCloud(uint16_t target_vertices); //return removed vertices
 	float averageDistance();
 
-	void savePly(const std::string &filename);
 	nx::Node getNode();
 	uint32_t serializedSize(const nx::Signature &sig);
 	//appends nodes found in the mesh

@@ -29,10 +29,6 @@ public:
 	void dropLevel();
 
 	void save(const std::string &output, nx::Signature &signature);
-	void savePly(const std::string &filename);
-	void saveStl(const std::string &filename);
-
-	void saveUnifiedPly(const std::string &filename);
 
 	virtual float nodeError(uint32_t node, bool &visible);
 	nx::Traversal::Action expand(HeapNode h);
@@ -50,8 +46,6 @@ protected:
 	int sinkDistance(int node);
 
 	void compress(nx::OutputFile &file, nx::Signature &signature, nx::Node &node, nx::NodeData &data, nx::Patch *patches);
-	//counts vertices and faces in the selected mesh.
-	void countElements(uint64_t &n_vertices, uint64_t &n_faces);
 };
 
 #endif // EXTRACTOR_H
