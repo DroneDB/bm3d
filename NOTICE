@@ -36,17 +36,15 @@ Eigen
   Used as a header-only library from the system or vcpkg; its source is available at
   https://eigen.tuxfamily.org.
 
-Image libraries, linked from vcpkg:
+Image libraries, linked from vcpkg (the tests also use libpng, which is not part of the program):
   libjpeg-turbo  Copyright (C) 2009-2024 D. R. Commander and others; Copyright (C) 1991-2020
                  Thomas G. Lane, Guido Vollbeding (Independent JPEG Group). IJG licence,
                  modified BSD licence and zlib licence.
-  libpng         Copyright (c) the PNG Reference Library Authors (Glenn Randers-Pehrson and
-                 others). libpng licence.
   libwebp        Copyright (c) Google Inc. and contributors. BSD 3-clause licence.
   libtiff        Copyright (c) 1988-1997 Sam Leffler; Copyright (c) 1991-1997 Silicon
                  Graphics, Inc. libtiff licence (permissive).
   stb            Public domain or MIT licence, at your option (Sean Barrett and
-                 contributors): stb_image.
+                 contributors): stb_image, which reads the PNG, BMP, GIF and TGA textures.
 
 The full licence texts of the image libraries and of Eigen are shipped with the binary
 archives of each release and are in the vcpkg packages they come from.
