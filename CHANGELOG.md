@@ -29,6 +29,9 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
     and no quantization. The ASCII STL loader multiplied the x coordinate by the third scale
     instead of the z by it, which did nothing at a scale of 1 and is gone with the scale.
   Output does not change.
+- `third_party/vcg` holds 96 files, not 123: the ones that only the removed code read are no longer
+  copied (VCGLib's importers and exporters, its kd-tree and a few mesh algorithms). The files left
+  are the same bytes as before.
 
 ## 0.1.0
 

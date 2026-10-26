@@ -119,6 +119,19 @@ used.
     for which the arithmetic was exact, so the vertices are unchanged. With the scale the ASCII STL
     loader loses a line that multiplied x by the z scale instead of z by it (`stlloader.cpp`).
   Output does not change.
+- `third_party/vcg/`: 27 of the 123 VCGLib files are no longer taken, 96 are. The list was made
+  again with `scripts/closure.py` from the dependency files of a full build of this repository
+  with GCC (the program, its tests and corto), and `scripts/sync-vcg.py` imported it. The files
+  are the VCGLib importers and exporters of `wrap/io_trimesh` (with their `io_*` and `precision.h`
+  helpers), the kd-tree and priority queue of `vcg/space/index`, and the algorithms
+  `bitquad_support`, `create/platonic`, `refine`, `smooth`, `vertex_interpolation`,
+  `update/halfedge_topology`, `update/position`, `update/quality` and `connectors/halfedge_pos`,
+  which only the removed code included. Dependency files do not show a header that an `#include`
+  reads under `_MSC_VER` or `_WIN32` and GCC skips, so a dropped header is kept if a kept file
+  includes it inside such a branch; none is (every dropped name was searched for in an `#include`
+  of the kept VCGLib, corto and bm3d files), and the MSVC step of CI lists any header its build
+  reads that `FILES` lacks. corto lost no file: its 21 files are all still read. The imported files
+  of VCGLib are unchanged byte for byte.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
@@ -161,5 +174,3 @@ GPL-3.0-or-later; the project as a whole is distributed under version 3 of the G
   other corto files carry a header by Federico Ponchio that names the GNU Lesser General Public
   License, version 3 or later. corto's repository is under the MIT licence
   (`licenses/corto.LICENSE`), which covers them all.
-- `third_party/vcg/wrap/io_trimesh/precision.h` has no header in VCGLib; VCGLib's licence
-  applies.
