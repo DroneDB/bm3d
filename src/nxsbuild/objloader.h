@@ -63,6 +63,7 @@ private:
 	uint64_t current_triangle;
 	uint64_t current_tri_pos = 0;
 	bool cached = false;
+	bool has_vertex_colors = false; //some line `v x y z r g b` gives a colour
 	//how many vertices, texture coordinates and normals the lines read so far define: a
 	//negative index counts back from them
 	uint64_t seen_vertices = 0, seen_uvs = 0, seen_normals = 0;

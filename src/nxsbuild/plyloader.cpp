@@ -52,8 +52,7 @@ struct PlyVertex {
 	unsigned char c[4]; //colors
 };
 
-//TODO add uv?
-PropDescriptor plyprop1[15]= {
+PropDescriptor plyprop1[13]= {
 	{"vertex", "x",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[0]),0,0,0,0,0,0},
 	{"vertex", "y",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[1]),0,0,0,0,0,0},
 	{"vertex", "z",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[2]),0,0,0,0,0,0},
@@ -66,9 +65,15 @@ PropDescriptor plyprop1[15]= {
 	{"vertex", "nz",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, n[2]),0,0,0,0,0,0},
 	{"vertex", "diffuse_red",   T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[0]),0,0,0,0,0,0},
 	{"vertex", "diffuse_green", T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[1]),0,0,0,0,0,0},
-	{"vertex", "diffuse_blue" , T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[2]),0,0,0,0,0,0},
-	{"vertex", "s",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[0]),0,0,0,0,0,0},
-	{"vertex", "t",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[1]),0,0,0,0,0,0}
+	{"vertex", "diffuse_blue" , T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[2]),0,0,0,0,0,0}
+};
+
+//The names a texture coordinate of a vertex goes by in PLY files; the first pair that the file has
+//is the one read
+static const char *const vertexUvNames[][2] = {
+	{ "s", "t" },
+	{ "u", "v" },
+	{ "texture_u", "texture_v" }
 };
 PropDescriptor doublecoords[3] = {
 	{"vertex", "x",     T_DOUBLE, T_DOUBLE, offsetof(PlyVertex,dv[0]),0,0,0,0,0,0},
@@ -192,7 +197,7 @@ void PlyLoader::init() {
 	int error = pf.AddToRead(plyprop1[3]);
 	pf.AddToRead(plyprop1[4]);
 	pf.AddToRead(plyprop1[5]);
-	pf.AddToRead(plyprop1[6]);
+	pf.AddToRead(plyprop1[6]);  //alpha: a vertex without one is opaque (see cacheVertices)
 
 	if(error ==  vcg::ply::E_NOERROR)
 		has_colors = true;
@@ -205,12 +210,15 @@ void PlyLoader::init() {
 			has_colors = true;
 	}
 
-	error = pf.AddToRead(plyprop1[13]);
-	pf.AddToRead(plyprop1[14]);
-
-	if(error ==  vcg::ply::E_NOERROR) {
+	for(const auto &names: vertexUvNames) {
+		const PropDescriptor u = { "vertex", names[0], T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[0]), 0, 0, 0, 0, 0, 0 };
+		const PropDescriptor v = { "vertex", names[1], T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[1]), 0, 0, 0, 0, 0, 0 };
+		if(pf.AddToRead(u) != vcg::ply::E_NOERROR)
+			continue;
+		pf.AddToRead(v);
 		has_textures = true;
 		has_vertex_tex_coords = true;
+		break;
 	}
 
 	//these calls will fail silently if no normal is present
@@ -246,7 +254,9 @@ void PlyLoader::cacheVertices() {
 	vertices.setElementsPerBlock(1<<20);
 	vertices.resize(n_vertices);
 
+	//A colour without an alpha property is opaque: the read leaves the alpha as it is here
 	PlyVertex vertex = {};
+	vertex.c[3] = 255;
 	//caching vertices on temporary file
 	for(uint64_t i = 0; i < n_vertices; i++) {
 		Vertex &v = vertices[i];
@@ -351,14 +361,6 @@ uint32_t PlyLoader::getTriangles(uint32_t size, Triangle *buffer) {
 			if(!has_vertex_tex_coords) {
 				vertex.t[0] = face->t[corner*2];
 				vertex.t[1] = face->t[corner*2+1];
-			}
-
-			if (has_textures) {
-				float n;
-				if(vertex.t[0] != 1.0)
-					vertex.t[0] = modf(vertex.t[0], &n);
-				if(vertex.t[1] != 1.0)
-					vertex.t[1] = modf(vertex.t[1], &n);
 			}
 
 			current.vertices[k] = vertex;

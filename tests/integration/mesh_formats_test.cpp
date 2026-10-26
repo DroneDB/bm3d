@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -407,6 +408,170 @@ TEST(StlFormats, theSampleAsciiStlIsBuilt) {
     TempDir dir;
     ASSERT_NO_THROW(bm3d::build(model, dir.file("out.nxz")));
     EXPECT_GE(readNexusFile(dir.file("out.nxz")).nface, facets);
+}
+
+// --- PLY and OBJ colours and texture coordinates
+
+// The model of one triangle that `input` holds, built and decoded
+struct Built {
+    NexusFile file;
+    NodeMesh mesh;
+};
+
+Built buildAndDecode(const TempDir& dir, const std::string& input) {
+    Built built;
+    built.file = buildFile(dir, input, input + ".nxz");
+    EXPECT_EQ(built.file.nNodes, 2u) << input;  // one node and the sink
+    if (built.file.nNodes == 2u)
+        built.mesh = readNode(dir.file(input + ".nxz"));
+    return built;
+}
+
+std::string plyOneTriangle(const std::string& colorProperties, const std::string& rows) {
+    return "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\n" +
+           colorProperties + "element face 1\nproperty list uchar int vertex_indices\nend_header\n" + rows + "3 0 1 2\n";
+}
+
+// A colour of red, green and blue is opaque: the alpha of a vertex that has none is 255, not
+// whatever was in memory (it used to be 0 for the files built so far)
+TEST(PlyFormats, aColourWithoutAnAlphaIsOpaque) {
+    TempDir dir;
+    const std::string rgb = "property uchar red\nproperty uchar green\nproperty uchar blue\n";
+    const std::string diffuse = "property uchar diffuse_red\nproperty uchar diffuse_green\nproperty uchar diffuse_blue\n";
+    const std::string rows = "0 0 0 200 100 50\n5 0 0 200 100 50\n0 5 0 200 100 50\n";
+    writeTextFile(dir.file("rgb.ply"), plyOneTriangle(rgb, rows));
+    writeTextFile(dir.file("diffuse.ply"), plyOneTriangle(diffuse, rows));
+    for (const char* name : {"rgb.ply", "diffuse.ply"}) {
+        const Built built = buildAndDecode(dir, name);
+        ASSERT_TRUE(built.file.hasColors) << name;
+        ASSERT_EQ(built.mesh.colors.size(), 3u) << name;
+        for (const auto& color : built.mesh.colors)
+            expectColor(color, {200, 100, 50, 255}, name);
+    }
+}
+
+TEST(PlyFormats, anAlphaOfTheFileIsKept) {
+    TempDir dir;
+    const std::string rgba = "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha\n";
+    writeTextFile(dir.file("rgba.ply"),
+                  plyOneTriangle(rgba, "0 0 0 200 100 50 128\n5 0 0 200 100 50 128\n0 5 0 200 100 50 128\n"));
+    const Built built = buildAndDecode(dir, "rgba.ply");
+    ASSERT_EQ(built.mesh.colors.size(), 3u);
+    for (const auto& color : built.mesh.colors)
+        expectColor(color, {200, 100, 50, 128}, "rgba.ply");
+}
+
+// u and v, or texture_u and texture_v, are the texture coordinates as s and t are
+TEST(PlyFormats, theTextureCoordinatesOfAVertexGoByAnyOfThreePairsOfNames) {
+    TempDir dir;
+    writePng(dir.file("t.png"), gradientRaster(3));
+    const struct {
+        const char* file;
+        const char* first;
+        const char* second;
+    } names[] = {{"st.ply", "s", "t"}, {"uv.ply", "u", "v"}, {"texture.ply", "texture_u", "texture_v"}};
+    for (const auto& n : names)
+        writeTextFile(dir.file(n.file),
+                      std::string("ply\nformat ascii 1.0\ncomment TextureFile t.png\nelement vertex 4\n"
+                                  "property float x\nproperty float y\nproperty float z\nproperty float ") +
+                          n.first + "\nproperty float " + n.second +
+                          "\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n"
+                          "0 0 0 0 0\n1 0 0 1 0\n1 1 0 1 0.5\n0 1 0 0 0.5\n3 0 1 2\n3 0 2 3\n");
+    const NexusFile st = buildFile(dir, "st.ply", "st.nxz");
+    EXPECT_GE(st.nTextures, 1u);
+    for (const char* name : {"uv.ply", "texture.ply"}) {
+        const NexusFile other = buildFile(dir, name, std::string(name) + ".nxz");
+        EXPECT_GE(other.nTextures, 1u) << name;
+        // the same coordinates give the same model, byte for byte
+        EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".nxz")), readBinaryFile(dir.file("st.nxz"))) << name;
+    }
+}
+
+// A texture coordinate outside 0..1 repeats the texture. The builder brings the coordinates of every
+// format back to their fractional part when it assigns the vertices to textures, so the PLY loader
+// does not (it did, on the vertex it keeps for all the faces that share it, which was the same
+// computation twice). A coordinate one or two repeats away gives the model of the one inside.
+TEST(PlyFormats, aTextureCoordinateBeyondOneIsTheSameAsItsFractionalPart) {
+    TempDir dir;
+    writePng(dir.file("t.png"), gradientRaster(3));
+    const auto ply = [](float shift) {
+        std::ostringstream s;
+        s << "ply\nformat ascii 1.0\ncomment TextureFile t.png\nelement vertex 4\n"
+             "property float x\nproperty float y\nproperty float z\nproperty float s\nproperty float t\n"
+             "element face 2\nproperty list uchar int vertex_indices\nend_header\n";
+        const float uv[4][2] = {{0.25f, 0.25f}, {0.75f, 0.25f}, {0.75f, 0.5f}, {0.25f, 0.5f}};
+        const float xyz[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+        for (int i = 0; i < 4; i++)
+            s << xyz[i][0] << " " << xyz[i][1] << " 0 " << uv[i][0] + shift << " " << uv[i][1] << "\n";
+        s << "3 0 1 2\n3 0 2 3\n";
+        return s.str();
+    };
+    writeTextFile(dir.file("inside.ply"), ply(0.0f));
+    writeTextFile(dir.file("one.ply"), ply(1.0f));
+    writeTextFile(dir.file("two.ply"), ply(2.0f));
+    for (const char* name : {"inside.ply", "one.ply", "two.ply"})
+        buildFile(dir, name, std::string(name) + ".nxz");
+    EXPECT_EQ(readBinaryFile(dir.file("one.ply.nxz")), readBinaryFile(dir.file("inside.ply.nxz")));
+    EXPECT_EQ(readBinaryFile(dir.file("two.ply.nxz")), readBinaryFile(dir.file("inside.ply.nxz")));
+}
+
+// `v x y z r g b` is a colour of the vertex, 0..1 unless a component of the vertex is more than 1: then
+// it is 0..255; `v x y z w` has a weight, which is not a colour
+TEST(ObjFormats, aVertexLineWithSixNumbersIsAColour) {
+    TempDir dir;
+    writeTextFile(dir.file("colors.obj"),
+                  "v 0 0 0 1 0 0\n"      // 0..1: red
+                  "v 5 0 0 0 255 0\n"    // 0..255: green
+                  "v 0 5 0 0 0 0.5\n"    // 0..1: a half blue
+                  "f 1 2 3\n");
+    const Built built = buildAndDecode(dir, "colors.obj");
+    ASSERT_TRUE(built.file.hasColors);
+    ASSERT_EQ(built.mesh.colors.size(), 3u);
+    expectColor(colorAt(built.mesh, {0, 0, 0}), {255, 0, 0, 255}, "red");
+    expectColor(colorAt(built.mesh, {5, 0, 0}), {0, 255, 0, 255}, "green");
+    expectColor(colorAt(built.mesh, {0, 5, 0}), {0, 0, 127, 255}, "half blue");
+}
+
+// MeshLab writes the colours of the vertices this way
+TEST(ObjFormats, theSampleObjWithTheColoursOfMeshLabKeepsThem) {
+    const fs::path model = sampleModel("brighton_beach.obj");
+    if (!fs::exists(model))
+        GTEST_SKIP() << pathToUtf8(model) << " is not there";
+    TempDir dir;
+    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.nxz")));
+    EXPECT_TRUE(readNexusFile(dir.file("out.nxz")).hasColors);
+}
+
+TEST(ObjFormats, aVertexLineWithAWeightOrAnotherCountOfNumbersIsNotAColour) {
+    TempDir dir;
+    for (const char* lines : {"v 0 0 0 1\nv 5 0 0 0.5\nv 0 5 0 2\n",             // w
+                              "v 0 0 0 1 0\nv 5 0 0 0 1\nv 0 5 0 1 1\n",         // two numbers
+                              "v 0 0 0 1 0 0 1\nv 5 0 0 0 1 0 1\nv 0 5 0 0 0 1 1\n"}) {  // four
+        writeTextFile(dir.file("plain.obj"), std::string(lines) + "f 1 2 3\n");
+        EXPECT_FALSE(buildAndDecode(dir, "plain.obj").file.hasColors) << lines;
+    }
+}
+
+TEST(ObjFormats, theColourOfAVertexWinsOverTheColourOfTheMaterial) {
+    TempDir dir;
+    writeTextFile(dir.file("kd.mtl"), "newmtl m\nKd 1 0 0\n");
+    writeTextFile(dir.file("kd.obj"),
+                  "mtllib kd.mtl\nv 0 0 0 0 0 1\nv 5 0 0\nv 0 5 0\nusemtl m\nf 1 2 3\n");
+    const Built built = buildAndDecode(dir, "kd.obj");
+    ASSERT_TRUE(built.file.hasColors);
+    ASSERT_EQ(built.mesh.colors.size(), 3u);
+    expectColor(colorAt(built.mesh, {0, 0, 0}), {0, 0, 255, 255}, "vertex with a colour");
+    expectColor(colorAt(built.mesh, {5, 0, 0}), {255, 0, 0, 255}, "vertex without one, the material's");
+    expectColor(colorAt(built.mesh, {0, 5, 0}), {255, 0, 0, 255}, "vertex without one, the material's");
+}
+
+// With colours on some of the vertices and no material, the others are grey
+TEST(ObjFormats, aVertexWithoutAColourAmongOthersThatHaveOneIsGrey) {
+    TempDir dir;
+    writeTextFile(dir.file("some.obj"), "v 0 0 0 1 0 0\nv 5 0 0\nv 0 5 0 1 0 0\nf 1 2 3\n");
+    const Built built = buildAndDecode(dir, "some.obj");
+    ASSERT_EQ(built.mesh.colors.size(), 3u);
+    expectColor(colorAt(built.mesh, {5, 0, 0}), {127, 127, 127, 255}, "vertex without a colour");
 }
 
 // Paths in any alphabet: the folders, the texture and the output

@@ -18,6 +18,7 @@ for more details.
 #include "objloader.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 
@@ -52,6 +53,23 @@ bool endsToken(char c) {
 uint32_t channel(float value) {
 	const float scaled = 255.0f * value;
 	return scaled <= 0.0f ? 0u : scaled >= 255.0f ? 255u : uint32_t(scaled);
+}
+
+//The colour of a vertex line, from what follows its x y z: `v x y z r g b` has one, `v x y z`
+//has none and `v x y z w` has a weight, which is not a colour (nor is anything else than three
+//numbers). The colour is in 0..1, unless a component of this vertex is more than 1: then it is in
+//0..255. Sets color to red, green and blue in 0..255.
+bool parseVertexColor(const char *p, unsigned char color[3]) {
+	double value[4];
+	int n = 0;
+	while(n < 4 && text::parseDouble(p, value[n]))
+		n++;
+	if(n != 3)
+		return false;
+	const bool bytes = value[0] > 1.0 || value[1] > 1.0 || value[2] > 1.0;
+	for(int k = 0; k < 3; k++)
+		color[k] = bytes ? (unsigned char)std::min(255.0, std::max(0.0, std::round(value[k]))) : (unsigned char)channel((float)value[k]);
+	return true;
 }
 
 }
@@ -241,6 +259,7 @@ void ObjLoader::cacheVertices() {
 
 		vertices.resize(n_vertices+1);
 		Vertex &vertex = vertices[n_vertices];
+		vertex = Vertex();
 		n_vertices++;
 
 		vcg::Point3d p;
@@ -256,6 +275,15 @@ void ObjLoader::cacheVertices() {
 		requireFinite(vertex.v, [&]() {
 			return "vertex " + std::to_string(n_vertices - 1) + " of obj file " + filename;
 		});
+
+		//A colour of the vertex is opaque: a vertex with an alpha of 0 has none
+		unsigned char color[3];
+		if(parseVertexColor(s, color)) {
+			std::copy(color, color + 3, vertex.c);
+			vertex.c[3] = 255;
+			has_vertex_colors = true;
+			has_colors = true;
+		}
 	}
 }
 
@@ -396,12 +424,18 @@ uint32_t ObjLoader::getTriangles(uint32_t size, Triangle *faces) {
 						current.vertices[k].t[j] = vtxtuv[fan[k]->uv * 2 + j];
 			}
 			current.tex = current_texture_id;
-			if (has_colors && current_color) {
+			//The colour of a vertex line wins over the colour of the material; the vertices of a model
+			//with colours on some of them and no material are grey where they have none.
+			const uint32_t color = has_colors && current_color ? current_color : has_vertex_colors ? default_color : 0;
+			if (color) {
 				for (int k = 0; k < 3; k++) {
-					current.vertices[k].c[0] = RED(current_color);
-					current.vertices[k].c[1] = GREEN(current_color);
-					current.vertices[k].c[2] = BLUE(current_color);
-					current.vertices[k].c[3] = ALPHA(current_color);
+					Vertex &vertex = current.vertices[k];
+					if (vertex.c[3] != 0)
+						continue;
+					vertex.c[0] = RED(color);
+					vertex.c[1] = GREEN(color);
+					vertex.c[2] = BLUE(color);
+					vertex.c[3] = ALPHA(color);
 				}
 			}
 			current.node = 0;

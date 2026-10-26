@@ -58,6 +58,21 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   The same model of 1e12 units across crashed in the cone of the normals instead, where the product
   of two edges overflows. A model whose bounding box is more than 1e9 units across (a city is 1e7
   millimetres) is now refused as invalid input, in every format, with its size in the message.
+- PLY: the texture coordinates of a vertex are read from `u`, `v` or from `texture_u`, `texture_v`
+  as well as from `s`, `t` (the first pair the file has). A colour without an `alpha` property is
+  opaque, 255; the alpha was whatever the stack held (0 in the files built so far), so the
+  vertices of `brighton.ply` have an alpha of 255 now, and nothing else of its output changes.
+  The loader no longer takes the fractional part of the texture coordinates (`modf`): the builder
+  does it for the coordinates of every format when it assigns the vertices to textures, so a
+  coordinate beyond 1 gives the same model as before, and the PLY loader no longer rewrites the
+  coordinate it keeps for all the faces that share a vertex.
+- OBJ: `v x y z r g b` (exactly three numbers after the position) is the colour of the vertex,
+  from 0 to 1 unless a component of that vertex is more than 1, then from 0 to 255; `v x y z w`
+  (a weight) and any other count of numbers is not a colour. The colour of a vertex wins over the
+  colour of the material (`Kd`) of the faces that use it; a vertex without one gets the colour of
+  the material, or grey when the model has colours on some vertices and no material. An OBJ
+  with the colours of MeshLab (`brighton_beach.obj` of the test data) used to lose them; its
+  output holds them now (its geometry is as before).
 
 ## 0.1.0
 

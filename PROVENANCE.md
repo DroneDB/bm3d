@@ -145,6 +145,11 @@ used.
   and Materialise colours are read. The triangles are cleared before they are filled (the
   buffer of the stream was uninitialised). `src/common/textparse.h`: `equalsNoCase` has a form
   that takes a pointer and a length.
+- `src/nxsbuild/plyloader.cpp`: `u`/`v` and `texture_u`/`texture_v` are read as texture coordinates
+  besides `s`/`t`; the vertex that is read starts opaque (alpha 255) so a colour without alpha is
+  opaque; the `modf` of the texture coordinates is removed (`NexusBuilder` applies `fmod` to the
+  coordinates of every format). `src/nxsbuild/objloader.{h,cpp}`: `v x y z r g b` is a vertex colour
+  that wins over the colour of the material.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
