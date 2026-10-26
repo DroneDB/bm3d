@@ -1,0 +1,308 @@
+# Copyright (C) 2026 Digipa
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Makes a release when a tag v<VERSION> is pushed, and rehearses one on demand.
+#
+# Assets of the GitHub release, all named after VERSION:
+#   bm3d-<VERSION>-linux-x64.tar.gz     the program, the licences, README; built on Ubuntu 22.04
+#   bm3d-<VERSION>-windows-x64.zip      the same for Windows
+#   bm3d-<VERSION>-source.tar.gz        git archive of the tagged commit (complete: no submodules)
+#   bm3d-viewer-<VERSION>.tgz           the viewer, from npm pack
+#   SHA256SUMS                          the checksums of the four above
+# The notes of the release are the section of CHANGELOG.md for the version.
+#
+# Static linking, so that the program runs where nothing else is installed:
+#   * the libraries of vcpkg are static on both systems (the triplets x64-linux and
+#     x64-windows-static);
+#   * Linux: libstdc++ and libgcc are linked into the program (-static-libstdc++ -static-libgcc),
+#     which leaves libc and libm, and the build on Ubuntu 22.04 (glibc 2.35) makes glibc 2.35 the
+#     oldest system it runs on. check-linkage.py fails the job on anything else.
+#   * Windows: the C and C++ runtime is linked in as well (/MT, CMAKE_MSVC_RUNTIME_LIBRARY=
+#     MultiThreaded, with the triplet x64-windows-static, whose ports use /MT too), so that
+#     nothing of Visual Studio has to be installed. ci.yml tests the triplet
+#     x64-windows-static-md (the dynamic runtime), which is CMake's default.
+#
+# Run by hand (workflow_dispatch) with dry_run on (the default), it does everything but create the
+# release: the assets, the checksums and the notes are the workflow artifact "release-assets".
+# With dry_run off it publishes, but only when started from a tag.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build everything but do not create the release (the assets are a workflow artifact)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # A tag push publishes; a manual run publishes when dry_run is off
+  PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+
+jobs:
+  verify:
+    name: verify-version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: A release is made from a tag
+        if: env.PUBLISH == 'true' && github.ref_type != 'tag'
+        run: |
+          echo "::error::dry_run is off but ${GITHUB_REF} is not a tag: start the workflow from the tag, or leave dry_run on"
+          exit 1
+      - name: The tag, VERSION, vcpkg.json and the viewer's package say the same version
+        id: version
+        run: |
+          tag_args=()
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag_args=(--tag "$GITHUB_REF_NAME"); fi
+          echo "version=$(python scripts/release/check-version.py "${tag_args[@]}")" >> "$GITHUB_OUTPUT"
+
+  program:
+    name: program-${{ matrix.platform }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-22.04
+            triplet: x64-linux
+            exe: ""
+            link_flags: -static-libstdc++ -static-libgcc
+            msvc_runtime: ""
+          - platform: windows-x64
+            os: windows-2022
+            triplet: x64-windows-static
+            exe: .exe
+            link_flags: ""
+            msvc_runtime: MultiThreaded
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: Keep line endings as they are in the repository
+        # LICENSE, NOTICE and the READMEs go into the archive as the repository has them. This
+        # has to be set before the checkout writes any file.
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Time stamp of the files of the archive is the commit time
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        # nasm: libjpeg-turbo's port needs it on Linux.
+        run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
+
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-name: release-${{ matrix.platform }}
+
+      - name: Use the MSVC compiler and Ninja
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        env:
+          LINK_FLAGS: ${{ matrix.link_flags }}
+          MSVC_RUNTIME: ${{ matrix.msvc_runtime }}
+        # No tests: they need the test framework and the PNG writer, and a release links neither.
+        # The two settings that depend on the system are given only where they have a value, as
+        # an empty one would replace the defaults CMake starts from.
+        run: |
+          extra=()
+          if [ -n "$LINK_FLAGS" ]; then extra+=("-DCMAKE_EXE_LINKER_FLAGS=$LINK_FLAGS"); fi
+          if [ -n "$MSVC_RUNTIME" ]; then extra+=("-DCMAKE_MSVC_RUNTIME_LIBRARY=$MSVC_RUNTIME"); fi
+          cmake --preset release -G Ninja \
+            -DBM3D_BUILD_TESTS=OFF -DBM3D_INSTALL_DEVELOPMENT=OFF -DBM3D_WITH_TIFF=ON \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
+            "${extra[@]}"
+
+      - name: Compiler
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then g++ --version | head -1; ldd --version | head -1; else cl 2>&1 | head -1; fi
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --parallel 2
+
+      - name: Install the program (stripped on Linux)
+        shell: bash
+        run: |
+          strip=()
+          if [ "$RUNNER_OS" = Linux ]; then strip=(--strip); fi
+          cmake --install build --prefix stage "${strip[@]}"
+
+      - name: The program links nothing but the system
+        shell: bash
+        run: python scripts/release/check-linkage.py "stage/bin/bm3d${{ matrix.exe }}"
+
+      - name: The program runs and builds a model
+        shell: bash
+        run: python scripts/release/smoke-test.py "stage/bin/bm3d${{ matrix.exe }}" --version "$VERSION"
+
+      - name: Archive with the licences of the linked ports
+        shell: bash
+        run: >
+          python scripts/release/package.py
+          --version "$VERSION"
+          --platform ${{ matrix.platform }}
+          --binary "stage/bin/bm3d${{ matrix.exe }}"
+          --installed build/vcpkg_installed
+          --triplet ${{ matrix.triplet }}
+          --out assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-program-${{ matrix.platform }}
+          path: assets/*
+          if-no-files-found: error
+
+      - name: Keep the logs of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-program-${{ matrix.platform }}
+          if-no-files-found: ignore
+          path: |
+            build/vcpkg-manifest-install.log
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
+
+  source:
+    name: source-tarball
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: git archive of the commit
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          # Nothing is fetched from elsewhere to build: the archive is the whole source
+          test ! -e .gitmodules
+          mkdir assets
+          git archive --format=tar.gz --prefix="bm3d-$VERSION/" -o "assets/bm3d-$VERSION-source.tar.gz" HEAD
+          tar tzf "assets/bm3d-$VERSION-source.tar.gz" | grep -x "bm3d-$VERSION/\(VERSION\|CMakeLists.txt\|vcpkg.json\)" | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source
+          path: assets/*
+          if-no-files-found: error
+
+  viewer:
+    name: viewer-tarball
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/build-corto-wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Bundles
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Pack
+        working-directory: web
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/assets"
+          npm pack --pack-destination "$GITHUB_WORKSPACE/assets"
+      - name: The package holds the bundles, the worker, the wasm file and the licences
+        run: python scripts/release/check-viewer-package.py "assets/bm3d-viewer-$VERSION.tgz" --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-viewer
+          path: assets/*
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: [verify, program, source, viewer]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+      - name: The four assets are there and nothing else; their checksums
+        run: |
+          cd assets
+          for name in "bm3d-$VERSION-linux-x64.tar.gz" "bm3d-$VERSION-windows-x64.zip" \
+                      "bm3d-$VERSION-source.tar.gz" "bm3d-viewer-$VERSION.tgz"; do
+            test -f "$name" || { echo "::error::missing asset $name"; exit 1; }
+          done
+          test "$(ls | wc -l)" = 4 || { echo "::error::unexpected assets:"; ls; exit 1; }
+          LC_ALL=C sha256sum -- * > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Notes of the release (the changelog section of the version)
+        run: |
+          # A rehearsal on a branch may not have the heading of the version yet
+          allow=()
+          if [ "$PUBLISH" != true ]; then allow=(--allow-unreleased); fi
+          python scripts/release/changelog-section.py "$VERSION" "${allow[@]}" > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+      - name: Keep the assets (the result of a dry run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            assets/*
+            RELEASE_NOTES.md
+          if-no-files-found: error
+      - name: Create the GitHub release
+        if: env.PUBLISH == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: bm3d ${{ env.VERSION }}
+          body_path: RELEASE_NOTES.md
+          files: assets/*
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
