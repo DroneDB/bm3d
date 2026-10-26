@@ -64,7 +64,7 @@ public:
 				   const vcg::Point3f &view) const;
 
 	//encode normal and sin(alpha) in n[3]
-	short n[4];
+	short n[4] = {0, 0, 0, 0};
 };
 
 }

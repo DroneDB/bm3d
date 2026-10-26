@@ -996,7 +996,7 @@ void NexusBuilder::save(const std::string &filename) {
 	for(uint32_t j = 0; j < nroots; j++)
 		nodes[j].error = nodes[j].tight_radius;
 
-	header.sphere = vcg::Sphere3f();
+	header.sphere = emptySphere();
 	for(uint32_t i = 0; i < nroots; i++)
 		header.sphere.Add(nodes[i].tightSphere());
 

@@ -5,11 +5,13 @@
 #   unit         the pieces that need no model: argument checks, the JSON checker, versions
 #   integration  models built through the library and read back from the file
 #   cli          the program run as a process: arguments, exit codes, output, paths
-# ctest -L unit (or integration, or cli) runs one label. A test that takes more than ten
+#   determinism  the same input built again, and with another thread count, gives the same file
+# ctest -L unit (or integration, or cli, or determinism) runs one label. A test that takes more than ten
 # seconds would carry the label slow as well; none does yet.
 
 find_package(GTest CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+find_package(JPEG REQUIRED)
 find_package(PNG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(WebP CONFIG REQUIRED)
@@ -29,7 +31,7 @@ add_library(bm3d_test_support STATIC
 target_include_directories(bm3d_test_support PUBLIC support PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_test_support
     PUBLIC GTest::gtest bm3d::bm3d
-    PRIVATE PNG::PNG TIFF::TIFF WebP::webp Threads::Threads)
+    PRIVATE JPEG::JPEG PNG::PNG TIFF::TIFF WebP::webp Threads::Threads)
 target_compile_definitions(bm3d_test_support PUBLIC
     "BM3D_TEST_FIXTURES_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
     "BM3D_TEST_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
@@ -37,6 +39,9 @@ if(MSVC)
     # stb_image_write opens files with fopen
     target_compile_definitions(bm3d_test_support PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_options(bm3d_test_support PRIVATE /W3)
+    # The test sources hold UTF-8 text (the paths of other alphabets): read as UTF-8, not in the
+    # code page of the machine. Public, so every test program reads its sources the same way.
+    target_compile_options(bm3d_test_support PUBLIC /utf-8)
 else()
     target_compile_options(bm3d_test_support PRIVATE -Wall)
 endif()
@@ -74,3 +79,9 @@ bm3d_add_tests(bm3d_cli_tests cli
 # The program under test is built first and found by the path CMake gives it
 add_dependencies(bm3d_cli_tests bm3d)
 target_compile_definitions(bm3d_cli_tests PRIVATE "BM3D_TEST_EXE=\"$<TARGET_FILE:bm3d>\"")
+
+bm3d_add_tests(bm3d_determinism_tests determinism
+    determinism/determinism_test.cpp)
+# Each build is a run of the program, as in the cli tests, so that no state is shared between them
+add_dependencies(bm3d_determinism_tests bm3d)
+target_compile_definitions(bm3d_determinism_tests PRIVATE "BM3D_TEST_EXE=\"$<TARGET_FILE:bm3d>\"")

@@ -68,6 +68,13 @@ used.
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
 - `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the 4 patches above.
+- `src/common/dag.h`: every field of `Node` has a value from the start, and the empty sphere of
+  `Header` and `Node` has its centre at the origin (`emptySphere()`). The sink node that ends the
+  node table set only `first_patch`, so the file got the rest of it as it lay on the stack, and
+  two builds of the same input differed in a few bytes. The file keeps its layout.
+- `src/common/cone.h`: `Cone3s::n` starts at zero, for the same reason (the cone of the sink node).
+- `src/nxsbuild/nexusbuilder.cpp`: the bounding sphere of the header starts from `emptySphere()`
+  instead of vcg's empty sphere, whose centre is not set.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

@@ -40,10 +40,17 @@ typedef unsigned __int64 uint64_t;
 namespace nx {
 
 #define NEXUS_PADDING 256
+
+//A sphere with nothing in it: the radius -1 of vcg's own empty sphere, and a centre at the origin.
+//vcg leaves the centre of an empty sphere unset, and the tables of the file are written from
+//structs as they lie in memory, so an unset centre would put whatever the stack held at that
+//moment in the file.
+inline vcg::Sphere3f emptySphere() { return vcg::Sphere3f(vcg::Point3f(0, 0, 0), -1); }
+
 // Magic is: "Nxs "
 struct Header {
 
-	Header(): magic(0x4E787320), version(0), nvert(0), nface(0), n_nodes(0), n_patches(0), n_textures(0) {}
+	Header(): magic(0x4E787320), version(0), nvert(0), nface(0), n_nodes(0), n_patches(0), n_textures(0), sphere(emptySphere()) {}
 	uint32_t magic;
 	uint32_t version;
 	uint64_t nvert;            //total number of vertices (at full resolution)
@@ -55,15 +62,17 @@ struct Header {
 	vcg::Sphere3f sphere;      //bounding sphere
 };
 
+//Every field has a value from the start: the sink node at the end of the table sets only
+//first_patch, and the rest of it is written to the file as it is.
 struct Node {
-	uint32_t offset;           //offset on disk (could be moved), granularity NEXUS_PADDING) //use the function
-	uint16_t nvert;
-	uint16_t nface;
-	float error;
+	uint32_t offset = 0;       //offset on disk (could be moved), granularity NEXUS_PADDING) //use the function
+	uint16_t nvert = 0;
+	uint16_t nface = 0;
+	float error = 0;
 	nx::Cone3s cone;           //cone of normals
-	vcg::Sphere3f sphere;      //saturated sphere (extraction)
-	float tight_radius;        //tight sphere (frustum culling)
-	uint32_t first_patch;      //index of the first patch in the array of patches.
+	vcg::Sphere3f sphere = emptySphere(); //saturated sphere (extraction)
+	float tight_radius = 0;    //tight sphere (frustum culling)
+	uint32_t first_patch = 0;  //index of the first patch in the array of patches.
 	uint32_t last_patch() { return (this + 1)->first_patch; } //this node is ALWAYS inside an array.
 	vcg::Sphere3f tightSphere() { return vcg::Sphere3f(sphere.Center(), tight_radius); }
 
