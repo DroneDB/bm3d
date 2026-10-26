@@ -1,0 +1,100 @@
+# Copyright (C) 2026 Digipa
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The tests under AddressSanitizer, LeakSanitizer and UndefinedBehaviorSanitizer, built with the
+# Clang of the runner image. The flags are given here, not in CMakeLists.txt: the project sets no
+# compiler flag of its own. The ports come from vcpkg uninstrumented; the project's code and the
+# imported sources are instrumented.
+#
+# The imported corto sources have known reports (unaligned and overflowing integer arithmetic, one
+# empty allocation that is never freed); .github/sanitizers/*.supp lists those and nothing else.
+name: Sanitizers
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Must equal "builtin-baseline" in vcpkg.json (ci.yml checks the pair).
+  VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
+  VCPKG_DISABLE_METRICS: "1"
+  TEST_LABELS: unit|integration|cli|robustness|golden|determinism
+
+jobs:
+  asan-ubsan:
+    name: clang ASan + UBSan
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Paths of the vcpkg checkout and its binary cache
+        run: |
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$RUNNER_TEMP/vcpkg-archives" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
+
+      - name: Install build tools
+        # nasm: libjpeg-turbo's port needs it.
+        run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
+
+      - name: Restore the vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-linux-clang-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-linux-clang-
+
+      - name: Set up vcpkg at the pinned commit
+        run: |
+          git init -q "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "$VCPKG_COMMIT"
+          git -C "$VCPKG_ROOT" checkout -q FETCH_HEAD
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configure (optimised a little, with debug information, assertions on)
+        run: >
+          cmake --preset release
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DBM3D_BUILD_TESTS=ON
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+          "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O1 -g"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Allow the sanitizer runtimes' memory layout
+        # The runner kernel randomizes mmap with 32 bits; the sanitizer runtimes expect at most
+        # 28 and stop at start-up ("unexpected memory mapping") otherwise.
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/sanitizers/lsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/.github/sanitizers/ubsan.supp
+        run: ctest --test-dir build -L "$TEST_LABELS" --no-tests=error --output-on-failure
+
+      - name: Keep the logs of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-sanitizers
+          if-no-files-found: ignore
+          path: |
+            build/vcpkg-manifest-install.log
+            build/Testing/Temporary/LastTest.log
+            ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log

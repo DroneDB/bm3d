@@ -1,0 +1,4 @@
+# Python packages scripts/compare.py needs (the other scripts use the standard library only).
+# Pinned: the SSIM and PSNR values it gates on must not move with a library update.
+numpy==2.3.5
+Pillow==12.1.1

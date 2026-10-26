@@ -1,0 +1,226 @@
+# Copyright (C) 2026 Digipa
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Builds and tests bm3d with GCC and Clang on Linux and with MSVC on Windows, and checks that the
+# imported third-party and Nexus sources still are what their manifests say.
+#
+# The dependencies come from vcpkg at the commit the manifest (vcpkg.json) pins as its baseline,
+# so a port is the version the reference outputs were built with. The binary archives vcpkg
+# makes are cached, keyed on the runner, the compiler, the manifest and that commit.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Must equal "builtin-baseline" in vcpkg.json (the source-checks job compares the two).
+  VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
+  VCPKG_DISABLE_METRICS: "1"
+  # Labels the tests carry (tests/CMakeLists.txt); a label that matches no test is fine, a run
+  # that matches none at all is an error.
+  TEST_LABELS: unit|integration|cli|robustness|golden|determinism
+
+jobs:
+  source-checks:
+    name: source-checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Every project source file has an SPDX-License-Identifier
+        run: python scripts/check-spdx.py
+      - name: The vcpkg commit of this workflow is the manifest baseline
+        run: |
+          grep -q "\"builtin-baseline\": \"$VCPKG_COMMIT\"" vcpkg.json
+      - name: The scripts compile
+        run: python -m py_compile scripts/*.py
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-24.04
+            cc: gcc
+            cxx: g++
+            generator: Unix Makefiles
+            triplet: x64-linux
+          - name: linux-clang
+            os: ubuntu-24.04
+            cc: clang-18
+            cxx: clang++-18
+            generator: Unix Makefiles
+            triplet: x64-linux
+          - name: windows-msvc
+            os: windows-2022
+            cc: cl
+            cxx: cl
+            generator: Ninja
+            # Static libraries and the dynamic C++ runtime, which is what CMake's default targets.
+            triplet: x64-windows-static-md
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Keep line endings as they are in the repository
+        # The imported sources are compared byte for byte with upstream, and some are CRLF.
+        # This has to be set before the checkout writes any file.
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Paths of the vcpkg checkout, its binary cache and the upstream clones
+        shell: bash
+        run: |
+          temp="$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")"
+          {
+            echo "VCPKG_ROOT=$temp/vcpkg"
+            echo "VCPKG_DEFAULT_BINARY_CACHE=$temp/vcpkg-archives"
+            echo "UPSTREAM_DIR=$temp/upstream"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$temp/vcpkg-archives"
+
+      - name: Fetch the pinned upstream commits
+        # One commit each, no history: the sources the manifests were made from.
+        shell: bash
+        run: |
+          fetch() {
+            git init -q "$UPSTREAM_DIR/$1"
+            git -C "$UPSTREAM_DIR/$1" remote add origin "$2"
+            git -C "$UPSTREAM_DIR/$1" fetch -q --depth 1 origin "$3"
+          }
+          fetch vcglib https://github.com/cnr-isti-vclab/vcglib.git "$(sed -n 's/^commit: //p' third_party/vcg/VCG_SOURCE)"
+          fetch corto https://github.com/cnr-isti-vclab/corto.git "$(sed -n 's/^commit: //p' third_party/corto/CORTO_SOURCE)"
+
+      - name: Imported sources are what the manifests say
+        shell: bash
+        run: |
+          python scripts/sync-vcg.py --check
+          python scripts/sync-corto.py --check
+          python scripts/import-nexus.py --check
+          python scripts/sync-vcg.py --check --source "$UPSTREAM_DIR/vcglib"
+          python scripts/sync-corto.py --check --source "$UPSTREAM_DIR/corto"
+
+      - name: Install build tools
+        if: runner.os == 'Linux'
+        # nasm: libjpeg-turbo's port needs it on Linux.
+        run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
+
+      - name: Restore the vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.name }}-
+
+      - name: Set up vcpkg at the pinned commit
+        shell: bash
+        run: |
+          git init -q "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "$VCPKG_COMMIT"
+          git -C "$VCPKG_ROOT" checkout -q FETCH_HEAD
+
+      - name: Bootstrap vcpkg (Linux)
+        if: runner.os == 'Linux'
+        run: $VCPKG_ROOT/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call "%VCPKG_ROOT%\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Use the MSVC compiler and Ninja
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        run: >
+          cmake --preset release
+          -G "${{ matrix.generator }}"
+          -DBM3D_BUILD_TESTS=ON
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }}
+
+      - name: Build
+        id: build
+        shell: bash
+        run: cmake --build build --parallel
+
+      - name: Test
+        shell: bash
+        # --no-tests=error: the labels together must select something; one that selects nothing
+        # does not matter.
+        run: ctest --test-dir build -C Release -L "$TEST_LABELS" --no-tests=error --output-on-failure
+
+      - name: List the third-party headers the MSVC build misses
+        # The imported vcglib and corto trees hold the files a GCC/Clang build reads (their
+        # closure). MSVC may read more, behind its own #ifdefs. A header that is missing makes
+        # the build above fail at its first #include, one translation unit at a time; this step
+        # then builds again with the complete upstream trees as a last place to look, takes the
+        # headers Ninja recorded (it parses /showIncludes) and prints every one that is not in
+        # third_party/<name>/FILES, with the spelling to add. closure.py reads the same
+        # /showIncludes records that "ninja -t deps" keeps.
+        if: failure() && steps.build.outcome == 'failure' && runner.os == 'Windows'
+        shell: bash
+        run: |
+          git -C "$UPSTREAM_DIR/vcglib" checkout -q FETCH_HEAD
+          git -C "$UPSTREAM_DIR/corto" checkout -q FETCH_HEAD
+          # CMake puts the target's include directories first, so a header the imported tree has
+          # is found there and only the missing ones come from the complete trees.
+          cmake -S . -B build-closure -G Ninja -DCMAKE_BUILD_TYPE=Release -DBM3D_BUILD_TESTS=OFF \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }} \
+            "-DCMAKE_CXX_FLAGS=/I$UPSTREAM_DIR/vcglib /I$UPSTREAM_DIR/corto/include"
+          cmake --build build-closure -- -k 0 || true
+          ninja -C build-closure -t deps | sed -n 's/^    /Note: including file: /p' > msvc-includes.txt
+          status=0
+          for name in vcg corto; do
+            case $name in vcg) clone=vcglib;; corto) clone=corto;; esac
+            python scripts/closure.py --msvc-log msvc-includes.txt --only "$name" \
+              --root "$name=$UPSTREAM_DIR/$clone" --root "$name=$GITHUB_WORKSPACE/third_party/$name" > "used-$name.txt"
+            awk 'NR == FNR { sub(/\r$/, ""); listed[tolower($0)] = 1; next } !(tolower($0) in listed)' \
+              "third_party/$name/FILES" "used-$name.txt" > "missing-$name.txt"
+            if [ -s "missing-$name.txt" ]; then
+              echo "::error::third_party/$name/FILES lacks the headers listed in missing-$name.txt (the MSVC build reads them)"
+              cat "missing-$name.txt"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Keep the logs of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.name }}
+          if-no-files-found: ignore
+          path: |
+            build/vcpkg-manifest-install.log
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            build/Testing/Temporary/LastTest.log
+            ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
+            msvc-includes.txt
+            used-*.txt
+            missing-*.txt
