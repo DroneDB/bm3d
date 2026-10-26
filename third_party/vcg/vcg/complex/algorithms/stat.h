@@ -30,7 +30,6 @@
 #include <vcg/math/histogram.h>
 #include <vcg/complex/algorithms/closest.h>
 #include <vcg/space/index/grid_static_ptr.h>
-#include <vcg/complex/algorithms/inertia.h>
 #include <vcg/space/polygon3.h>
 
 
@@ -280,12 +279,6 @@ public:
     });
 
     return V;
-  }
-
-  static ScalarType ComputeMeshVolume(const MeshType & m)
-  {
-    Inertia<MeshType> I(m);
-    return I.Mass();
   }
 
   static ScalarType ComputeMeshArea(const MeshType & m)

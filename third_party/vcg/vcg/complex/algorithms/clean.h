@@ -2181,66 +2181,6 @@ public:
 
 
 	/**
-  Select the folded faces using an angle threshold on the face normal.
-  The face is selected if the dot product between the face normal and the normal of the plane fitted
-  using the vertices of the one ring faces is below the cosThreshold.
-  The cosThreshold requires a negative cosine value (a positive value is clamp to zero).
-  */
-	static void SelectFoldedFaceFromOneRingFaces(MeshType &m, ScalarType cosThreshold)
-	{
-		typedef std::unordered_set<VertexPointer> VertexSet;
-		tri::RequireVFAdjacency(m);
-		tri::RequirePerFaceNormal(m);
-		tri::RequirePerVertexNormal(m);
-		vcg::tri::UpdateSelection<MeshType>::FaceClear(m);
-		vcg::tri::UpdateNormal<MeshType>::PerFaceNormalized(m);
-		vcg::tri::UpdateNormal<MeshType>::PerVertexNormalized(m);
-		vcg::tri::UpdateTopology<MeshType>::VertexFace(m);
-		if (cosThreshold > 0)
-			cosThreshold = 0;
-
-#pragma omp parallel for schedule(dynamic, 10)
-		for (int i = 0; i < m.face.size(); i++)
-		{
-			VertexSet nearVertex;
-			std::vector<CoordType> pointVec;
-			FacePointer f = &m.face[i];
-			for (int j = 0; j < 3; j++)
-			{
-				std::vector<VertexPointer> temp;
-				vcg::face::VVStarVF<FaceType>(f->V(j), temp);
-				typename std::vector<VertexPointer>::iterator iter = temp.begin();
-				for (; iter != temp.end(); iter++)
-				{
-					if ((*iter) != f->V1(j) && (*iter) != f->V2(j))
-					{
-						if (nearVertex.insert((*iter)).second)
-							pointVec.push_back((*iter)->P());
-					}
-				}
-				nearVertex.insert(f->V(j));
-				pointVec.push_back(f->P(j));
-			}
-
-			if (pointVec.size() > 3)
-			{
-				vcg::Plane3<ScalarType> plane;
-				vcg::FitPlaneToPointSet(pointVec, plane);
-				float avgDot = 0;
-				for (auto  nvp :  nearVertex)
-					avgDot += plane.Direction().dot(nvp->N());
-				avgDot /= nearVertex.size();
-				typename MeshType::VertexType::NormalType normal;
-				if (avgDot < 0)
-					normal = -plane.Direction();
-				else
-					normal = plane.Direction();
-				if (normal.dot(f->N()) < cosThreshold)
-					f->SetS();
-			}
-		}
-	}
-	/**
   Select the faces on the first mesh that intersect the second mesh.
   It uses a grid for querying so a face::mark should be added.
   */

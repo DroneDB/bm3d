@@ -23,13 +23,74 @@
 #ifndef __VCGLIB_QUADRIC
 #define __VCGLIB_QUADRIC
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
+
 #include <vcg/space/point3.h>
 #include <vcg/space/plane3.h>
 #include <vcg/math/matrix33.h>
-#include <Eigen/Core>
 
 namespace vcg {
 namespace math {
+
+/* Solves A x = b for a 3x3 matrix by LU decomposition with full pivoting, in the very order of
+ * operations (and the same zero tests) of Eigen's FullPivLU::solve, so that the solution is the
+ * same to the last bit: the largest remaining coefficient (the first one in column order wins a
+ * tie) is the pivot, the rank counts the pivots above 3 * epsilon times the first one, the
+ * triangular systems are solved column by column, and a column whose right-hand side is zero is
+ * skipped. Unknowns of a singular matrix that no pivot reaches are 0.
+ */
+inline void SolveFullPivot3x3(const double A[3][3], const double b[3], double x[3])
+{
+  double lu[3][3];
+  std::memcpy(lu, A, sizeof(lu));
+  int rowSwap[3] = {0, 1, 2}, colSwap[3] = {0, 1, 2};
+  int pivots = 3;
+  double maxPivot = 0;
+  for(int k = 0; k < 3; ++k)
+  {
+    int pr = k, pc = k;
+    double biggest = std::fabs(lu[k][k]);
+    for(int c = k; c < 3; ++c)
+      for(int r = k; r < 3; ++r)
+      {
+        const double v = std::fabs(lu[r][c]);
+        if(v > biggest) { biggest = v; pr = r; pc = c; }
+      }
+    if(biggest == 0) { pivots = k; break; }
+    if(biggest > maxPivot) maxPivot = biggest;
+    rowSwap[k] = pr;
+    colSwap[k] = pc;
+    if(pr != k) for(int c = 0; c < 3; ++c) std::swap(lu[k][c], lu[pr][c]);
+    if(pc != k) for(int r = 0; r < 3; ++r) std::swap(lu[r][k], lu[r][pc]);
+    for(int r = k + 1; r < 3; ++r) lu[r][k] /= lu[k][k];
+    for(int c = k + 1; c < 3; ++c)
+      for(int r = k + 1; r < 3; ++r)
+        lu[r][c] -= lu[r][k] * lu[k][c];
+  }
+  const double threshold = maxPivot * (std::numeric_limits<double>::epsilon() * 3);
+  int rank = 0;
+  for(int i = 0; i < pivots; ++i) rank += std::fabs(lu[i][i]) > threshold;
+
+  x[0] = x[1] = x[2] = 0;
+  if(rank == 0) return;
+  double c[3] = {b[0], b[1], b[2]};
+  for(int k = 0; k < 3; ++k) std::swap(c[k], c[rowSwap[k]]);
+  for(int i = 0; i < 3; ++i)
+    if(c[i] != 0)
+      for(int j = i + 1; j < 3; ++j) c[j] -= c[i] * lu[j][i];
+  for(int i = rank - 1; i >= 0; --i)
+    if(c[i] != 0)
+    {
+      c[i] /= lu[i][i];
+      for(int j = 0; j < i; ++j) c[j] -= c[i] * lu[j][i];
+    }
+  int unknown[3] = {0, 1, 2};
+  for(int k = 0; k < 3; ++k) std::swap(unknown[k], unknown[colSwap[k]]);
+  for(int i = 0; i < rank; ++i) x[unknown[i]] = c[i];
+}
 
 /*
  *  This class encode a quadric function 
@@ -197,49 +258,28 @@ public:
   template <class ReturnScalarType>
   bool Minimum(Point3<ReturnScalarType> &x)
   {
-    Eigen::Matrix3d A;
-    Eigen::Vector3d be;
-    A << a[0], a[1], a[2],
-         a[1], a[3], a[4],
-         a[2], a[4], a[5];
-    be << -b[0]/2, -b[1]/2, -b[2]/2;
-  
-  //  Eigen::Vector3d xe = A.colPivHouseholderQr().solve(bv);
-  //  Eigen::Vector3d xe = A.partialPivLu().solve(bv);
-    Eigen::Vector3d xe = A.fullPivLu().solve(be);
+    const double A[3][3] = { {double(a[0]), double(a[1]), double(a[2])},
+                             {double(a[1]), double(a[3]), double(a[4])},
+                             {double(a[2]), double(a[4]), double(a[5])} };
+    const double be[3] = { double(-b[0]/2), double(-b[1]/2), double(-b[2]/2) };
+    double xe[3];
+    SolveFullPivot3x3(A, be, xe);
     // Check relative error of solution xe
-    double error = (A*xe - be).norm();
-    if(error > be.norm() * Quadric<ScalarType>::RelativeErrorThr() ) 
+    double r[3];
+    for(int i=0;i<3;++i)
+    {
+      double sum = 0;
+      for(int j=0;j<3;++j) sum += A[i][j]*xe[j];
+      r[i] = sum - be[i];
+    }
+    double error = std::sqrt(r[0]*r[0] + (r[1]*r[1] + r[2]*r[2]));
+    double bnorm = std::sqrt(be[0]*be[0] + (be[1]*be[1] + be[2]*be[2]));
+    if(error > bnorm * Quadric<ScalarType>::RelativeErrorThr() )
       return false;
     
-    x.FromEigenVector(xe);
-    return true;
-  }
-  
-  
-  template <class ReturnScalarType>
-  bool MinimumClosestToPoint(Point3<ReturnScalarType> &x, const Point3<ReturnScalarType> &pt)
-  {
-    const double qeps = 1e-3;
-    Eigen::Matrix3d A;
-    Eigen::Vector3d be;
-    A << a[0], a[1], a[2],
-         a[1], a[3], a[4],
-         a[2], a[4], a[5];
-    be << -b[0]/2, -b[1]/2, -b[2]/2;
-  
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    Eigen::Vector3d s = svd.singularValues();
-    for(int i=1;i<3;++i) 
-      if(s[i]/s[0] > qeps) s[i]=1/s[i];
-      else s[i]=0;
-    s[0]=1/s[0];
-    
-    Eigen::Vector3d xp;  
-    pt.ToEigenVector(xp);
-    Eigen::Vector3d xe = xp + (svd.matrixV()*s.asDiagonal()*(svd.matrixU().transpose())) *(be - A*xp);
-
-    x.FromEigenVector(xe);
+    x[0] = ReturnScalarType(xe[0]);
+    x[1] = ReturnScalarType(xe[1]);
+    x[2] = ReturnScalarType(xe[2]);
     return true;
   }
   

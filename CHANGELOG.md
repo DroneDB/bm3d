@@ -4,6 +4,17 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- Eigen is gone: neither the program nor the library needs it, and `eigen3` is no longer in
+  `vcpkg.json`, in the CMake files or in the CMake package. The simplification of a mesh without
+  texture was its only user: it solved a 3x3 system with Eigen's `FullPivLU`. `SolveFullPivot3x3`
+  (`third_party/vcg-patches/0007`) does the same operations in the same order, so the vertex it
+  places is the same to the last bit; against Eigen it gave identical results, signs of zeros
+  included, for 20 million quadrics (planes in general position, integer and coplanar ones, scales
+  from 1e-160 to 1e160, infinities and NaNs), and the byte gate is the same on all eight reference
+  models (STL, PLY and OBJ, 8 threads). The patch removes the VCGLib code that named Eigen and that
+  a triangle pipeline does not call (an SVD placement option, matrix inverses, polygon principal
+  components, two mesh algorithms; see `PROVENANCE.md`), and `fitting3.h`, `point_matching.h` and
+  `inertia.h` are no longer taken (93 files of VCGLib instead of 96).
 - The image libraries were chosen by measurement (`scripts/bench.py`: interleaved builds of one
   model with several programs, median and spread of the wall time, peak memory, size and SHA-256 of
   the file). On the large photogrammetry model (224k triangles, 72 PNG textures of 1.56

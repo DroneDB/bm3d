@@ -35,7 +35,7 @@ commits.
 ## 3. Building
 
 Requirements: a C++17 compiler (GCC, Clang or MSVC), CMake and [vcpkg](https://vcpkg.io). The
-dependencies (Eigen, libjpeg-turbo, libwebp, libtiff, stb) are listed in `vcpkg.json` and
+dependencies (libjpeg-turbo, libwebp, libtiff, stb) are listed in `vcpkg.json` and
 installed by vcpkg (see Dependencies below). Point `VCPKG_ROOT` at a vcpkg checkout; when bm3d is
 the top-level project it uses vcpkg's toolchain file from there.
 
@@ -71,8 +71,8 @@ extension):
 | WebP | libwebp | Reads WebP textures and writes every node texture. |
 | TIFF | libtiff (optional, `BM3D_WITH_TIFF`) | The largest of the image libraries and the one few models need. |
 
-Eigen is used by the VCGLib simplification code; corto (mesh compression) and VCGLib are in
-`third_party/`. libpng is only used by the tests, to write the PNG pictures stb cannot (a palette,
+The mesh code needs no library: corto (mesh compression) and VCGLib are in `third_party/` (VCGLib
+without Eigen, see `PROVENANCE.md`). libpng is only used by the tests, to write the PNG pictures stb cannot (a palette,
 16 bit samples, an interlaced image).
 
 How the decoders were chosen: `scripts/bench.py` builds a model several times with several programs,

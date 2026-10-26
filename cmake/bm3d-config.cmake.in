@@ -3,7 +3,6 @@
 # The static libraries of bm3d link these; a program that links bm3d::bm3d needs them found.
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
-find_dependency(Eigen3)
 find_dependency(JPEG)
 if(@BM3D_WITH_TIFF@)
     find_dependency(TIFF)

@@ -2,7 +2,6 @@
   "name": "bm3d",
   "version": "0.1.0",
   "dependencies": [
-    "eigen3",
     "libjpeg-turbo",
     "libwebp",
     "stb"

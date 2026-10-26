@@ -1,0 +1,736 @@
+From bd97042e1713c8d0a20201635f899c5efcb5d9f1 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 20:33:00 +0100
+Subject: [PATCH] Nothing in the quadric simplification needs Eigen
+
+The quadric simplification of a mesh without texture solved its 3x3 system with Eigen's
+FullPivLU and its error with the Eigen norm. The solution is now computed by SolveFullPivot3x3,
+plain code that does the same operations in the same order as Eigen's solver (the largest
+remaining coefficient as pivot, the first one in column order winning a tie; the rank test with
+3 * epsilon; the triangular systems by columns, a column of zero right-hand side skipped; the
+unknowns no pivot reaches set to 0), so that the result is the same to the last bit, signs of
+zeros included. It was compared with Eigen on 20 million quadrics, from planes in general
+position, integer ones, coplanar ones, ones of every scale from 1e-160 to 1e160, and ones with
+infinities and NaNs, with no difference.
+
+What else of the files used here named Eigen is removed, because it cannot be compiled without
+it and nothing in a triangle mesh pipeline calls it: Quadric::MinimumClosestToPoint (an SVD) and
+the SVDPlacement option that chose it; Matrix33 and Matrix44 Inverse and the Eigen determinant
+of Matrix44 (now a plain expansion by 2x2 minors); the Allocator::AddVertices and AddFaces that
+take an Eigen matrix; the polygon functions that fit a plane or take the principal components of
+a polygon or align a template to it (PolyFittingPlane, PolyFlatness, PolyPCA, PolyScaledPCA,
+GetPolyTemplatePos, PolyAspectRatio); Stat::ComputeMeshVolume and Clean::SelectFoldedFaceFromOneRingFaces,
+which called into them. With those gone, fitting3.h, point_matching.h and inertia.h are no
+longer read.
+---
+ vcg/complex/algorithms/clean.h                |  60 ----
+ .../tri_edge_collapse_quadric.h               |   6 +-
+ vcg/complex/algorithms/stat.h                 |   7 -
+ vcg/complex/allocate.h                        |  36 ---
+ vcg/math/matrix33.h                           |  11 -
+ vcg/math/matrix44.h                           |  29 +-
+ vcg/math/quadric.h                            | 122 +++++---
+ vcg/space/polygon3.h                          | 273 ------------------
+ 8 files changed, 97 insertions(+), 447 deletions(-)
+
+diff --git a/vcg/complex/algorithms/clean.h b/vcg/complex/algorithms/clean.h
+index d7c349e..5948f00 100644
+--- a/vcg/complex/algorithms/clean.h
++++ b/vcg/complex/algorithms/clean.h
+@@ -2180,66 +2180,6 @@ public:
+ 
+ 
+ 
+-	/**
+-  Select the folded faces using an angle threshold on the face normal.
+-  The face is selected if the dot product between the face normal and the normal of the plane fitted
+-  using the vertices of the one ring faces is below the cosThreshold.
+-  The cosThreshold requires a negative cosine value (a positive value is clamp to zero).
+-  */
+-	static void SelectFoldedFaceFromOneRingFaces(MeshType &m, ScalarType cosThreshold)
+-	{
+-		typedef std::unordered_set<VertexPointer> VertexSet;
+-		tri::RequireVFAdjacency(m);
+-		tri::RequirePerFaceNormal(m);
+-		tri::RequirePerVertexNormal(m);
+-		vcg::tri::UpdateSelection<MeshType>::FaceClear(m);
+-		vcg::tri::UpdateNormal<MeshType>::PerFaceNormalized(m);
+-		vcg::tri::UpdateNormal<MeshType>::PerVertexNormalized(m);
+-		vcg::tri::UpdateTopology<MeshType>::VertexFace(m);
+-		if (cosThreshold > 0)
+-			cosThreshold = 0;
+-
+-#pragma omp parallel for schedule(dynamic, 10)
+-		for (int i = 0; i < m.face.size(); i++)
+-		{
+-			VertexSet nearVertex;
+-			std::vector<CoordType> pointVec;
+-			FacePointer f = &m.face[i];
+-			for (int j = 0; j < 3; j++)
+-			{
+-				std::vector<VertexPointer> temp;
+-				vcg::face::VVStarVF<FaceType>(f->V(j), temp);
+-				typename std::vector<VertexPointer>::iterator iter = temp.begin();
+-				for (; iter != temp.end(); iter++)
+-				{
+-					if ((*iter) != f->V1(j) && (*iter) != f->V2(j))
+-					{
+-						if (nearVertex.insert((*iter)).second)
+-							pointVec.push_back((*iter)->P());
+-					}
+-				}
+-				nearVertex.insert(f->V(j));
+-				pointVec.push_back(f->P(j));
+-			}
+-
+-			if (pointVec.size() > 3)
+-			{
+-				vcg::Plane3<ScalarType> plane;
+-				vcg::FitPlaneToPointSet(pointVec, plane);
+-				float avgDot = 0;
+-				for (auto  nvp :  nearVertex)
+-					avgDot += plane.Direction().dot(nvp->N());
+-				avgDot /= nearVertex.size();
+-				typename MeshType::VertexType::NormalType normal;
+-				if (avgDot < 0)
+-					normal = -plane.Direction();
+-				else
+-					normal = plane.Direction();
+-				if (normal.dot(f->N()) < cosThreshold)
+-					f->SetS();
+-			}
+-		}
+-	}
+ 	/**
+   Select the faces on the first mesh that intersect the second mesh.
+   It uses a grid for querying so a face::mark should be added.
+diff --git a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+index 687882e..bf5d0d0 100644
+--- a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
++++ b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+@@ -92,7 +92,6 @@ public:
+   double    NormalThrRad          = M_PI/2.0;
+   double    CosineThr             = 0 ; // ~ cos(pi/2) 
+   bool      OptimalPlacement =true;
+-  bool      SVDPlacement = false;
+   bool      PreserveTopology =false;
+   bool      PreserveBoundary = false;
+   double    QuadricEpsilon = 1e-15;
+@@ -169,10 +168,7 @@ public:
+         q+=QH::Qd(this->pos.V(1));
+         
+         Point3<QuadricType::ScalarType> x;
+-        if(pp->SVDPlacement)
+-          q.MinimumClosestToPoint(x,Point3d::Construct(newPos));
+-        else 
+-          q.Minimum(x);
++        q.Minimum(x);
+         newPos = CoordType::Construct(x);  
+       }      
+     }
+diff --git a/vcg/complex/algorithms/stat.h b/vcg/complex/algorithms/stat.h
+index 2626065..3f9f2c2 100644
+--- a/vcg/complex/algorithms/stat.h
++++ b/vcg/complex/algorithms/stat.h
+@@ -30,7 +30,6 @@
+ #include <vcg/math/histogram.h>
+ #include <vcg/complex/algorithms/closest.h>
+ #include <vcg/space/index/grid_static_ptr.h>
+-#include <vcg/complex/algorithms/inertia.h>
+ #include <vcg/space/polygon3.h>
+ 
+ 
+@@ -282,12 +281,6 @@ public:
+     return V;
+   }
+ 
+-  static ScalarType ComputeMeshVolume(const MeshType & m)
+-  {
+-    Inertia<MeshType> I(m);
+-    return I.Mass();
+-  }
+-
+   static ScalarType ComputeMeshArea(const MeshType & m)
+   {
+     ScalarType area=0;
+diff --git a/vcg/complex/allocate.h b/vcg/complex/allocate.h
+index ea36a98..ae5a2b3 100644
+--- a/vcg/complex/allocate.h
++++ b/vcg/complex/allocate.h
+@@ -278,24 +278,6 @@ public:
+     return v_ret;
+   }
+   
+-  /** \brief Wrapper to AddVertices() to add an eigen matrix of (vn,3)
+-   *  it returns the iterator to the first vertex added
+-            */
+-  static VertexIterator AddVertices(MeshType &m, const Eigen::MatrixXf &vm)
+-  {
+-      VertexIterator v_ret =  AddVertices(m, vm.rows());
+-      VertexIterator v_start = v_ret;
+-      for(int i=0;i<vm.rows();++i)
+-      {
+-          v_ret->P()[0]=vm(i,0);
+-          v_ret->P()[1]=vm(i,1);
+-          v_ret->P()[2]=vm(i,2);
+-          ++v_ret;
+-      }
+-      return v_start;
+-  }
+-  
+-   
+   /** \brief Wrapper to AddVertices() to add a single vertex with given coords
+             */
+   static VertexIterator AddVertex(MeshType &m, const CoordType &p)
+@@ -638,24 +620,6 @@ public:
+     return f_ret;
+   }
+   
+-  /** \brief Function to add n faces to the mesh getting indexes
+-   *  from a (fn, 3) eigen matrix of int  .
+-            */
+-  static FaceIterator AddFaces(MeshType &m, const Eigen::MatrixXi &fm)
+-  {
+-      PointerUpdater<FacePointer> pu;
+-      FaceIterator f_start = AddFaces(m,fm.rows(),pu);
+-      FaceIterator f_ret=f_start;
+-      for(int i=0;i<fm.rows();++i)
+-      {
+-          f_start->V(0)= &m.vert[fm(i,0)];
+-          f_start->V(1)= &m.vert[fm(i,1)];
+-          f_start->V(2)= &m.vert[fm(i,2)];
+-          ++f_start;
+-      }
+-      return f_ret;
+-  }
+-
+   /** \brief Function to add n faces to the mesh.
+             This is the only full featured function that is able to manage correctly
+             all the official internal pointers of the mesh (like the VF and FF adjacency relations)
+diff --git a/vcg/math/matrix33.h b/vcg/math/matrix33.h
+index c896afc..fe23e9e 100644
+--- a/vcg/math/matrix33.h
++++ b/vcg/math/matrix33.h
+@@ -498,17 +498,6 @@ vcg::Matrix33<S> TransformationMatrix(const vcg::Point3<S> dirX,
+     /////then find the inverse
+     return (Trans);
+ }
+-template <class S>
+-Matrix33<S> Inverse(const Matrix33<S>&m)
+-    {
+-  Eigen::Matrix3d mm,mmi;
+-  m.ToEigenMatrix(mm);
+-  mmi=mm.inverse();
+-  Matrix33<S> res;
+-  res.FromEigenMatrix(mmi);
+-  return res;
+-}
+-
+ ///given 2 vector centered into origin calculate the rotation matrix from first to the second
+ template <class S>
+ Matrix33<S> RotationMatrix(vcg::Point3<S> v0,vcg::Point3<S> v1,bool normalized=true)
+diff --git a/vcg/math/matrix44.h b/vcg/math/matrix44.h
+index 43ed022..f310ed5 100644
+--- a/vcg/math/matrix44.h
++++ b/vcg/math/matrix44.h
+@@ -31,8 +31,6 @@
+ #include <vector>
+ #include <array>
+ #include <iostream>
+-#include <Eigen/Core>
+-#include <Eigen/LU>
+ 
+ namespace vcg {
+ 
+@@ -645,9 +643,21 @@ bool Decompose(Matrix44<T> &M, Point3<T> &ScaleV, Point3<T> &ShearV, Point3<T> &
+ 
+ 
+ template <class T> T Matrix44<T>::Determinant() const {
+-    Eigen::Matrix4d mm;
+-    this->ToEigenMatrix(mm);
+-    return mm.determinant();
++    // expansion by the 2x2 minors of the first two rows and of the last two
++    const Matrix44<T> &m = *this;
++    const T s0 = m.ElementAt(0,0)*m.ElementAt(1,1) - m.ElementAt(1,0)*m.ElementAt(0,1);
++    const T s1 = m.ElementAt(0,0)*m.ElementAt(1,2) - m.ElementAt(1,0)*m.ElementAt(0,2);
++    const T s2 = m.ElementAt(0,0)*m.ElementAt(1,3) - m.ElementAt(1,0)*m.ElementAt(0,3);
++    const T s3 = m.ElementAt(0,1)*m.ElementAt(1,2) - m.ElementAt(1,1)*m.ElementAt(0,2);
++    const T s4 = m.ElementAt(0,1)*m.ElementAt(1,3) - m.ElementAt(1,1)*m.ElementAt(0,3);
++    const T s5 = m.ElementAt(0,2)*m.ElementAt(1,3) - m.ElementAt(1,2)*m.ElementAt(0,3);
++    const T c5 = m.ElementAt(2,2)*m.ElementAt(3,3) - m.ElementAt(3,2)*m.ElementAt(2,3);
++    const T c4 = m.ElementAt(2,1)*m.ElementAt(3,3) - m.ElementAt(3,1)*m.ElementAt(2,3);
++    const T c3 = m.ElementAt(2,1)*m.ElementAt(3,2) - m.ElementAt(3,1)*m.ElementAt(2,2);
++    const T c2 = m.ElementAt(2,0)*m.ElementAt(3,3) - m.ElementAt(3,0)*m.ElementAt(2,3);
++    const T c1 = m.ElementAt(2,0)*m.ElementAt(3,2) - m.ElementAt(3,0)*m.ElementAt(2,2);
++    const T c0 = m.ElementAt(2,0)*m.ElementAt(3,1) - m.ElementAt(3,0)*m.ElementAt(2,1);
++    return s0*c5 - s1*c4 + s2*c3 + s3*c2 - s4*c1 + s5*c0;
+ }
+ 
+ 
+@@ -672,15 +682,6 @@ Matrix44<T> &Transpose(Matrix44<T> &m)
+     return m;
+ }
+ 
+-template <class T> Matrix44<T> Inverse(const Matrix44<T> &m) {
+-    Eigen::Matrix4d mm,mmi;
+-    m.ToEigenMatrix(mm);
+-    mmi=mm.inverse();
+-    Matrix44<T> res;
+-    res.FromEigenMatrix(mmi);
+-    return res;
+-}
+-
+ } //namespace
+ #endif
+ 
+diff --git a/vcg/math/quadric.h b/vcg/math/quadric.h
+index 55e2889..96ac9f7 100644
+--- a/vcg/math/quadric.h
++++ b/vcg/math/quadric.h
+@@ -23,14 +23,75 @@
+ #ifndef __VCGLIB_QUADRIC
+ #define __VCGLIB_QUADRIC
+ 
++#include <algorithm>
++#include <cmath>
++#include <cstring>
++#include <limits>
++
+ #include <vcg/space/point3.h>
+ #include <vcg/space/plane3.h>
+ #include <vcg/math/matrix33.h>
+-#include <Eigen/Core>
+ 
+ namespace vcg {
+ namespace math {
+ 
++/* Solves A x = b for a 3x3 matrix by LU decomposition with full pivoting, in the very order of
++ * operations (and the same zero tests) of Eigen's FullPivLU::solve, so that the solution is the
++ * same to the last bit: the largest remaining coefficient (the first one in column order wins a
++ * tie) is the pivot, the rank counts the pivots above 3 * epsilon times the first one, the
++ * triangular systems are solved column by column, and a column whose right-hand side is zero is
++ * skipped. Unknowns of a singular matrix that no pivot reaches are 0.
++ */
++inline void SolveFullPivot3x3(const double A[3][3], const double b[3], double x[3])
++{
++  double lu[3][3];
++  std::memcpy(lu, A, sizeof(lu));
++  int rowSwap[3] = {0, 1, 2}, colSwap[3] = {0, 1, 2};
++  int pivots = 3;
++  double maxPivot = 0;
++  for(int k = 0; k < 3; ++k)
++  {
++    int pr = k, pc = k;
++    double biggest = std::fabs(lu[k][k]);
++    for(int c = k; c < 3; ++c)
++      for(int r = k; r < 3; ++r)
++      {
++        const double v = std::fabs(lu[r][c]);
++        if(v > biggest) { biggest = v; pr = r; pc = c; }
++      }
++    if(biggest == 0) { pivots = k; break; }
++    if(biggest > maxPivot) maxPivot = biggest;
++    rowSwap[k] = pr;
++    colSwap[k] = pc;
++    if(pr != k) for(int c = 0; c < 3; ++c) std::swap(lu[k][c], lu[pr][c]);
++    if(pc != k) for(int r = 0; r < 3; ++r) std::swap(lu[r][k], lu[r][pc]);
++    for(int r = k + 1; r < 3; ++r) lu[r][k] /= lu[k][k];
++    for(int c = k + 1; c < 3; ++c)
++      for(int r = k + 1; r < 3; ++r)
++        lu[r][c] -= lu[r][k] * lu[k][c];
++  }
++  const double threshold = maxPivot * (std::numeric_limits<double>::epsilon() * 3);
++  int rank = 0;
++  for(int i = 0; i < pivots; ++i) rank += std::fabs(lu[i][i]) > threshold;
++
++  x[0] = x[1] = x[2] = 0;
++  if(rank == 0) return;
++  double c[3] = {b[0], b[1], b[2]};
++  for(int k = 0; k < 3; ++k) std::swap(c[k], c[rowSwap[k]]);
++  for(int i = 0; i < 3; ++i)
++    if(c[i] != 0)
++      for(int j = i + 1; j < 3; ++j) c[j] -= c[i] * lu[j][i];
++  for(int i = rank - 1; i >= 0; --i)
++    if(c[i] != 0)
++    {
++      c[i] /= lu[i][i];
++      for(int j = 0; j < i; ++j) c[j] -= c[i] * lu[j][i];
++    }
++  int unknown[3] = {0, 1, 2};
++  for(int k = 0; k < 3; ++k) std::swap(unknown[k], unknown[colSwap[k]]);
++  for(int i = 0; i < rank; ++i) x[unknown[i]] = c[i];
++}
++
+ /*
+  *  This class encode a quadric function 
+  *  f(x) = xAx +bx + c
+@@ -197,49 +258,28 @@ public:
+   template <class ReturnScalarType>
+   bool Minimum(Point3<ReturnScalarType> &x)
+   {
+-    Eigen::Matrix3d A;
+-    Eigen::Vector3d be;
+-    A << a[0], a[1], a[2],
+-         a[1], a[3], a[4],
+-         a[2], a[4], a[5];
+-    be << -b[0]/2, -b[1]/2, -b[2]/2;
+-  
+-  //  Eigen::Vector3d xe = A.colPivHouseholderQr().solve(bv);
+-  //  Eigen::Vector3d xe = A.partialPivLu().solve(bv);
+-    Eigen::Vector3d xe = A.fullPivLu().solve(be);
++    const double A[3][3] = { {double(a[0]), double(a[1]), double(a[2])},
++                             {double(a[1]), double(a[3]), double(a[4])},
++                             {double(a[2]), double(a[4]), double(a[5])} };
++    const double be[3] = { double(-b[0]/2), double(-b[1]/2), double(-b[2]/2) };
++    double xe[3];
++    SolveFullPivot3x3(A, be, xe);
+     // Check relative error of solution xe
+-    double error = (A*xe - be).norm();
+-    if(error > be.norm() * Quadric<ScalarType>::RelativeErrorThr() ) 
++    double r[3];
++    for(int i=0;i<3;++i)
++    {
++      double sum = 0;
++      for(int j=0;j<3;++j) sum += A[i][j]*xe[j];
++      r[i] = sum - be[i];
++    }
++    double error = std::sqrt(r[0]*r[0] + (r[1]*r[1] + r[2]*r[2]));
++    double bnorm = std::sqrt(be[0]*be[0] + (be[1]*be[1] + be[2]*be[2]));
++    if(error > bnorm * Quadric<ScalarType>::RelativeErrorThr() )
+       return false;
+     
+-    x.FromEigenVector(xe);
+-    return true;
+-  }
+-  
+-  
+-  template <class ReturnScalarType>
+-  bool MinimumClosestToPoint(Point3<ReturnScalarType> &x, const Point3<ReturnScalarType> &pt)
+-  {
+-    const double qeps = 1e-3;
+-    Eigen::Matrix3d A;
+-    Eigen::Vector3d be;
+-    A << a[0], a[1], a[2],
+-         a[1], a[3], a[4],
+-         a[2], a[4], a[5];
+-    be << -b[0]/2, -b[1]/2, -b[2]/2;
+-  
+-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+-    Eigen::Vector3d s = svd.singularValues();
+-    for(int i=1;i<3;++i) 
+-      if(s[i]/s[0] > qeps) s[i]=1/s[i];
+-      else s[i]=0;
+-    s[0]=1/s[0];
+-    
+-    Eigen::Vector3d xp;  
+-    pt.ToEigenVector(xp);
+-    Eigen::Vector3d xe = xp + (svd.matrixV()*s.asDiagonal()*(svd.matrixU().transpose())) *(be - A*xp);
+-
+-    x.FromEigenVector(xe);
++    x[0] = ReturnScalarType(xe[0]);
++    x[1] = ReturnScalarType(xe[1]);
++    x[2] = ReturnScalarType(xe[2]);
+     return true;
+   }
+   
+diff --git a/vcg/space/polygon3.h b/vcg/space/polygon3.h
+index 069830c..f9b2eda 100644
+--- a/vcg/space/polygon3.h
++++ b/vcg/space/polygon3.h
+@@ -25,8 +25,6 @@
+ #define POLYGON_H
+ 
+ #include <vcg/space/plane3.h>
+-#include <vcg/space/fitting3.h>
+-#include <vcg/space/point_matching.h>
+ #include <vcg/math/matrix33.h>
+ #include <vcg/space/distance3.h>
+ 
+@@ -237,141 +235,6 @@ void PolyAngleDeviation(const PolygonType &F,
+     if (MaxDev>1)MaxDev=1;
+ }
+ 
+-//return the fitting plane of a polygonal face
+-template<class PolygonType>
+-vcg::Plane3<typename PolygonType::ScalarType> PolyFittingPlane(const PolygonType &F)
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-    vcg::Plane3<ScalarType> BestPL;
+-    assert(F.VN()>=3);
+-    std::vector<CoordType> pointVec;
+-    for (int i=0;i<F.VN();i++)
+-        pointVec.push_back(F.cP(i));
+-
+-    vcg::FitPlaneToPointSet(pointVec,BestPL);
+-    return BestPL;
+-}
+-
+-//return the flatness of a polygonal face as avg distance to the best fitting plane divided by half perimeter
+-template<class PolygonType>
+-typename PolygonType::ScalarType PolyFlatness(const PolygonType &F)
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-
+-    if (F.VN()<=3)
+-        return 0;
+-
+-    //average lenght
+-    ScalarType SumL=PolyPerimeter(F)/2.0;
+-
+-    //diagonal distance
+-    vcg::Plane3<ScalarType> BestPL=PolyFittingPlane(F);
+-
+-    //then project points on the plane
+-    ScalarType Flatness=0;
+-    for (int i=0;i<F.VN();i++)
+-    {
+-        CoordType pos=F.cP(i);
+-        CoordType proj=BestPL.Projection(pos);
+-        Flatness+=(pos-proj).Norm();
+-    }
+-    Flatness/=(ScalarType)F.VN();
+-    return((Flatness)/SumL);
+-}
+-
+-//evaluate the PCA directions of a polygonal face
+-template<class PolygonType>
+-void PolyPCA(const PolygonType &F,
+-             typename PolygonType::CoordType PCA[])
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-
+-    //compute the covariance matrix
+-    Eigen::Matrix3d EigenCovMat;
+-    //ComputeCovarianceMatrix(EigenCovMat);
+-    //compute covariance matrix
+-    ///compute the barycenter
+-    CoordType Barycenter=PolyBarycenter(F);
+-
+-    // second cycle: compute the covariance matrix
+-    EigenCovMat.setZero();
+-    Eigen::Vector3d p;
+-    for (int i=0;i<F.VN();i++)
+-    {
+-        (F.cP(i)-Barycenter).ToEigenVector(p);
+-        EigenCovMat+= p*p.transpose(); // outer product
+-    }
+-
+-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d > eig(EigenCovMat);
+-
+-    Eigen::Vector3d eval = eig.eigenvalues();
+-    Eigen::Matrix3d evec = eig.eigenvectors();
+-
+-    eval = eval.cwiseAbs();
+-    int normInd,maxInd,minInd;
+-
+-    ///get min and max coff ..
+-    ///the minumum is the Normal
+-    ///the other two the anisotropy directions
+-    eval.minCoeff(&normInd);
+-    eval.maxCoeff(&maxInd);
+-    minInd=(maxInd+1)%3;
+-
+-    if (minInd==normInd)minInd=(normInd+1)%3;
+-    assert((minInd!=normInd)&&(minInd!=maxInd)&&(minInd!=maxInd));
+-
+-    ///maximum direction of PCA
+-    PCA[0][0] = evec(0,maxInd);
+-    PCA[0][1] = evec(1,maxInd);
+-    PCA[0][2] = evec(2,maxInd);
+-    ///minimum direction of PCA
+-    PCA[1][0] = evec(0,minInd);
+-    PCA[1][1] = evec(1,minInd);
+-    PCA[1][2] = evec(2,minInd);
+-    ///Normal direction
+-    PCA[2][0] = evec(0,normInd);
+-    PCA[2][1] = evec(1,normInd);
+-    PCA[2][2] = evec(2,normInd);
+-
+-    ScalarType LX=sqrt(eval[maxInd]);
+-    ScalarType LY=sqrt(eval[minInd]);
+-    //ScalarType LZ=sqrt(eval[normInd]);
+-
+-    ///scale the directions
+-    PCA[0]*=LX;
+-    PCA[1]*=LY;
+-    //PCA[2]*=LZ;//.Normalize();
+-    PCA[2].Normalize();
+-}
+-
+-//evaluate the PCA directions of a polygonal face
+-//scaled by the area of the face
+-template<class PolygonType>
+-void PolyScaledPCA(const PolygonType &F,
+-                   typename PolygonType::CoordType PCA[])
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-
+-    std::vector<CoordType> SwapPos;
+-
+-    ///compute the barycenter
+-    //CoordType Barycenter=PolyBarycenter(F);
+-
+-    ///compute the Area
+-    ScalarType Area=PolyArea(F);
+-
+-    PolyPCA(F,PCA);
+-
+-    ScalarType Scale=sqrt(Area/(PCA[0].Norm()*PCA[1].Norm()));
+-    PCA[0]*=Scale;
+-    PCA[1]*=Scale;
+-
+-}
+-
+ //return the base template polygon as
+ //described by "Static Aware Grid Shells" by Pietroni et Al.
+ template<class CoordType>
+@@ -399,142 +262,6 @@ void getBaseTemplatePolygon(int N,
+     }
+ }
+ 
+-//return the rigidly aligned template polygon as
+-//described by "Static Aware Grid Shells" by Pietroni et Al.
+-template<class PolygonType>
+-void GetPolyTemplatePos(const PolygonType &F,
+-                        std::vector<typename PolygonType::CoordType> &TemplatePos,
+-                        bool force_isotropy=false)
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-    std::vector<CoordType>  UniformPos,UniformTempl;
+-
+-    CoordType Barycenter=PolyBarycenter(F);
+-
+-    getBaseTemplatePolygon(F.VN(),TemplatePos);
+-
+-    CoordType PCA[3];
+-    PolyPCA(F,PCA);
+-
+-    vcg::Matrix44<ScalarType> ToPCA,ToPCAInv;
+-    ToPCA.SetIdentity();
+-
+-    CoordType dirX=PCA[0];
+-    CoordType dirY=PCA[1];
+-    CoordType dirZ=PCA[2];
+-
+-    if (force_isotropy)
+-    {
+-        dirX.Normalize();
+-        dirY.Normalize();
+-        dirZ.Normalize();
+-        //        CoordType dirXN=dirX;dirXN.Normalize();
+-        //        CoordType dirYN=dirY;dirYN.Normalize();
+-        //        CoordType dirZN=dirZ;dirZN.Normalize();
+-
+-        //        dirX=dirX*0.8+dirXN*0.2;
+-        //        dirY=dirY*0.8+dirYN*0.2;
+-        //        dirZ=dirZ*0.8+dirZN*0.2;
+-    }
+-
+-    ///set the Rotation matrix
+-    ToPCA.SetColumn(0,dirX);
+-    ToPCA.SetColumn(1,dirY);
+-    ToPCA.SetColumn(2,dirZ);
+-    ToPCAInv=ToPCA;
+-    ToPCA=vcg::Inverse(ToPCA);
+-
+-    ///then transform the polygon to PCA space
+-    for (int i=0;i<F.VN();i++)
+-    {
+-        ///translate
+-        CoordType Pos=F.cP(i)-Barycenter;
+-        ///rotate
+-        Pos=ToPCA*Pos;
+-        //retranslate
+-        UniformPos.push_back(Pos);
+-    }
+-
+-    ///calculate the Area
+-    ScalarType AreaTemplate=Area(TemplatePos);
+-    ScalarType AreaUniform=Area(UniformPos);
+-
+-    //    if (TargetArea>0)
+-    //    {
+-    //        AreaUniform*=(AreaUniform/TargetArea);
+-    //    }
+-
+-    ScalarType Scale=sqrt(AreaTemplate/AreaUniform);
+-
+-    for (size_t i=0;i<UniformPos.size();i++)
+-        UniformPos[i]*=Scale;
+-
+-    ///check side
+-    CoordType N0=Normal(UniformPos);
+-    CoordType N1=Normal(TemplatePos);
+-    if ((N0*N1)<0)std::reverse(TemplatePos.begin(),TemplatePos.end());
+-
+-    ///initialize
+-    std::vector<CoordType> FixPoints(UniformPos.begin(),UniformPos.end());
+-    std::vector<CoordType> MovPoints(TemplatePos.begin(),TemplatePos.end());
+-
+-    ///add displacement along Z
+-    for (size_t i=0;i<FixPoints.size();i++)
+-    {
+-        FixPoints[i]+=CoordType(0,0,0.1);
+-        MovPoints[i]+=CoordType(0,0,0.1);
+-    }
+-    ///add original points
+-    FixPoints.insert(FixPoints.end(),UniformPos.begin(),UniformPos.end());
+-    MovPoints.insert(MovPoints.end(),TemplatePos.begin(),TemplatePos.end());
+-
+-    ///then find the alignment
+-    vcg::Matrix44<ScalarType> Rigid;
+-    ///compute rigid match
+-    vcg::ComputeRigidMatchMatrix<ScalarType>(FixPoints,MovPoints,Rigid);
+-
+-    ///then apply transformation
+-    UniformTempl.resize(TemplatePos.size(),CoordType(0,0,0));
+-    for (size_t i=0;i<TemplatePos.size();i++)
+-        UniformTempl[i]=Rigid*TemplatePos[i];
+-
+-    ///then map back to 3D space
+-    for (size_t i=0;i<TemplatePos.size();i++)
+-    {
+-        TemplatePos[i]=UniformTempl[i];
+-        TemplatePos[i]*=1/Scale;
+-        TemplatePos[i]=ToPCAInv*TemplatePos[i];
+-    }
+-
+-    for (size_t i=0;i<TemplatePos.size();i++)
+-        TemplatePos[i]+=Barycenter;
+-
+-}
+-
+-//compute the aspect ratio using the rigidly aligned template polygon as
+-//described by "Static Aware Grid Shells" by Pietroni et Al.
+-template<class PolygonType>
+-typename PolygonType::ScalarType PolyAspectRatio(const PolygonType &F,
+-                                                 bool isotropic=false)
+-{
+-    typedef typename PolygonType::CoordType CoordType;
+-    typedef typename PolygonType::ScalarType ScalarType;
+-    std::vector<CoordType> TemplatePos;
+-
+-    GetPolyTemplatePos(F,TemplatePos,isotropic);
+-
+-    ScalarType diff=0;
+-    assert((int)TemplatePos.size()==F.VN());
+-
+-    ScalarType AreaP=PolyArea(F);
+-    for (size_t i=0;i<TemplatePos.size();i++)
+-        diff+=pow((TemplatePos[i]-F.cP(i)).Norm(),2)/AreaP;
+-
+-    return(diff);
+-}
+-
+-
+ template<class PolygonType>
+ typename PolygonType::ScalarType PolygonPointDistance(const PolygonType &F,
+                                                       const vcg::Point3<typename PolygonType::ScalarType> &pos,
+-- 
+2.53.0
+

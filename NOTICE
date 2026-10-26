@@ -24,17 +24,13 @@ VCGLib
   (Paolo Cignoni and others, the authors named in the file headers). Files under
   third_party/vcg keep their headers: GNU General Public License, version 2 or (at your
   option) any later version. The repository's licence text is licenses/vcglib.LICENSE. The
-  files wrap/ply/plylib.cpp and wrap/ply/plylib.h are modified (third_party/vcg-patches).
+  files wrap/ply/plylib.cpp and wrap/ply/plylib.h and eight headers of vcg/ (which used Eigen) are
+  modified (third_party/vcg-patches).
 
 corto
   Copyright (c) 2015-2022, Visual Computing Lab, ISTI - CNR (Federico Ponchio). MIT licence,
   licenses/corto.LICENSE. Files under third_party/corto, modified by the patches in
   third_party/corto-patches (the undefined behaviour and the leak the sanitizers found).
-
-Eigen
-  Copyright (C) the Eigen authors. Mozilla Public License 2.0 (parts under the BSD licence).
-  Used as a header-only library from the system or vcpkg; its source is available at
-  https://eigen.tuxfamily.org.
 
 Image libraries, linked from vcpkg (the tests also use libpng, which is not part of the program):
   libjpeg-turbo  Copyright (C) 2009-2024 D. R. Commander and others; Copyright (C) 1991-2020
@@ -46,5 +42,5 @@ Image libraries, linked from vcpkg (the tests also use libpng, which is not part
   stb            Public domain or MIT licence, at your option (Sean Barrett and
                  contributors): stb_image, which reads the PNG, BMP, GIF and TGA textures.
 
-The full licence texts of the image libraries and of Eigen are shipped with the binary
+The full licence texts of the image libraries are shipped with the binary
 archives of each release and are in the vcpkg packages they come from.

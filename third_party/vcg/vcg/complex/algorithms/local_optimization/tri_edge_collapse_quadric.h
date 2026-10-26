@@ -92,7 +92,6 @@ public:
   double    NormalThrRad          = M_PI/2.0;
   double    CosineThr             = 0 ; // ~ cos(pi/2) 
   bool      OptimalPlacement =true;
-  bool      SVDPlacement = false;
   bool      PreserveTopology =false;
   bool      PreserveBoundary = false;
   double    QuadricEpsilon = 1e-15;
@@ -169,10 +168,7 @@ public:
         q+=QH::Qd(this->pos.V(1));
         
         Point3<QuadricType::ScalarType> x;
-        if(pp->SVDPlacement)
-          q.MinimumClosestToPoint(x,Point3d::Construct(newPos));
-        else 
-          q.Minimum(x);
+        q.Minimum(x);
         newPos = CoordType::Construct(x);  
       }      
     }

@@ -8,7 +8,7 @@ named by their commit names.
 | Part | Upstream | Fork or pin used here |
 |---|---|---|
 | Nexus builder | https://github.com/cnr-isti-vclab/nexus, `master` at `f29e8fd1182b2a1c0c512add99c7edfc8e146680` | https://github.com/DroneDB/nexus at `847f024bf7cc0beb078868749bc7669748c0aa3d` |
-| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 6 patches (`third_party/vcg-patches/`) |
+| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 7 patches (`third_party/vcg-patches/`) |
 | corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 5 patches (`third_party/corto-patches/`) |
 | API and command line wrapper | none | https://github.com/DroneDB/libnexus at `18acb8c161fd85d1eb614d8be0f8b4dae5fe16f1` (`nxs.cpp`, `nxs.h`, `ddb_nexus_main.cpp`) |
 | Web viewer (added with the release that ships `web/`) | the JavaScript in `html/js` of Nexus, commit `d805432` | the same, with fixes recorded in `web/` |
@@ -53,6 +53,18 @@ the count after `element <name>` tested the name instead of the count, so a head
 that line crashed, and the count is now read with `strtoll` and refused when it is negative, beyond
 an int or not a number (`atoi` took a minus sign and `PlyElement` asserts it away).
 
+A seventh patch (HeDo, `0007`) takes Eigen out of the headers bm3d reads, which the simplification
+of a mesh without texture was the only user of: `math/quadric.h` solves its 3x3 system with
+`SolveFullPivot3x3`, plain code in the order of operations of Eigen's `FullPivLU::solve`, so the
+vertex it places is the same to the last bit (checked against Eigen on 20 million quadrics, and by
+the byte gate on all the reference models). Other code of those headers that named Eigen and that
+a triangle mesh pipeline does not call is removed: `Quadric::MinimumClosestToPoint` and the
+`SVDPlacement` option, the `Inverse` of `Matrix33` and `Matrix44` (the determinant of `Matrix44` is
+a plain expansion), the `Allocator` functions that take an Eigen matrix, the polygon functions that
+fit a plane, take the principal components or align a template, `Stat::ComputeMeshVolume` and
+`Clean::SelectFoldedFaceFromOneRingFaces`. `fitting3.h`, `point_matching.h` and `inertia.h` are not
+read any more and are no longer taken (93 files of VCGLib instead of 96).
+
 ## Files taken and how to repeat it
 
 | Directory | List and manifest | Script |
@@ -86,7 +98,8 @@ used.
   `optimizeNode` begins with `return;` in the imported code, so the optimisation never ran
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
-- `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the 6 patches above.
+- `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the patches `0001` to `0006` above; and `third_party/vcg/vcg/` `math/quadric.h`, `math/matrix33.h`, `math/matrix44.h`, `space/polygon3.h`,
+  `complex/allocate.h`, `complex/algorithms/` `stat.h`, `clean.h` and `local_optimization/tri_edge_collapse_quadric.h`: the patch `0007`.
 - `third_party/corto/` `include/corto/normal_attribute.h`, `include/corto/cstream.h`,
   `src/bitstream.cpp`: the 5 corto patches above.
 - `src/common/dag.h`: every field of `Node` has a value from the start, and the empty sphere of

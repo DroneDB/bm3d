@@ -1,7 +1,6 @@
 vcg/complex/algorithms/clean.h
 vcg/complex/algorithms/closest.h
 vcg/complex/algorithms/edge_collapse.h
-vcg/complex/algorithms/inertia.h
 vcg/complex/algorithms/local_optimization.h
 vcg/complex/algorithms/local_optimization/tri_edge_collapse.h
 vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
@@ -64,7 +63,6 @@ vcg/space/box2.h
 vcg/space/box3.h
 vcg/space/color4.h
 vcg/space/distance3.h
-vcg/space/fitting3.h
 vcg/space/index/base.h
 vcg/space/index/grid_closest.h
 vcg/space/index/grid_static_ptr.h
@@ -80,7 +78,6 @@ vcg/space/plane3.h
 vcg/space/point2.h
 vcg/space/point3.h
 vcg/space/point4.h
-vcg/space/point_matching.h
 vcg/space/polygon3.h
 vcg/space/ray3.h
 vcg/space/rect_packer.h

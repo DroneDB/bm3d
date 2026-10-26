@@ -31,8 +31,6 @@
 #include <vector>
 #include <array>
 #include <iostream>
-#include <Eigen/Core>
-#include <Eigen/LU>
 
 namespace vcg {
 
@@ -645,9 +643,21 @@ bool Decompose(Matrix44<T> &M, Point3<T> &ScaleV, Point3<T> &ShearV, Point3<T> &
 
 
 template <class T> T Matrix44<T>::Determinant() const {
-    Eigen::Matrix4d mm;
-    this->ToEigenMatrix(mm);
-    return mm.determinant();
+    // expansion by the 2x2 minors of the first two rows and of the last two
+    const Matrix44<T> &m = *this;
+    const T s0 = m.ElementAt(0,0)*m.ElementAt(1,1) - m.ElementAt(1,0)*m.ElementAt(0,1);
+    const T s1 = m.ElementAt(0,0)*m.ElementAt(1,2) - m.ElementAt(1,0)*m.ElementAt(0,2);
+    const T s2 = m.ElementAt(0,0)*m.ElementAt(1,3) - m.ElementAt(1,0)*m.ElementAt(0,3);
+    const T s3 = m.ElementAt(0,1)*m.ElementAt(1,2) - m.ElementAt(1,1)*m.ElementAt(0,2);
+    const T s4 = m.ElementAt(0,1)*m.ElementAt(1,3) - m.ElementAt(1,1)*m.ElementAt(0,3);
+    const T s5 = m.ElementAt(0,2)*m.ElementAt(1,3) - m.ElementAt(1,2)*m.ElementAt(0,3);
+    const T c5 = m.ElementAt(2,2)*m.ElementAt(3,3) - m.ElementAt(3,2)*m.ElementAt(2,3);
+    const T c4 = m.ElementAt(2,1)*m.ElementAt(3,3) - m.ElementAt(3,1)*m.ElementAt(2,3);
+    const T c3 = m.ElementAt(2,1)*m.ElementAt(3,2) - m.ElementAt(3,1)*m.ElementAt(2,2);
+    const T c2 = m.ElementAt(2,0)*m.ElementAt(3,3) - m.ElementAt(3,0)*m.ElementAt(2,3);
+    const T c1 = m.ElementAt(2,0)*m.ElementAt(3,2) - m.ElementAt(3,0)*m.ElementAt(2,2);
+    const T c0 = m.ElementAt(2,0)*m.ElementAt(3,1) - m.ElementAt(3,0)*m.ElementAt(2,1);
+    return s0*c5 - s1*c4 + s2*c3 + s3*c2 - s4*c1 + s5*c0;
 }
 
 
@@ -670,15 +680,6 @@ Matrix44<T> &Transpose(Matrix44<T> &m)
             std::swap(m.ElementAt(i, j), m.ElementAt(j, i));
         }
     return m;
-}
-
-template <class T> Matrix44<T> Inverse(const Matrix44<T> &m) {
-    Eigen::Matrix4d mm,mmi;
-    m.ToEigenMatrix(mm);
-    mmi=mm.inverse();
-    Matrix44<T> res;
-    res.FromEigenMatrix(mmi);
-    return res;
 }
 
 } //namespace

@@ -498,17 +498,6 @@ vcg::Matrix33<S> TransformationMatrix(const vcg::Point3<S> dirX,
     /////then find the inverse
     return (Trans);
 }
-template <class S>
-Matrix33<S> Inverse(const Matrix33<S>&m)
-    {
-  Eigen::Matrix3d mm,mmi;
-  m.ToEigenMatrix(mm);
-  mmi=mm.inverse();
-  Matrix33<S> res;
-  res.FromEigenMatrix(mmi);
-  return res;
-}
-
 ///given 2 vector centered into origin calculate the rotation matrix from first to the second
 template <class S>
 Matrix33<S> RotationMatrix(vcg::Point3<S> v0,vcg::Point3<S> v1,bool normalized=true)
