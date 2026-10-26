@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+# The static libraries of bm3d link these; a program that links bm3d::bm3d needs them found.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+find_dependency(Eigen3)
+find_dependency(JPEG)
+find_dependency(PNG)
+find_dependency(TIFF)
+find_dependency(WebP CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/bm3dTargets.cmake")

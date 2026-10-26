@@ -1,0 +1,21 @@
+{
+  "name": "bm3d",
+  "version": "0.1.0",
+  "dependencies": [
+    "eigen3",
+    "libjpeg-turbo",
+    "libpng",
+    "libwebp",
+    "stb",
+    "tiff"
+  ],
+  "features": {
+    "tests": {
+      "description": "The tests",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  },
+  "builtin-baseline": "65514b43a035548911e1789071785a9827470cdc"
+}
