@@ -71,7 +71,7 @@ read any more and are no longer taken (93 files of VCGLib instead of 96).
 |---|---|---|
 | `third_party/vcg/` (only the VCGLib files the build reads) | `FILES`, `VCG_SOURCE` | `scripts/sync-vcg.py` |
 | `third_party/corto/` (the 8 compiled sources and the headers they include) | `FILES`, `CORTO_SOURCE` | `scripts/sync-corto.py` |
-| `src/common`, `src/nxsbuild`, `src/nxsedit` (and `src/nxszip`, since removed) | `NEXUS_SOURCE` | `scripts/import-nexus.py` |
+| `src/common`, `src/build`, `src/compress` (the files were imported into `src/nxsbuild`, `src/nxsedit` and `src/nxszip`; see Renamed files) | `NEXUS_SOURCE` | `scripts/import-nexus.py` |
 
 The lists come from `scripts/closure.py`, which reads the compiler's dependency files (GCC and
 Clang) and the `/showIncludes` output of MSVC and keeps the files that lie under the three source
@@ -87,14 +87,44 @@ used.
   commit (and, for VCGLib, the patches) and compare. To move to another commit, change the commit
   in the script, edit `FILES` if the set of used files changed, and run the script with
   `--source`.
-- The Nexus files are ours to edit after the import. `scripts/import-nexus.py --check` lists the
-  files that have changed or gone since, with the hashes of the import as the reference; with
-  `--source <clone of the fork>` it also checks that the recorded hashes are those of the pinned
-  commit.
+- The Nexus files are ours to edit and to move after the import. `scripts/import-nexus.py --check`
+  lists the files that have been renamed, changed or gone since, with the hashes of the import as
+  the reference; with `--source <clone of the fork>` it also checks that the recorded hashes are
+  those of the pinned commit.
+
+## Renamed files
+
+Every Nexus name in the code is a bm3d name. The output did not change (the byte gate on the eight
+reference models was the same before and after). `src/NEXUS_SOURCE` still holds the hash of every
+file as imported, under its upstream path, and a `moved` section that maps each upstream path to
+the path the file has now, so that every imported file can be traced; `scripts/import-nexus.py
+--check` reports the moved files as renamed and the edited ones as modified (all of them are
+modified, since the namespace and the type names changed).
+
+| Upstream path (in `src/`) | Now |
+|---|---|
+| `nxsbuild/` | `src/build/`; `nexusbuilder.{h,cpp}` is `builder.{h,cpp}` |
+| `nxsedit/extractor.{h,cpp}` | `src/compress/compressor.{h,cpp}` |
+| `common/nexusdata.{h,cpp}` | `src/common/reader.{h,cpp}` |
+| `common/nexusfile.h` | `src/common/file.h` |
+| `common/stdnexusfile.{h,cpp}` | `src/common/stdfile.{h,cpp}` |
+| `nxszip/` | removed (see below) |
+| the other files of `common/` | the same path |
+
+Names in the code: the namespace `nx` is `bm3d::detail` (the classes `Builder` and `Compressor`
+live there too; the public API of `include/bm3d/bm3d.h` is in `bm3d`); `NexusBuilder` is
+`Builder`, `NexusData` is `Reader`, `NexusFile` is `File`, `StdNexusFile` is `StdFile`,
+`NexusFormatError` is `FormatError`, `Extractor` is `Compressor`, `NEXUS_PADDING` is
+`BM3D_PADDING`. The classes of the mesh, the kd-tree, the loaders and the image code that were in
+the global namespace stay there until the sources are split into modules. Outside `src/`:
+`tests/support/nexus_file.{h,cpp}` is `container_file.{h,cpp}` and `scripts/nxzread.py` is
+`scripts/format0.py`. The temporary files of a build are `bm3d_cache_*` and `<output>.tmp.bm3d`.
+The licence headers of the imported files are unchanged. The magic number and the header of the
+container are data of format 0 and are not changed.
 
 ## Changes made to the imported files
 
-- `src/nxsbuild/nexusbuilder.cpp`: the vertex cache optimisation is removed. Its function
+- `src/build/builder.cpp`: the vertex cache optimisation is removed. Its function
   `optimizeNode` begins with `return;` in the imported code, so the optimisation never ran
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
@@ -107,43 +137,43 @@ used.
   node table set only `first_patch`, so the file got the rest of it as it lay on the stack, and
   two builds of the same input differed in a few bytes. The file keeps its layout.
 - `src/common/cone.h`: `Cone3s::n` starts at zero, for the same reason (the cone of the sink node).
-- `src/nxsbuild/nexusbuilder.cpp`: the bounding sphere of the header starts from `emptySphere()`
+- `src/build/builder.cpp`: the bounding sphere of the header starts from `emptySphere()`
   instead of vcg's empty sphere, whose centre is not set.
-- `src/nxsbuild/mesh.{h,cpp}`, `src/nxsbuild/tmesh.{h,cpp}`: the debug export of a mesh to a PLY
+- `src/build/mesh.{h,cpp}`, `src/build/tmesh.{h,cpp}`: the debug export of a mesh to a PLY
   file (`savePly`, `savePlyTex`) and the include of VCGLib's `export.h` that served it are removed;
   nothing called them.
-- `src/nxsedit/extractor.{h,cpp}`: `savePly`, `saveStl`, `saveUnifiedPly` and `countElements`
+- `src/compress/compressor.{h,cpp}`: `savePly`, `saveStl`, `saveUnifiedPly` and `countElements`
   (which only they used) are removed, with the small PLY structures of `saveUnifiedPly`. The
   program never wrote an extracted mesh.
 - `src/nxszip/*` (`abitstream.cpp`, `atunstall.cpp`, `meshcoder.{h,cpp}`, `meshdecoder.{h,cpp}`,
   `bitstream.h`, `cstream.h`, `fpu_precision.h`, `tunstall.h`, `zpoint.h`): removed, the whole
   directory. It held MECO, the compression Nexus used before corto, which the program never
-  selects; its two call sites (`extractor.cpp`, `nexusdata.cpp`), the `MECO` name in
+  selects; its two call sites (`compressor.cpp`, `reader.cpp`), the `MECO` name in
   `src/common/signature.h` and the extractor's `error_factor`, which only MECO read, go with it.
   The flag values of the container are unchanged.
-- `src/nxsbuild/tsloader.{h,cpp}`, `tsploader.{h,cpp}`, `colormap.{h,cpp}`, `vcgloader.h`,
+- `src/build/tsloader.{h,cpp}`, `tsploader.{h,cpp}`, `colormap.{h,cpp}`, `vcgloader.h`,
   `vcgloadermesh.h`: removed. They read Nexus' `.ts` and `.tsp` files, coloured a `.ts` by a
   colormap, and fell back on VCGLib's importers for any other extension; bm3d reads OBJ, PLY and
   STL only.
-- `src/nxsbuild/meshstream.{h,cpp}`: the loader is chosen by the extension in any case, and an
+- `src/build/meshstream.{h,cpp}`: the loader is chosen by the extension in any case, and an
   unknown one is an error that names the formats read; the colormap of the stream goes.
-- `src/nxsbuild/tmesh.{h,cpp}`: `loadPly` (uncalled) and the include of VCGLib's `import.h` that
+- `src/build/tmesh.{h,cpp}`: `loadPly` (uncalled) and the include of VCGLib's `import.h` that
   served it are removed.
-- Paths the program never takes, and options that nothing set, are removed from `src/nxsbuild/`
+- Paths the program never takes, and options that nothing set, are removed from `src/build/`
   `kdtree.{h,cpp}`, `mesh.{h,cpp}`, `tmesh.{h,cpp}`, `meshloader.{h,cpp}`, `meshstream.{h,cpp}`,
-  `nexusbuilder.{h,cpp}`, `objloader.{h,cpp}`, `plyloader.{h,cpp}`, `stlloader.{h,cpp}`,
-  `trianglesoup.h`, from `src/nxsedit/extractor.cpp` and from `src/common/` `nexusdata.{h,cpp}`,
-  `nexusfile.h`, `stdnexusfile.{h,cpp}`, `signature.h`:
+  `builder.{h,cpp}`, `objloader.{h,cpp}`, `plyloader.{h,cpp}`, `stlloader.{h,cpp}`,
+  `trianglesoup.h`, from `src/compress/compressor.cpp` and from `src/common/` `reader.{h,cpp}`,
+  `file.h`, `stdfile.{h,cpp}`, `signature.h`:
   - point clouds: `KDTreeCloud`, `StreamCloud`, `Stream::getBox`, `MeshLoader::getVertices` and its
     implementations, `createCloudLevel` and the cloud branch of `createLevel` (which was a choice
-    between the two and is gone; `NexusBuilder::create` takes the triangle kd-tree and stream),
+    between the two and is gone; `Builder::create` takes the triangle kd-tree and stream),
     `Mesh::load(Cloud)`, `getVertices`, `simplifyCloud` and `averageDistance` (and `TMesh`'s), the
     `Splat` and `Cloud` types, and the shuffle of the points of a compressed cloud in
-    `NexusData::loadRam`;
-  - deepzoom: the folder of files in `NexusBuilder::save` and `Extractor::save`, `loadDZNode`,
-    `dropDZNode`, `loadDZTex`, `dropDZTex` and `readDZFile` of `NexusFile` and `StdNexusFile`, and
+    `Reader::loadRam`;
+  - deepzoom: the folder of files in `Builder::save` and `Compressor::save`, `loadDZNode`,
+    `dropDZNode`, `loadDZTex`, `dropDZTex` and `readDZFile` of `File` and `StdFile`, and
     `Signature::isDeepzoom`. The flag value stays as the enum entry `DEEPZOOM`;
-  - `NexusBuilder` options that nothing set: `useNodeTex` (false made the container hold the
+  - `Builder` options that nothing set: `useNodeTex` (false made the container hold the
     original texture files, named in `images`), `createPowTwoTex` (and `nextPowerOf2`),
     `deepzoom`, `max_node_triangles`, the unused pixel counters, and `texFormat` with its enum
     (the JPEG node textures; `encodeJpeg` stays, the texture tiles that spill to disk use it) and
@@ -166,26 +196,26 @@ used.
   of the kept VCGLib, corto and bm3d files), and the MSVC step of CI lists any header its build
   reads that `FILES` lacks. corto lost no file: its 21 files are all still read. The imported files
   of VCGLib are unchanged byte for byte.
-- `src/nxsbuild/plyloader.{h,cpp}`, `src/nxsbuild/objloader.cpp`, `src/nxsbuild/stlloader.{h,cpp}`:
+- `src/build/plyloader.{h,cpp}`, `src/build/objloader.cpp`, `src/build/stlloader.{h,cpp}`:
   a vertex whose coordinate is NaN, an infinity or beyond the range of a float is refused with an
-  error that names the file and the vertex (`requireFinite` of the new `src/nxsbuild/finite.h`).
+  error that names the file and the vertex (`requireFinite` of the new `src/build/finite.h`).
   The ASCII STL loader reads the numbers with `text::parseDouble` instead of `sscanf`, which
   accepted `nan` and `inf`. The loaders keep the name of their file for the message.
   `PlyLoader::cacheVertices` starts its `PlyVertex` from zero (it was uninitialised, and its alpha
   was copied into the colour of a PLY without one).
-- `src/nxsbuild/stlloader.{h,cpp}`: rewritten. The kind of file (binary or ASCII) comes from its
+- `src/build/stlloader.{h,cpp}`: rewritten. The kind of file (binary or ASCII) comes from its
   size and its first words, the count is checked against the size, the records are read with
   explicit little-endian conversions, the ASCII parser reads words and names the line of an error,
   and Materialise colours are read. The triangles are cleared before they are filled (the
   buffer of the stream was uninitialised). `src/common/textparse.h`: `equalsNoCase` has a form
   that takes a pointer and a length.
-- `src/nxsbuild/plyloader.cpp`: `u`/`v` and `texture_u`/`texture_v` are read as texture coordinates
+- `src/build/plyloader.cpp`: `u`/`v` and `texture_u`/`texture_v` are read as texture coordinates
   besides `s`/`t`; the vertex that is read starts opaque (alpha 255) so a colour without alpha is
-  opaque; the `modf` of the texture coordinates is removed (`NexusBuilder` applies `fmod` to the
-  coordinates of every format). `src/nxsbuild/objloader.{h,cpp}`: `v x y z r g b` is a vertex colour
+  opaque; the `modf` of the texture coordinates is removed (`Builder` applies `fmod` to the
+  coordinates of every format). `src/build/objloader.{h,cpp}`: `v x y z r g b` is a vertex colour
   that wins over the colour of the material.
 
-- `src/nxsbuild/finite.h`, `plyloader.cpp`, `objloader.cpp`: a texture coordinate that is a NaN, an
+- `src/build/finite.h`, `plyloader.cpp`, `objloader.cpp`: a texture coordinate that is a NaN, an
   infinity or beyond 2^24 in magnitude (above which a float has no fractional part to wrap) is
   invalid input in the PLY (per vertex or per face) and the OBJ, with the file and the vertex or
   face in the message (`requireUsableTexCoords`, `isUsableTexCoord`). The messages of the PLY
@@ -194,10 +224,10 @@ used.
   in two), and the OBJ face errors end with `(obj file x.obj)`.
 - `src/common/textparse.h`: `parseInteger` refuses the 19th digit before it multiplies, as it
   claimed to (the multiplication overflowed an `int64_t` for a number of 19 digits or more).
-- `src/nxsbuild/nexusbuilder.cpp`: `textureBoundLevels` returns at most 64 levels; the number of
+- `src/build/builder.cpp`: `textureBoundLevels` returns at most 64 levels; the number of
   levels of a model whose texture density was an infinity or a NaN was converted to an `int`.
 
-- `src/nxsbuild/imageio.{h,cpp}`: PNG is read by stb (`stbi_load_from_memory`, and the 16 bit
+- `src/build/imageio.{h,cpp}`: PNG is read by stb (`stbi_load_from_memory`, and the 16 bit
   variant scaled with rounding) instead of libpng, with the old treatment of a gray PNG with a
   transparent gray kept, and the TIFF reader is compiled only when `BM3D_WITH_TIFF` is defined
   (otherwise a TIFF is refused by name). Output does not change.
@@ -213,7 +243,7 @@ Nexus at `f29e8fd`.
 ### Files added by the DroneDB fork of Nexus (Digipa headers)
 
 `src/common/` `error.h`, `numeric.h`, `mappedfile.{h,cpp}`, `pathutil.h`, `scratchfile.{h,cpp}`,
-`textfile.{h,cpp}`, `textparse.h` and `src/nxsbuild/` `image.{h,cpp}`, `imageio.{h,cpp}`,
+`textfile.{h,cpp}`, `textparse.h` and `src/build/` `image.{h,cpp}`, `imageio.{h,cpp}`,
 `imagejpeg.cpp` were written for the Qt-free fork and are not in upstream Nexus. Their header
 reads "Copyright (C) 2026 Digipa" and licenses them under the GNU General Public License,
 version 2 or (at your option) any later version, the licence of Nexus.
@@ -229,14 +259,15 @@ GPL-3.0-or-later; the project as a whole is distributed under version 3 of the G
 
 ### Files without a licence header
 
-- `vertex_cache_optimizer.h` (`nxsbuild`) had no notice and has no known author; it came with the
+- `vertex_cache_optimizer.h` (upstream `nxsbuild`) had no notice and has no known author; it came with the
   2017 import of Nexus from Subversion. It was never imported and never was in the history of
   this repository.
-- `src/common/stdnexusfile.{h,cpp}` were written for the Qt-free fork (by HeDo, on the model of
+- `src/common/stdfile.{h,cpp}` were written for the Qt-free fork (by HeDo, on the model of
   upstream's `nexusfile.h`) and have no header; they are covered by the licence of this
   repository.
-- `src/nxsbuild/` `texpyramid.{h,cpp}`, `stlloader.{h,cpp}`, `src/nxsedit/extractor.h` and
-  `src/common/nexusfile.h` are upstream Nexus files (Federico Ponchio and the Nexus contributors)
+- `src/build/` `texpyramid.{h,cpp}`, `stlloader.{h,cpp}`, `src/compress/compressor.h` and
+  `src/common/file.h` (upstream `nexusfile.h`) are upstream Nexus files (Federico Ponchio and the
+  Nexus contributors)
   whose upstream version has no header either; they are covered by Nexus' licence
   (`licenses/Nexus.LICENSE`).
 - `third_party/corto/` `src/corto_codec.{h,cpp}` and `include/corto/corto.h` have no header; the

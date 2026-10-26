@@ -16,15 +16,15 @@ GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
 
-#ifndef NX_NORMALS_CONE_H
-#define NX_NORMALS_CONE_H
+#ifndef BM3D_NORMALS_CONE_H
+#define BM3D_NORMALS_CONE_H
 
 #include <vector>
 
 #include <vcg/space/point3.h>
 #include <vcg/space/sphere3.h>
 
-namespace nx {
+namespace bm3d::detail {
 
 
 //anchored normal cone.

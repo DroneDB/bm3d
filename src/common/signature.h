@@ -15,8 +15,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_SIGNATURE_H
-#define NX_SIGNATURE_H
+#ifndef BM3D_SIGNATURE_H
+#define BM3D_SIGNATURE_H
 
 #ifdef _MSC_VER
 typedef __int16 int16_t;
@@ -31,7 +31,7 @@ typedef unsigned __int64 uint64_t;
 
 #include <assert.h>
 
-namespace nx {
+namespace bm3d::detail {
 
 class Attribute {
 public:
@@ -106,4 +106,4 @@ public:
 
 }//namespace
 
-#endif // NX_SIGNATURE_H
+#endif // BM3D_SIGNATURE_H

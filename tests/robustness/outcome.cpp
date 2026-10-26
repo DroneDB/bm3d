@@ -7,7 +7,7 @@
 #include <system_error>
 
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 
 namespace bm3dtest {
 
@@ -17,7 +17,7 @@ Outcome runOn(const TempDir& dir, const fs::path& input, std::chrono::seconds ti
     std::error_code ec;
     fs::remove_all(outcome.outputFolder, ec);
     fs::create_directories(outcome.outputFolder);
-    outcome.output = outcome.outputFolder / "o.nxz";
+    outcome.output = outcome.outputFolder / "o.bm3d";
     outcome.process = runProcess(bm3dExecutable(), {pathToUtf8(input), pathToUtf8(outcome.output)}, timeout);
     return outcome;
 }
@@ -62,7 +62,7 @@ std::string whatIsWrong(const Outcome& outcome) {
         uint32_t magic = 0;  // a little-endian word
         for (size_t i = 0; i < head.size(); i++)
             magic |= uint32_t(uint8_t(head[i])) << (8 * i);
-        if (magic != kNexusMagic)
+        if (magic != kContainerMagic)
             return "it exited 0 and the output does not start with the magic of the container";
         return "";
     }

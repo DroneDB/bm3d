@@ -118,7 +118,7 @@ def main():
     print(f"load before the runs: {load:.2f}", file=sys.stderr)
 
     with tempfile.TemporaryDirectory(dir=args.workdir) as directory:
-        output = os.path.join(directory, "out.nxz")
+        output = os.path.join(directory, "out.bm3d")
         for turn in range(args.runs):
             for name, path in programs:
                 status, wall, rss, text = run_once(path, args.model, output, args.threads)

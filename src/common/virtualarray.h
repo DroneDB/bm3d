@@ -15,8 +15,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_VIRTUALARRAY_H
-#define NX_VIRTUALARRAY_H
+#ifndef BM3D_VIRTUALARRAY_H
+#define BM3D_VIRTUALARRAY_H
 
 #include <assert.h>
 
@@ -62,7 +62,7 @@ protected:
 	void makeRoom();
 
 private:
-	nx::MappedFile file;
+	bm3d::detail::MappedFile file;
 	uint64_t used_memory;
 	uint64_t max_memory;
 	std::vector<unsigned char *> cache;   //1 pointer per block Nu
@@ -141,4 +141,4 @@ protected:
 	}
 };
 
-#endif // NX_VIRTUALARRAY_H
+#endif // BM3D_VIRTUALARRAY_H

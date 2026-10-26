@@ -16,7 +16,7 @@ if(NOT BM3D_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)")
 endif()
 set(BM3D_VERSION_NUMERIC "${CMAKE_MATCH_1}")
 
-# The version of the file format the program writes: 0 is the Nexus container.
+# The version of the file format the program writes: 0 is the container Nexus wrote.
 set(BM3D_FORMAT_VERSION 0)
 
 # PROJECT_IS_TOP_LEVEL does not exist before project(), which reads the toolchain file, so the
@@ -112,40 +112,40 @@ if(WIN32)
     target_compile_definitions(bm3d_vcg INTERFACE NOMINMAX)
 endif()
 
-# --- The builder: the imported Nexus sources, the VCGLib ply reader and the API.
+# --- The builder: the sources imported from Nexus, the VCGLib ply reader and the API.
 add_library(bm3d_core STATIC
     third_party/vcg/wrap/ply/plylib.cpp
     src/api/bm3d.cpp
     src/api/json_object.cpp
+    src/build/builder.cpp
+    src/build/image.cpp
+    src/build/imageio.cpp
+    src/build/imagejpeg.cpp
+    src/build/kdtree.cpp
+    src/build/mesh.cpp
+    src/build/meshloader.cpp
+    src/build/meshstream.cpp
+    src/build/objloader.cpp
+    src/build/plyloader.cpp
+    src/build/stlloader.cpp
+    src/build/texpyramid.cpp
+    src/build/tmesh.cpp
     src/common/cone.cpp
     src/common/mappedfile.cpp
-    src/common/nexusdata.cpp
+    src/common/reader.cpp
     src/common/scratchfile.cpp
-    src/common/stdnexusfile.cpp
+    src/common/stdfile.cpp
     src/common/textfile.cpp
     src/common/traversal.cpp
     src/common/virtualarray.cpp
-    src/nxsbuild/image.cpp
-    src/nxsbuild/imageio.cpp
-    src/nxsbuild/imagejpeg.cpp
-    src/nxsbuild/kdtree.cpp
-    src/nxsbuild/mesh.cpp
-    src/nxsbuild/meshloader.cpp
-    src/nxsbuild/meshstream.cpp
-    src/nxsbuild/nexusbuilder.cpp
-    src/nxsbuild/objloader.cpp
-    src/nxsbuild/plyloader.cpp
-    src/nxsbuild/stlloader.cpp
-    src/nxsbuild/texpyramid.cpp
-    src/nxsbuild/tmesh.cpp
-    src/nxsedit/extractor.cpp)
+    src/compress/compressor.cpp)
 add_library(bm3d::bm3d ALIAS bm3d_core)
 set_target_properties(bm3d_core PROPERTIES
     EXPORT_NAME bm3d
     POSITION_INDEPENDENT_CODE ON)
 
-# The public header is all a user of the library sees. The Nexus sources include each other by
-# relative paths, and src/api includes the ones of src/nxsbuild by their bare names.
+# The public header is all a user of the library sees. The imported sources include each other by
+# relative paths, and src/api includes the ones of src/build by their bare names.
 target_include_directories(bm3d_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -153,7 +153,7 @@ target_include_directories(bm3d_core
     PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}/generated"
         src
-        src/nxsbuild)
+        src/build)
 # std::filesystem and the VCGLib headers need C++17
 target_compile_features(bm3d_core PUBLIC cxx_std_17)
 # The sources and the VCGLib headers hold UTF-8 text: MSVC reads them as UTF-8, not in the code

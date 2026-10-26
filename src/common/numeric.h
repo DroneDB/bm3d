@@ -14,13 +14,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_NUMERIC_H
-#define NX_NUMERIC_H
+#ifndef BM3D_NUMERIC_H
+#define BM3D_NUMERIC_H
 
 #include <algorithm>
 #include <cmath>
 
-namespace nx {
+namespace bm3d::detail {
 
 //true when a and b differ by less than a part in 100000 of the smaller one: the comparison of
 //two floats that Qt has as qFuzzyCompare
@@ -30,4 +30,4 @@ inline bool fuzzyCompare(float a, float b) {
 
 } //namespace
 
-#endif // NX_NUMERIC_H
+#endif // BM3D_NUMERIC_H

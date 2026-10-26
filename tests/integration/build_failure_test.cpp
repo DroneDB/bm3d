@@ -24,7 +24,7 @@
 #include "bm3d/bm3d.h"
 #include "env_var_guard.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -79,7 +79,7 @@ TEST(BuildFailure, aTextFileNamedObjIsInvalidInputAndLeavesNoFile) {
     Folders f;
     writeTextFile(f.in / "x.obj", "this is not a model\n");
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "x.obj", f.out / "x.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "x.obj", f.out / "x.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_FALSE(message.empty());
     expectEmpty(f.dir, "out");
 }
@@ -87,14 +87,14 @@ TEST(BuildFailure, aTextFileNamedObjIsInvalidInputAndLeavesNoFile) {
 TEST(BuildFailure, anEmptyFileIsInvalidInputAndLeavesNoFile) {
     Folders f;
     writeTextFile(f.in / "empty.obj", "");
-    EXPECT_EQ(failureKind(f.in / "empty.obj", f.out / "empty.nxz"), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "empty.obj", f.out / "empty.bm3d"), ErrorKind::InvalidInput);
     expectEmpty(f.dir, "out");
 }
 
 TEST(BuildFailure, aModelWithVerticesAndNoFaceIsInvalidInput) {
     Folders f;
     writeTextFile(f.in / "points.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\n");
-    EXPECT_EQ(failureKind(f.in / "points.obj", f.out / "points.nxz"), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "points.obj", f.out / "points.bm3d"), ErrorKind::InvalidInput);
     expectEmpty(f.dir, "out");
 }
 
@@ -102,7 +102,7 @@ TEST(BuildFailure, aTruncatedPlyIsInvalidInputAndLeavesNoFile) {
     Folders f;
     // Four vertices and two faces announced; one vertex and no face present
     writeTextFile(f.in / "cut.ply", plyHeader(2).substr(0, plyHeader(2).find("0 0 0\n")) + "0 0 0\n");
-    EXPECT_EQ(failureKind(f.in / "cut.ply", f.out / "cut.nxz"), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "cut.ply", f.out / "cut.bm3d"), ErrorKind::InvalidInput);
     expectEmpty(f.dir, "out");
 }
 
@@ -114,7 +114,7 @@ TEST(BuildFailure, aFileOfAnUnknownTypeIsInvalidInputThatNamesTheFormatsRead) {
         Folders f;
         writeTextFile(f.in / name, kTriangleObj);
         std::string message;
-        EXPECT_EQ(failureKind(f.in / name, f.out / "model.nxz", &message), ErrorKind::InvalidInput) << name;
+        EXPECT_EQ(failureKind(f.in / name, f.out / "model.bm3d", &message), ErrorKind::InvalidInput) << name;
         for (const char* format : {"obj", "ply", "stl"})
             EXPECT_NE(message.find(format), std::string::npos) << name << ": " << message;
         EXPECT_NE(message.find(name), std::string::npos) << name << ": " << message;
@@ -124,7 +124,7 @@ TEST(BuildFailure, aFileOfAnUnknownTypeIsInvalidInputThatNamesTheFormatsRead) {
 
 TEST(BuildFailure, aFolderAsTheInputIsInvalidInput) {
     Folders f;
-    EXPECT_EQ(failureKind(f.in, f.out / "model.nxz"), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in, f.out / "model.bm3d"), ErrorKind::InvalidInput);
     expectEmpty(f.dir, "out");
 }
 
@@ -149,17 +149,17 @@ TEST(BuildFailure, aCoordinateThatIsNotAFiniteNumberIsInvalidInputInEveryFormat)
     for (const auto& format : formats) {
         Folders f;
         writeBinaryFile(f.in / format.name, format.write(clean));
-        ASSERT_NO_THROW(bm3d::build(f.in / format.name, f.out / "clean.nxz")) << format.name;
+        ASSERT_NO_THROW(bm3d::build(f.in / format.name, f.out / "clean.bm3d")) << format.name;
         for (const float bad : {nan, infinity, -infinity}) {
             auto triangles = clean;
             triangles[3][1][2] = bad;
             writeBinaryFile(f.in / format.name, format.write(triangles));
             std::string message;
-            EXPECT_EQ(failureKind(f.in / format.name, f.out / "bad.nxz", &message), ErrorKind::InvalidInput)
+            EXPECT_EQ(failureKind(f.in / format.name, f.out / "bad.bm3d", &message), ErrorKind::InvalidInput)
                 << format.name << " " << bad;
             EXPECT_NE(message.find(format.name), std::string::npos) << message;
             EXPECT_NE(message.find(format.message), std::string::npos) << message;
-            EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"clean.nxz"}) << format.name;
+            EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"clean.bm3d"}) << format.name;
         }
     }
 }
@@ -170,7 +170,7 @@ TEST(BuildFailure, aCoordinateBeyondTheRangeOfAFloatIsInvalidInput) {
     Folders f;
     writeTextFile(f.in / "big.obj", "v 0 0 0\nv 1 0 0\nv 0 1e39 0\nf 1 2 3\n");
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "big.obj", f.out / "big.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "big.obj", f.out / "big.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("vertex 2 of obj file"), std::string::npos) << message;
     EXPECT_NE(message.find("not a finite number"), std::string::npos) << message;
 
@@ -185,7 +185,7 @@ TEST(BuildFailure, aCoordinateBeyondTheRangeOfAFloatIsInvalidInput) {
     for (int i = 0; i < 3; i++)
         detail::putLittleEndian(ply, static_cast<int32_t>(i));
     writeBinaryFile(f.in / "big.ply", ply);
-    EXPECT_EQ(failureKind(f.in / "big.ply", f.out / "big2.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "big.ply", f.out / "big2.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("vertex 2 of ply file"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
@@ -200,7 +200,7 @@ TEST(BuildFailure, aTruncatedBinaryStlIsInvalidInputThatSaysSo) {
     for (const size_t cut : {size_t(1), size_t(49), size_t(50), bytes.size() - 84}) {
         writeBinaryFile(f.in / "cut.stl", bytes.substr(0, bytes.size() - cut));
         std::string message;
-        EXPECT_EQ(failureKind(f.in / "cut.stl", f.out / "cut.nxz", &message), ErrorKind::InvalidInput) << cut;
+        EXPECT_EQ(failureKind(f.in / "cut.stl", f.out / "cut.bm3d", &message), ErrorKind::InvalidInput) << cut;
         EXPECT_NE(message.find("cut.stl"), std::string::npos) << message;
         EXPECT_NE(message.find("truncated"), std::string::npos) << message;
     }
@@ -214,7 +214,7 @@ TEST(BuildFailure, aBinaryStlThatCountsMoreTrianglesThanItHoldsIsInvalidInput) {
     bytes[80] = bytes[81] = bytes[82] = bytes[83] = char(0xff);  // 4294967295 triangles
     writeBinaryFile(f.in / "many.stl", bytes);
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "many.stl", f.out / "many.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "many.stl", f.out / "many.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("many.stl"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
@@ -226,7 +226,7 @@ TEST(BuildFailure, anStlWithNoTriangleIsInvalidInput) {
     writeTextFile(f.in / "empty.stl", "");
     writeTextFile(f.in / "short.stl", "solid");
     for (const char* name : {"none.stl", "ascii.stl", "empty.stl", "short.stl"})
-        EXPECT_EQ(failureKind(f.in / name, f.out / "none.nxz"), ErrorKind::InvalidInput) << name;
+        EXPECT_EQ(failureKind(f.in / name, f.out / "none.bm3d"), ErrorKind::InvalidInput) << name;
     expectEmpty(f.dir, "out");
 }
 
@@ -248,7 +248,7 @@ TEST(BuildFailure, aBrokenAsciiStlIsInvalidInputThatNamesTheLine) {
     for (const auto& c : cases) {
         writeTextFile(f.in / c.name, c.text);
         std::string message;
-        EXPECT_EQ(failureKind(f.in / c.name, f.out / "x.nxz", &message), ErrorKind::InvalidInput) << c.name;
+        EXPECT_EQ(failureKind(f.in / c.name, f.out / "x.bm3d", &message), ErrorKind::InvalidInput) << c.name;
         EXPECT_NE(message.find(c.name), std::string::npos) << message;
         EXPECT_NE(message.find(c.line), std::string::npos) << c.name << ": " << message;
     }
@@ -264,7 +264,7 @@ TEST(BuildFailure, aModelTooLargeToBeMeasuredIsInvalidInput) {
         const Triangle triangle{{{0, 0, 0}, {size, 0, 0}, {0, 1, 0}}};
         writeBinaryFile(f.in / "large.stl", binaryStl({triangle}));
         std::string message;
-        EXPECT_EQ(failureKind(f.in / "large.stl", f.out / "large.nxz", &message), ErrorKind::InvalidInput) << size;
+        EXPECT_EQ(failureKind(f.in / "large.stl", f.out / "large.bm3d", &message), ErrorKind::InvalidInput) << size;
         EXPECT_NE(message.find("large.stl"), std::string::npos) << message;
         EXPECT_NE(message.find("units across"), std::string::npos) << message;
     }
@@ -275,8 +275,8 @@ TEST(BuildFailure, aLargeModelThatCanBeMeasuredIsBuilt) {
     Folders f;
     const Triangle triangle{{{0, 0, 0}, {6e8f, 0, 0}, {0, 6e8f, 0}}};
     writeBinaryFile(f.in / "large.stl", binaryStl({triangle}));
-    ASSERT_NO_THROW(bm3d::build(f.in / "large.stl", f.out / "large.nxz"));
-    EXPECT_EQ(readNexusFile(f.out / "large.nxz").nface, 1u);
+    ASSERT_NO_THROW(bm3d::build(f.in / "large.stl", f.out / "large.bm3d"));
+    EXPECT_EQ(readContainerFile(f.out / "large.bm3d").nface, 1u);
 }
 
 // The input is read (and has triangles) before this fails: it is a failure of the build
@@ -284,7 +284,7 @@ TEST(BuildFailure, aBuildThatFailsAfterTheInputIsReadIsBuildFailed) {
     Folders f;
     writeCoincidentTriangles(f.in / "same.obj");
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "same.obj", f.out / "same.nxz", &message), ErrorKind::BuildFailed);
+    EXPECT_EQ(failureKind(f.in / "same.obj", f.out / "same.bm3d", &message), ErrorKind::BuildFailed);
     EXPECT_NE(message.find("too small to divide"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
@@ -294,32 +294,32 @@ TEST(BuildFailure, aBuildThatFailsAfterTheInputIsReadIsBuildFailed) {
 TEST(BuildFailure, anOutputNamedLikeAFolderFailsAfterTheWholeBuild) {
     Folders f;
     writeTextFile(f.in / "model.obj", kTriangleObj);
-    const fs::path target = f.dir.makeDir("out/model.nxz");
+    const fs::path target = f.dir.makeDir("out/model.bm3d");
     std::string message;
     EXPECT_EQ(failureKind(f.in / "model.obj", target, &message), ErrorKind::BuildFailed);
-    EXPECT_NE(message.find("model.nxz"), std::string::npos) << message;
+    EXPECT_NE(message.find("model.bm3d"), std::string::npos) << message;
     // the folder is still there, empty, and so is the folder around it but for it
     EXPECT_TRUE(fs::is_directory(target));
-    EXPECT_TRUE(f.dir.list("out/model.nxz").empty());
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
+    EXPECT_TRUE(f.dir.list("out/model.bm3d").empty());
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
 }
 
 TEST(BuildFailure, aFailedBuildLeavesTheEarlierOutputAsItWas) {
     Folders f;
     writeCoincidentTriangles(f.in / "same.obj");
-    writeTextFile(f.out / "model.nxz", "an earlier build");
-    EXPECT_EQ(failureKind(f.in / "same.obj", f.out / "model.nxz"), ErrorKind::BuildFailed);
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
+    writeTextFile(f.out / "model.bm3d", "an earlier build");
+    EXPECT_EQ(failureKind(f.in / "same.obj", f.out / "model.bm3d"), ErrorKind::BuildFailed);
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_EQ(readBinaryFile(f.out / "model.bm3d"), "an earlier build");
 }
 
 TEST(BuildFailure, aRefusedInputLeavesTheEarlierOutputAsItWas) {
     Folders f;
     writeTextFile(f.in / "x.obj", "this is not a model\n");
-    writeTextFile(f.out / "model.nxz", "an earlier build");
-    EXPECT_EQ(failureKind(f.in / "x.obj", f.out / "model.nxz"), ErrorKind::InvalidInput);
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
+    writeTextFile(f.out / "model.bm3d", "an earlier build");
+    EXPECT_EQ(failureKind(f.in / "x.obj", f.out / "model.bm3d"), ErrorKind::InvalidInput);
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_EQ(readBinaryFile(f.out / "model.bm3d"), "an earlier build");
 }
 
 // The whole model is built and the file the save writes, under a temporary name next to the
@@ -328,26 +328,26 @@ TEST(BuildFailure, aRefusedInputLeavesTheEarlierOutputAsItWas) {
 void expectAFailedSaveLeavesTheEarlierOutput(const std::string& nameInTheWay) {
     Folders f;
     writeTextFile(f.in / "model.obj", kTriangleObj);
-    writeTextFile(f.out / "model.nxz", "an earlier build");
+    writeTextFile(f.out / "model.bm3d", "an earlier build");
     f.dir.makeDir("out/" + nameInTheWay);
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.nxz", &message), ErrorKind::BuildFailed);
+    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.bm3d", &message), ErrorKind::BuildFailed);
     EXPECT_NE(message.find(nameInTheWay), std::string::npos) << message;
-    std::vector<std::string> expected{"model.nxz", nameInTheWay};
+    std::vector<std::string> expected{"model.bm3d", nameInTheWay};
     std::sort(expected.begin(), expected.end());
     EXPECT_EQ(f.dir.list("out"), expected);
     EXPECT_TRUE(f.dir.list("out/" + nameInTheWay).empty());
-    EXPECT_EQ(readBinaryFile(f.out / "model.nxz"), "an earlier build");
+    EXPECT_EQ(readBinaryFile(f.out / "model.bm3d"), "an earlier build");
 }
 
 // The builder writes the uncompressed container first
 TEST(BuildFailure, aSaveOfTheUncompressedFileThatFailsLeavesTheEarlierOutputAsItWas) {
-    expectAFailedSaveLeavesTheEarlierOutput("model.nxz.tmp.nxs");
+    expectAFailedSaveLeavesTheEarlierOutput("model.bm3d.tmp.bm3d");
 }
 
 // The compression reads that container back and writes the file that becomes the output
 TEST(BuildFailure, aSaveOfTheCompressedFileThatFailsLeavesTheEarlierOutputAsItWas) {
-    expectAFailedSaveLeavesTheEarlierOutput("model.nxz.part");
+    expectAFailedSaveLeavesTheEarlierOutput("model.bm3d.part");
 }
 
 // The input is fine; the scratch file that reading it needs cannot be created
@@ -356,7 +356,7 @@ TEST(BuildFailure, aTemporaryFolderThatIsAFileWhileTheInputIsReadIsBuildFailed) 
     writeTextFile(f.in / "model.obj", kTriangleObj);
     const TemporaryFolderGuard temporary(pathToUtf8(writeFileForTemporaryFolder(f.dir)));
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.nxz", &message), ErrorKind::BuildFailed);
+    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.bm3d", &message), ErrorKind::BuildFailed);
     EXPECT_FALSE(message.empty());
     expectEmpty(f.dir, "out");
 }
@@ -374,7 +374,7 @@ TEST(BuildFailure, aTemporaryFolderThatCannotBeWrittenWhileTheInputIsReadIsBuild
     std::string message;
     {
         const TemporaryFolderGuard temporary(pathToUtf8(readOnly));
-        EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.nxz", &message), ErrorKind::BuildFailed);
+        EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.bm3d", &message), ErrorKind::BuildFailed);
     }
     fs::permissions(readOnly, fs::perms::owner_all);
     EXPECT_NE(message.find(pathToUtf8(readOnly)), std::string::npos) << message;
@@ -389,7 +389,7 @@ TEST(BuildFailure, aTruncatedPlyIsInvalidInputWhateverTheTemporaryFolder) {
     Folders f;
     writeTextFile(f.in / "cut.ply", plyHeader(2).substr(0, plyHeader(2).find("0 0 0\n")) + "0 0 0\n");
     const TemporaryFolderGuard temporary(pathToUtf8(writeFileForTemporaryFolder(f.dir)));
-    EXPECT_EQ(failureKind(f.in / "cut.ply", f.out / "cut.nxz"), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "cut.ply", f.out / "cut.bm3d"), ErrorKind::InvalidInput);
     expectEmpty(f.dir, "out");
 }
 
@@ -398,7 +398,7 @@ TEST(BuildFailure, aTextureTheMaterialNamesThatIsMissingIsInvalidInput) {
     Folders f;
     writeTexturedModel(f.in, "texture.png");
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("texture.png"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
@@ -408,7 +408,7 @@ TEST(BuildFailure, aTextureThatCannotBeDecodedIsInvalidInput) {
     writeTexturedModel(f.in, "texture.png");
     writeTextFile(f.in / "texture.png", "this is not a picture");
     std::string message;
-    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_EQ(failureKind(f.in / "model.obj", f.out / "model.bm3d", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("texture.png"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
 }
@@ -417,18 +417,18 @@ TEST(BuildFailure, aBuildThatWorksLeavesTheOutputAloneInItsFolder) {
     Folders f;
     writePng(f.in / "texture.png", gradientRaster(3));
     writeTexturedModel(f.in, "texture.png");
-    ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.nxz"));
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(readNexusFile(f.out / "model.nxz").magic, kNexusMagic);
+    ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.bm3d"));
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").magic, kContainerMagic);
 }
 
 TEST(BuildFailure, aBuildThatWorksReplacesTheEarlierOutput) {
     Folders f;
     writeTextFile(f.in / "model.obj", kTriangleObj);
-    writeTextFile(f.out / "model.nxz", "an earlier build");
-    ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.nxz"));
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(readNexusFile(f.out / "model.nxz").nface, 1u);
+    writeTextFile(f.out / "model.bm3d", "an earlier build");
+    ASSERT_NO_THROW(bm3d::build(f.in / "model.obj", f.out / "model.bm3d"));
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
 }
 
 }  // namespace

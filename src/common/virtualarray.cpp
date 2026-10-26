@@ -29,7 +29,7 @@ using namespace std;
 // Otherwise the prefix is created inside the system temporary directory,
 // preserving the historical behaviour.
 static std::string virtualMemoryPrefix(const std::string &prefix) {
-	return nx::isAbsolutePath(prefix) ? prefix : nx::joinPath(nx::temporaryDirectory(), prefix);
+	return bm3d::detail::isAbsolutePath(prefix) ? prefix : bm3d::detail::joinPath(bm3d::detail::temporaryDirectory(), prefix);
 }
 
 VirtualMemory::VirtualMemory(const std::string &prefix):
@@ -55,7 +55,7 @@ unsigned char *VirtualMemory::getBlock(uint64_t index, bool prevent_unload) {
 			makeRoom();
 		mapBlock(index);
 		if(!cache[index])
-			throw nx::Error("virtual memory error mapping block: " + file.lastError());
+			throw bm3d::detail::Error("virtual memory error mapping block: " + file.lastError());
 
 		mapped.push_front(index);
 	}

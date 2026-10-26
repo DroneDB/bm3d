@@ -39,7 +39,7 @@ for more details.
 #include <unistd.h>
 #endif
 
-namespace nx {
+namespace bm3d::detail {
 
 namespace {
 

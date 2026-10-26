@@ -19,13 +19,13 @@ for more details.
 #include "traversal.h"
 
 using namespace std;
-using namespace nx;
+using namespace bm3d::detail;
 
-Traversal::Traversal(): nexus(NULL), prefetch(200) {}
+Traversal::Traversal(): reader(NULL), prefetch(200) {}
 
-void Traversal::traverse(NexusData *nx) {
-	nexus = nx;
-	uint32_t n_nodes = nexus->header.n_nodes;
+void Traversal::traverse(Reader *input) {
+	reader = input;
+	uint32_t n_nodes = reader->header.n_nodes;
 	sink =  n_nodes - 1;
 
 	heap.clear();
@@ -37,7 +37,7 @@ void Traversal::traverse(NexusData *nx) {
 	blocked.resize(n_nodes, false);
 
 	//add all top level nodes
-	for(uint32_t i = 0; i < nexus->nroots; i++)
+	for(uint32_t i = 0; i < reader->nroots; i++)
 		add(i);
 
 	int node_visited = 0;
@@ -65,7 +65,7 @@ void Traversal::traverse(NexusData *nx) {
 
 float Traversal::nodeError(uint32_t n, bool &visible) {
 	visible = true;
-	Node &node = nexus->nodes[n];
+	Node &node = reader->nodes[n];
 	return node.error;
 }
 
@@ -88,16 +88,16 @@ bool Traversal::add(uint32_t n) {
 
 void Traversal::addChildren(uint32_t n) {
 	selected[n] = true;
-	Node &node = nexus->nodes[n];
+	Node &node = reader->nodes[n];
 	for(uint32_t i = node.first_patch; i < node.last_patch(); i++)
-		if(add(nexus->patches[i].node))
+		if(add(reader->patches[i].node))
 			non_blocked++;
 }
 
 void Traversal::blockChildren(uint32_t n) {
-	Node &node = nexus->nodes[n];
+	Node &node = reader->nodes[n];
 	for(uint32_t i = node.first_patch; i < node.last_patch(); i++) {
-		uint32_t child = nexus->patches[i].node;
+		uint32_t child = reader->patches[i].node;
 		blocked[child] = true;
 		if(!add(child))
 			non_blocked--;
@@ -107,10 +107,10 @@ void Traversal::blockChildren(uint32_t n) {
 bool Traversal::skipNode(uint32_t n) {
 	if(!selected[n]) return true;
 
-	Node &node = nexus->nodes[n];
+	Node &node = reader->nodes[n];
 
 	for(uint32_t p = node.first_patch; p < node.last_patch(); p++)
-		if(!selected[nexus->patches[p].node])
+		if(!selected[reader->patches[p].node])
 			return false;
 	return true;
 }
@@ -124,7 +124,7 @@ MetricTraversal::~MetricTraversal() {}
 
 
 float MetricTraversal::nodeError(uint32_t n, bool &visible) {
-	Node &node = nexus->nodes[n];
+	Node &node = reader->nodes[n];
 	return metric.GetError(node.sphere, node.error, visible);
 }
 

@@ -15,10 +15,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_TRAVERSAL_H
-#define NX_TRAVERSAL_H
+#ifndef BM3D_TRAVERSAL_H
+#define BM3D_TRAVERSAL_H
 
-#include "nexusdata.h"
+#include "reader.h"
 
 /* a generic DAG traversal algorithm:
    add(0) //needs virtual compute error
@@ -30,7 +30,7 @@ for more details.
    }
  */
 
-namespace nx {
+namespace bm3d::detail {
 
 class Traversal {
 public:
@@ -55,12 +55,12 @@ public:
 		}
 	};
 
-	NexusData *nexus;
+	Reader *reader;
 	std::vector<bool> selected;
 
 	Traversal();
 	virtual ~Traversal() {}
-	void traverse(NexusData *nx);
+	void traverse(Reader *input);
 
 	virtual float nodeError(uint32_t node, bool &visible);
 	virtual Action expand(HeapNode /*h*/) = 0;
@@ -99,4 +99,4 @@ public:
 };*/
 
 }//namespace
-#endif // NX_TRAVERSAL_H
+#endif // BM3D_TRAVERSAL_H

@@ -12,8 +12,10 @@ Manifest format (UTF-8, LF):
 
     # comment
     key: value                    header lines; "patch" lines read "patch: <sha256>  <name>"
+    moved:                        optional; for trees that are edited after the import
+    <upstream path>  <current path>   one line per file that has been moved, sorted
     files:
-    <sha256>  <relative path>     one line per file, sorted
+    <sha256>  <relative path>     one line per file, sorted; the path is the upstream one
 """
 import argparse
 import hashlib
@@ -68,10 +70,15 @@ def write_list(path, names):
 
 
 class Manifest:
-    def __init__(self, headers, patches, files):
+    def __init__(self, headers, patches, files, moves=None):
         self.headers = headers    # ordered list of (key, value), without patch lines
         self.patches = patches    # list of (name, sha256)
         self.files = files        # dict path -> sha256
+        self.moves = moves if moves is not None else {}   # dict upstream path -> current path
+
+    def current_path(self, name):
+        """Where a file of the manifest lives now: its own path unless it has been moved."""
+        return self.moves.get(name, name)
 
     def header(self, key):
         for k, v in self.headers:
@@ -81,20 +88,25 @@ class Manifest:
 
     @classmethod
     def read(cls, path):
-        headers, patches, files = [], [], {}
-        in_files = False
+        headers, patches, files, moves = [], [], {}, {}
+        section = "header"
         with open(path, encoding="utf-8", newline="") as handle:
             for raw in handle.read().split("\n"):
                 line = raw.rstrip("\r")
                 if not line or line.startswith("#"):
                     continue
-                if in_files:
+                if line in ("moved:", "files:"):
+                    section = line[:-1]
+                elif section == "files":
                     digest, sep, name = line.partition("  ")
                     if not sep or len(digest) != 64:
                         raise SyncError("%s: bad file line %r" % (path, line))
                     files[name] = digest
-                elif line == "files:":
-                    in_files = True
+                elif section == "moved":
+                    old, sep, new = line.partition("  ")
+                    if not sep or not new:
+                        raise SyncError("%s: bad moved line %r" % (path, line))
+                    moves[old] = new
                 else:
                     key, sep, value = line.partition(": ")
                     if not sep:
@@ -106,12 +118,15 @@ class Manifest:
                         patches.append((name, digest))
                     else:
                         headers.append((key, value))
-        return cls(headers, patches, files)
+        return cls(headers, patches, files, moves)
 
     def write(self, path, banner):
         out = ["# " + line if line else "#" for line in banner.split("\n")]
         out += ["%s: %s" % (k, v) for k, v in self.headers]
         out += ["patch: %s  %s" % (digest, name) for name, digest in self.patches]
+        if self.moves:
+            out.append("moved:")
+            out += ["%s  %s" % (name, self.moves[name]) for name in sorted(self.moves)]
         out.append("files:")
         out += ["%s  %s" % (self.files[name], name) for name in sorted(self.files)]
         with open(path, "w", encoding="utf-8", newline="\n") as handle:

@@ -26,11 +26,11 @@
 
 #include "bm3d/version.h"
 #include "../common/error.h"
-#include "../common/nexusdata.h"
+#include "../common/reader.h"
 #include "../common/pathutil.h"
 #include "../common/traversal.h"
-#include "../nxsbuild/nexusbuilder.h"
-#include "../nxsedit/extractor.h"
+#include "../build/builder.h"
+#include "../compress/compressor.h"
 #include "kdtree.h"
 #include "meshstream.h"
 
@@ -38,8 +38,10 @@ namespace bm3d {
 
 namespace {
 
-using nx::NexusData;
-using nx::Signature;
+using detail::Builder;
+using detail::Compressor;
+using detail::Reader;
+using detail::Signature;
 
 // More than any machine has cores; a larger value is a mistake, not a request
 constexpr int kMaxThreads = 4096;
@@ -67,7 +69,7 @@ constexpr float kTexStep = 0.25f;  // in pixels
 std::string describeCurrentException() {
     try {
         throw;
-    } catch (const nx::Error& e) {
+    } catch (const detail::Error& e) {
         return e.what();
     } catch (const std::exception& e) {
         return std::string("Exception: ") + e.what();
@@ -117,7 +119,7 @@ public:
         // A destructor must not throw, and the path conversion can (see build). A folder
         // is never what the guard is for: it is the path of an output that could not be opened.
         try {
-            const auto path = nx::nativePath(path_);
+            const auto path = detail::nativePath(path_);
             std::error_code ec;
             if (!std::filesystem::is_directory(path, ec))
                 std::filesystem::remove(path, ec);
@@ -157,8 +159,8 @@ struct Attempt {
 constexpr const char* kObjVertexCacheName = "cache_plyvertex";
 
 // The scratch files that reading the input writes, and how to tell their failures from those of
-// the input. The Nexus code reports a scratch file it cannot create, grow or map with the same
-// nx::Error as a mesh it cannot parse, and the message names the file (see MappedFile). The
+// the input. The builder code reports a scratch file it cannot create, grow or map with the same
+// detail::Error as a mesh it cannot parse, and the message names the file (see MappedFile). The
 // scratch files are named after the prefixes added here (one unique to the build, the fixed
 // names of the OBJ loader and of the texture atlas), which no file of the input carries, so a
 // message that names one is a failure of the machine: a disk or a temporary folder that cannot
@@ -167,10 +169,10 @@ class ScratchFiles {
 public:
     ScratchFiles() {
         // A temporary folder that cannot be found fails the OBJ loader with the very error that
-        // nx::temporaryDirectory gives here, which is kept to be recognised
+        // detail::temporaryDirectory gives here, which is kept to be recognised
         try {
-            prefixes_.push_back(nx::joinPath(nx::temporaryDirectory(), kObjVertexCacheName));
-        } catch (const nx::Error& e) {
+            prefixes_.push_back(detail::joinPath(detail::temporaryDirectory(), kObjVertexCacheName));
+        } catch (const detail::Error& e) {
             noTemporaryFolder_ = e.what();
         }
     }
@@ -181,7 +183,7 @@ public:
             prefixes_.push_back(prefix);
     }
 
-    // Whether `message`, the text of an nx::Error, reports a failure of one of these files
+    // Whether `message`, the text of an detail::Error, reports a failure of one of these files
     bool reportedIn(const std::string& message) const {
         if (!noTemporaryFolder_.empty() && message == noTemporaryFolder_)
             return true;
@@ -211,7 +213,7 @@ void readInput(const ScratchFiles& scratch, Read&& read) {
         throw;  // already classified
     } catch (const std::bad_alloc&) {
         throw Error(ErrorKind::BuildFailed, describeCurrentException());
-    } catch (const nx::Error& e) {
+    } catch (const detail::Error& e) {
         throw Error(scratch.reportedIn(e.what()) ? ErrorKind::BuildFailed : ErrorKind::InvalidInput, e.what());
     } catch (...) {
         throw Error(ErrorKind::InvalidInput, describeCurrentException());
@@ -252,21 +254,21 @@ void loadInput(StreamSoup& stream, const std::string& input, const ScratchFiles&
 
 // Reads the textures the materials of the input name, which are part of the input: one that is
 // missing or cannot be decoded is invalid input, as an unreadable mesh is
-void loadTextures(NexusBuilder& builder, std::vector<LoadTexture>& textures, const ScratchFiles& scratch) {
+void loadTextures(Builder& builder, std::vector<LoadTexture>& textures, const ScratchFiles& scratch) {
     readInput(scratch, [&] {
         if (!builder.initAtlas(textures))
-            throw nx::Error("Failed to initialize texture atlas");
+            throw detail::Error("Failed to initialize texture atlas");
     });
 }
 
 // The coordinate step of the compression: a fraction of the smallest error among the nodes that
 // the sink follows.
-float coordinateStep(NexusData& nexus) {
-    const uint32_t sink = nexus.header.n_nodes - 1;
-    float step = kErrorQ * nexus.nodes[0].error / 2.0f;
+float coordinateStep(Reader& reader) {
+    const uint32_t sink = reader.header.n_nodes - 1;
+    float step = kErrorQ * reader.nodes[0].error / 2.0f;
     for (uint32_t i = 0; i < sink; ++i) {
-        nx::Node& n = nexus.nodes[i];
-        nx::Patch& patch = nexus.patches[n.first_patch];
+        detail::Node& n = reader.nodes[i];
+        detail::Patch& patch = reader.patches[n.first_patch];
         if (patch.node != sink)
             continue;
         const double e = kErrorQ * n.error / 2.0;
@@ -283,30 +285,30 @@ float coordinateStep(NexusData& nexus) {
 
 // Compresses the uncompressed container `source` with corto into `target`
 void compress(const std::string& source, const std::string& target) {
-    NexusData nexus;  // its constructor creates and owns the file reader
+    Reader reader;  // its constructor creates and owns the file reader
 
-    if (!nexus.open(source.c_str())) {
-        throw nx::Error("Could not open file: " + source);
+    if (!reader.open(source.c_str())) {
+        throw detail::Error("Could not open file: " + source);
     }
 
-    Signature signature = nexus.header.signature;
+    Signature signature = reader.header.signature;
     signature.flags |= Signature::CORTO;
 
-    Extractor extractor(&nexus);
-    extractor.coord_q = static_cast<int>(std::log2(coordinateStep(nexus)));
-    extractor.norm_bits = kNormalBits;
+    Compressor compressor(&reader);
+    compressor.coord_q = static_cast<int>(std::log2(coordinateStep(reader)));
+    compressor.norm_bits = kNormalBits;
 
-    extractor.color_bits[0] = kLumaBits;
-    extractor.color_bits[1] = kChromaBits;
-    extractor.color_bits[2] = kChromaBits;
-    extractor.color_bits[3] = kAlphaBits;
+    compressor.color_bits[0] = kLumaBits;
+    compressor.color_bits[1] = kChromaBits;
+    compressor.color_bits[2] = kChromaBits;
+    compressor.color_bits[3] = kAlphaBits;
 
-    extractor.tex_step = kTexStep;
+    compressor.tex_step = kTexStep;
 
-    extractor.save(target, signature);
+    compressor.save(target, signature);
 }
 
-// Builds the model into the Nexus container with corto-compressed nodes; throws on failure.
+// Builds the model into the format 0 container with corto-compressed nodes; throws on failure.
 void buildOnce(const std::string& input, const std::string& output, const Attempt& attempt) {
     const uint64_t maxMemory = (uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 4;
 
@@ -319,8 +321,8 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     // absolute template prefix as-is.
     using Clock = std::chrono::steady_clock;
     const auto now = Clock::now().time_since_epoch().count();
-    const std::string cacheDir = nx::absoluteParentPath(output);
-    const std::string cacheBase = cacheDir + "/nexus_cache_" + std::to_string(static_cast<unsigned long long>(now));
+    const std::string cacheDir = detail::absoluteParentPath(output);
+    const std::string cacheBase = cacheDir + "/bm3d_cache_" + std::to_string(static_cast<unsigned long long>(now));
 
     // Declared before the builder, so that it outlives it as it always did
     std::unique_ptr<KDTreeSoup> tree;
@@ -333,14 +335,14 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     stream.setMaxMemory(maxMemory);
     loadInput(stream, input, scratch);
 
-    uint32_t components = NexusBuilder::FACES | NexusBuilder::NORMALS;
+    uint32_t components = Builder::FACES | Builder::NORMALS;
     if (stream.hasColors())
-        components |= NexusBuilder::COLORS;
+        components |= Builder::COLORS;
     if (stream.hasTextures() && attempt.withTextures)
-        components |= NexusBuilder::TEXTURES;
+        components |= Builder::TEXTURES;
 
     // Do not keep textures if they are not going to be used
-    if (!(components & NexusBuilder::TEXTURES)) {
+    if (!(components & Builder::TEXTURES)) {
         stream.textures.clear();
     }
 
@@ -349,20 +351,20 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     // under the output name, and does not remove one an earlier build left there. The builder
     // writes the uncompressed container first and the compression reads it back.
     const std::string writtenOutput = output + ".part";
-    const std::string builderOutput = output + ".tmp.nxs";
+    const std::string builderOutput = output + ".tmp.bm3d";
 
     // Remove the temporary files the saves below write, whatever happens. They are declared
     // before the builder, which keeps its file open until it is destroyed when its save throws:
     // on Windows an open file cannot be removed.
     TempFileGuard writtenOutputGuard;
-    TempFileGuard temporaryNxsGuard;
+    TempFileGuard temporaryOutputGuard;
     writtenOutputGuard.setPath(writtenOutput);
-    temporaryNxsGuard.setPath(builderOutput);
+    temporaryOutputGuard.setPath(builderOutput);
 
     // Place the builder's out-of-core caches (chunks + per-node texture file)
     // in the same directory as the output (the per-build temp folder), so they
     // do not leak into the process working directory and are reclaimed with it.
-    NexusBuilder builder(components, cacheDir);
+    Builder builder(components, cacheDir);
     builder.skipSimplifyLevels = kSkipLevels;
     builder.setMaxMemory(maxMemory);
 
@@ -389,9 +391,9 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     compress(builderOutput, writtenOutput);
 
     std::error_code ec;
-    std::filesystem::rename(nx::nativePath(writtenOutput), nx::nativePath(output), ec);
+    std::filesystem::rename(detail::nativePath(writtenOutput), detail::nativePath(output), ec);
     if (ec)
-        throw nx::Error("could not rename " + writtenOutput + " to " + output + ": " + ec.message());
+        throw detail::Error("could not rename " + writtenOutput + " to " + output + ": " + ec.message());
     writtenOutputGuard.keep();
 }
 
@@ -415,14 +417,14 @@ void buildWithFallbacks(const std::string& input, const std::string& output, int
         try {
             buildOnce(input, output, attempt);
             break;
-        } catch (const nx::TexturePackingError& error) {
+        } catch (const detail::TexturePackingError& error) {
             if (!attempt.withTextures)
                 throw;
             std::cerr << "Warning: " << error.what() << std::endl;
             attempt.withTextures = false;
-        } catch (const nx::NodeTooLargeError& error) {
+        } catch (const detail::NodeTooLargeError& error) {
             if (smallerNodeAttempts == kSmallerNodeAttempts)
-                throw nx::Error(std::string(error.what()) + "; nodes of at most " +
+                throw detail::Error(std::string(error.what()) + "; nodes of at most " +
                                 std::to_string(attempt.nodeFaces) +
                                 " triangles, the smallest tried (the build started with " +
                                 std::to_string(kNodeFaces) + "), are still too large for this model");
@@ -443,7 +445,7 @@ void buildWithFallbacks(const std::string& input, const std::string& output, int
 // system path throws on Windows, hence the try.
 void requireInput(const std::string& input) {
     try {
-        if (!nx::pathExists(input))
+        if (!detail::pathExists(input))
             throw Error(ErrorKind::InvalidInput, "Input file does not exist: " + input);
     } catch (const Error&) {
         throw;
@@ -465,8 +467,8 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
 
     std::string inputPath, outputPath;
     try {
-        inputPath = nx::pathToUtf8(input);
-        outputPath = nx::pathToUtf8(output);
+        inputPath = detail::pathToUtf8(input);
+        outputPath = detail::pathToUtf8(output);
     } catch (...) {
         throw Error(ErrorKind::InvalidArgument, "Path is not valid: " + describeCurrentException());
     }

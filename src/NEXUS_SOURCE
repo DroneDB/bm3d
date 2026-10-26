@@ -1,11 +1,48 @@
 # Written by scripts/import-nexus.py; do not edit.
-# SHA-256 of every Nexus file as imported (paths relative to src/). Files change after
-# the import; scripts/import-nexus.py --check lists the ones that did.
+# SHA-256 of every Nexus file as imported, under its upstream path (relative to the
+# upstream src/). 'moved' maps the upstream path of a file to where it lives in src/
+# now. Files change after the import; scripts/import-nexus.py --check lists the ones
+# that were moved or changed.
 repository: https://github.com/DroneDB/nexus
 commit: 847f024bf7cc0beb078868749bc7669748c0aa3d
 upstream: https://github.com/cnr-isti-vclab/nexus
 upstream-base: f29e8fd1182b2a1c0c512add99c7edfc8e146680
 upstream-path: src
+moved:
+common/nexusdata.cpp  common/reader.cpp
+common/nexusdata.h  common/reader.h
+common/nexusfile.h  common/file.h
+common/stdnexusfile.cpp  common/stdfile.cpp
+common/stdnexusfile.h  common/stdfile.h
+nxsbuild/image.cpp  build/image.cpp
+nxsbuild/image.h  build/image.h
+nxsbuild/imageio.cpp  build/imageio.cpp
+nxsbuild/imageio.h  build/imageio.h
+nxsbuild/imagejpeg.cpp  build/imagejpeg.cpp
+nxsbuild/kdtree.cpp  build/kdtree.cpp
+nxsbuild/kdtree.h  build/kdtree.h
+nxsbuild/mesh.cpp  build/mesh.cpp
+nxsbuild/mesh.h  build/mesh.h
+nxsbuild/meshloader.cpp  build/meshloader.cpp
+nxsbuild/meshloader.h  build/meshloader.h
+nxsbuild/meshstream.cpp  build/meshstream.cpp
+nxsbuild/meshstream.h  build/meshstream.h
+nxsbuild/nexusbuilder.cpp  build/builder.cpp
+nxsbuild/nexusbuilder.h  build/builder.h
+nxsbuild/objloader.cpp  build/objloader.cpp
+nxsbuild/objloader.h  build/objloader.h
+nxsbuild/partition.h  build/partition.h
+nxsbuild/plyloader.cpp  build/plyloader.cpp
+nxsbuild/plyloader.h  build/plyloader.h
+nxsbuild/stlloader.cpp  build/stlloader.cpp
+nxsbuild/stlloader.h  build/stlloader.h
+nxsbuild/texpyramid.cpp  build/texpyramid.cpp
+nxsbuild/texpyramid.h  build/texpyramid.h
+nxsbuild/tmesh.cpp  build/tmesh.cpp
+nxsbuild/tmesh.h  build/tmesh.h
+nxsbuild/trianglesoup.h  build/trianglesoup.h
+nxsedit/extractor.cpp  compress/compressor.cpp
+nxsedit/extractor.h  compress/compressor.h
 files:
 56dddfbd605b1f190550aef39ea0c9864a093bd8a13f6b5231d8ae71694a5f07  common/cone.cpp
 feac2f36074f8c19621bc5660b5d671ca466bff5a2bca566a2e105665a1f069c  common/cone.h

@@ -15,8 +15,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_DAG_H
-#define NX_DAG_H
+#ifndef BM3D_DAG_H
+#define BM3D_DAG_H
 #ifdef _MSC_VER
 
 typedef __int16 int16_t;
@@ -37,9 +37,9 @@ typedef unsigned __int64 uint64_t;
 #include "cone.h"
 #include "signature.h"
 
-namespace nx {
+namespace bm3d::detail {
 
-#define NEXUS_PADDING 256
+#define BM3D_PADDING 256
 
 //A sphere with nothing in it: the radius -1 of vcg's own empty sphere, and a centre at the origin.
 //vcg leaves the centre of an empty sphere unset, and the tables of the file are written from
@@ -65,18 +65,18 @@ struct Header {
 //Every field has a value from the start: the sink node at the end of the table sets only
 //first_patch, and the rest of it is written to the file as it is.
 struct Node {
-	uint32_t offset = 0;       //offset on disk (could be moved), granularity NEXUS_PADDING) //use the function
+	uint32_t offset = 0;       //offset on disk (could be moved), granularity BM3D_PADDING) //use the function
 	uint16_t nvert = 0;
 	uint16_t nface = 0;
 	float error = 0;
-	nx::Cone3s cone;           //cone of normals
+	Cone3s cone;           //cone of normals
 	vcg::Sphere3f sphere = emptySphere(); //saturated sphere (extraction)
 	float tight_radius = 0;    //tight sphere (frustum culling)
 	uint32_t first_patch = 0;  //index of the first patch in the array of patches.
 	uint32_t last_patch() { return (this + 1)->first_patch; } //this node is ALWAYS inside an array.
 	vcg::Sphere3f tightSphere() { return vcg::Sphere3f(sphere.Center(), tight_radius); }
 
-	uint64_t getBeginOffset() { return (uint64_t)offset * (uint64_t) NEXUS_PADDING; }
+	uint64_t getBeginOffset() { return (uint64_t)offset * (uint64_t) BM3D_PADDING; }
 	uint64_t getEndOffset() { return (this+1)->getBeginOffset(); }
 	uint64_t getSize() { return getEndOffset() - getBeginOffset(); }
 };
@@ -95,12 +95,12 @@ struct Texture {
 			matrix[i] = 0;
 	}
 
-	uint64_t getBeginOffset() { return (uint64_t)offset * (uint64_t) NEXUS_PADDING; }
+	uint64_t getBeginOffset() { return (uint64_t)offset * (uint64_t) BM3D_PADDING; }
 	uint64_t getEndOffset() { return (this+1)->getBeginOffset(); }
 	uint64_t getSize() { return getEndOffset() - getBeginOffset(); }
 };
 
-/* Number of root nodes of a dag stored as nexus stores it: parents before children
+/* Number of root nodes of a dag stored as the format 0 container stores it: parents before children
    (roots first) and a sink node last. The sink is not a real node: it terminates the
    array so that last_patch() of the last real node can read its first_patch, and the
    leaves link to it. Roots are the nodes before the smallest node index any root links to.
@@ -118,4 +118,4 @@ inline uint32_t countDagRoots(Node *nodes, Patch *patches, uint32_t n_nodes) {
 }
 
 }//
-#endif // NX_DAG_H
+#endif // BM3D_DAG_H

@@ -19,7 +19,7 @@
 #include "cli_support.h"
 #include "env_var_guard.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "temp_dir.h"
 #include "version_file.h"
 
@@ -35,7 +35,7 @@ struct Folders {
     fs::path out = dir.makeDir("out");
 
     std::string input(const std::string& name = "model.obj") const { return pathToUtf8(in / name); }
-    std::string output(const std::string& name = "model.nxz") const { return pathToUtf8(out / name); }
+    std::string output(const std::string& name = "model.bm3d") const { return pathToUtf8(out / name); }
 
     void writeTriangle() const { writeTextFile(in / "model.obj", kTriangleObj); }
 };
@@ -138,7 +138,7 @@ TEST(CliArguments, aThreadCountThatIsNotAWholeNumberFromOneTo4096IsAUsageError) 
         const ProcessResult r = runBm3d({"--threads", bad, f.input(), f.output()});
         expectUsageError(r, std::string("--threads '") + bad + "'");
         EXPECT_NE(r.err.find("--threads takes a whole number from 1 to 4096"), std::string::npos) << bad << "\n" << r.err;
-        EXPECT_FALSE(fs::exists(f.out / "model.nxz")) << bad;
+        EXPECT_FALSE(fs::exists(f.out / "model.bm3d")) << bad;
     }
     EXPECT_TRUE(f.dir.list("out").empty());
 }
@@ -147,11 +147,11 @@ TEST(CliArguments, theToolTakesAThreadCountOfOneOrMore) {
     Folders f;
     f.writeTriangle();
     for (const char* threads : {"1", "2", "0004"}) {
-        const std::string out = f.output(std::string("threads") + threads + ".nxz");
+        const std::string out = f.output(std::string("threads") + threads + ".bm3d");
         const ProcessResult r = runBm3d({"--threads", threads, f.input(), out});
         EXPECT_EQ(r.exitCode, 0) << threads << "\n" << r.output();
-        const NexusFile h = readNexusFile(pathFromUtf8(out));
-        EXPECT_EQ(h.magic, kNexusMagic) << threads;
+        const ContainerFile h = readContainerFile(pathFromUtf8(out));
+        EXPECT_EQ(h.magic, kContainerMagic) << threads;
         EXPECT_EQ(h.nface, 1u) << threads;
     }
 }
@@ -161,16 +161,16 @@ TEST(CliArguments, theOptionsMayComeAfterThePaths) {
     f.writeTriangle();
     const ProcessResult r = runBm3d({f.input(), f.output(), "--threads", "1"});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_TRUE(fs::exists(f.out / "model.nxz"));
+    EXPECT_TRUE(fs::exists(f.out / "model.bm3d"));
 }
 
 TEST(CliArguments, twoDashesEndTheOptionsSoThatAPathMayStartWithADash) {
     Folders f;
     writeTextFile(f.in / "-model.obj", kTriangleObj);
-    EXPECT_EQ(runBm3d({f.input("-model.obj"), f.output("-out.nxz")}).exitCode, 0);
-    const ProcessResult r = runBm3d({"--", f.input("-model.obj"), f.output("-out.nxz")});
+    EXPECT_EQ(runBm3d({f.input("-model.obj"), f.output("-out.bm3d")}).exitCode, 0);
+    const ProcessResult r = runBm3d({"--", f.input("-model.obj"), f.output("-out.bm3d")});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_TRUE(fs::exists(f.out / "-out.nxz"));
+    EXPECT_TRUE(fs::exists(f.out / "-out.bm3d"));
 }
 
 TEST(CliExitCodes, aBuildThatWorksExitsWithZeroAndWritesTheOutput) {
@@ -179,9 +179,9 @@ TEST(CliExitCodes, aBuildThatWorksExitsWithZeroAndWritesTheOutput) {
     const ProcessResult r = runBm3d({f.input(), f.output()});
     EXPECT_EQ(r.exitCode, 0) << r.output();
     EXPECT_TRUE(r.err.empty()) << r.err;
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    const NexusFile h = readNexusFile(f.out / "model.nxz");
-    EXPECT_EQ(h.magic, kNexusMagic);
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    const ContainerFile h = readContainerFile(f.out / "model.bm3d");
+    EXPECT_EQ(h.magic, kContainerMagic);
     EXPECT_EQ(h.nface, 1u);
 }
 
@@ -235,7 +235,7 @@ TEST(CliExitCodes, aModelWithAnUpperCaseExtensionIsBuilt) {
     writeTextFile(f.in / "MODEL.OBJ", kTriangleObj);
     const ProcessResult r = runBm3d({f.input("MODEL.OBJ"), f.output()});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_EQ(readNexusFile(f.out / "model.nxz").nface, 1u);
+    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
 }
 
 TEST(CliExitCodes, aBrokenPlyExitsWithTwoAndWritesNoOutput) {
@@ -314,21 +314,21 @@ TEST(CliExitCodes, aBuildThatFailsAfterTheInputIsReadExitsWithOneAndWritesNoOutp
 TEST(CliExitCodes, anOutputThatIsAFolderExitsWithOneAfterTheWholeBuild) {
     Folders f;
     f.writeTriangle();
-    f.dir.makeDir("out/model.nxz");
+    f.dir.makeDir("out/model.bm3d");
     const ProcessResult r = runBm3d({f.input(), f.output()});
     EXPECT_EQ(r.exitCode, 1) << r.output();
     EXPECT_NE(r.err.find("could not build"), std::string::npos) << r.err;
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_TRUE(f.dir.list("out/model.nxz").empty());
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_TRUE(f.dir.list("out/model.bm3d").empty());
 }
 
 TEST(CliExitCodes, aFailedRunLeavesTheEarlierOutputAsItWas) {
     Folders f;
     writeTextFile(f.in / "x.obj", "this is not a model\n");
-    writeTextFile(f.out / "model.nxz", "an earlier build");
+    writeTextFile(f.out / "model.bm3d", "an earlier build");
     EXPECT_EQ(runBm3d({f.input("x.obj"), f.output()}).exitCode, 2);
-    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.nxz"});
-    EXPECT_EQ(fs::file_size(f.out / "model.nxz"), 16u);
+    EXPECT_EQ(f.dir.list("out"), std::vector<std::string>{"model.bm3d"});
+    EXPECT_EQ(fs::file_size(f.out / "model.bm3d"), 16u);
 }
 
 // The input is fine and the scratch file that reading it needs cannot be created: the OBJ loader
@@ -391,7 +391,7 @@ TEST(CliMetadata, aJsonObjectIsAccepted) {
     writeTextFile(f.in / "metadata.json", "{\"title\":\"Модель\",\"tags\":[1,2,{\"k\":null}]}\n");
     const ProcessResult r = runBm3d({"--metadata", pathToUtf8(f.in / "metadata.json"), f.input(), f.output()});
     EXPECT_EQ(r.exitCode, 0) << r.output();
-    EXPECT_EQ(readNexusFile(f.out / "model.nxz").nface, 1u);
+    EXPECT_EQ(readContainerFile(f.out / "model.bm3d").nface, 1u);
 }
 
 TEST(CliMetadata, anObjectWithAByteOrderMarkIsAccepted) {

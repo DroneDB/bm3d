@@ -23,7 +23,7 @@ for more details.
 #include "error.h"
 #include "pathutil.h"
 
-namespace nx {
+namespace bm3d::detail {
 
 namespace {
 const size_t InitialBuffer = 1 << 20;

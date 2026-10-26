@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Builds and tests bm3d with GCC and Clang on Linux (GCC also without TIFF support) and with MSVC
-# on Windows, and checks that the imported third-party and Nexus sources still are what their
-# manifests say.
+# on Windows, and checks that the imported third-party sources and the sources imported from
+# Nexus still are what their manifests say.
 #
 # The dependencies come from vcpkg at the commit the manifest (vcpkg.json) pins as its baseline,
 # so a port is the version the reference outputs were built with. The binary archives vcpkg

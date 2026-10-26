@@ -40,13 +40,13 @@ TEST(BuildOptions, aThreadCountFromZeroTo4096PassesTheArgumentCheck) {
     TempDir dir;
     // The input is missing, which is the failure that comes after the arguments are accepted
     for (const int threads : {0, 1, 2, 64, 4096})
-        EXPECT_EQ(kindOfFailure(dir.file("missing.obj"), dir.file("out.nxz"), threads), ErrorKind::InvalidInput) << threads;
+        EXPECT_EQ(kindOfFailure(dir.file("missing.obj"), dir.file("out.bm3d"), threads), ErrorKind::InvalidInput) << threads;
 }
 
 TEST(BuildOptions, aThreadCountOutOfRangeIsAnInvalidArgument) {
     TempDir dir;
     for (const int threads : {-1, -2, 4097, 99999, INT_MAX, INT_MIN})
-        EXPECT_EQ(kindOfFailure(dir.file("missing.obj"), dir.file("out.nxz"), threads), ErrorKind::InvalidArgument) << threads;
+        EXPECT_EQ(kindOfFailure(dir.file("missing.obj"), dir.file("out.bm3d"), threads), ErrorKind::InvalidArgument) << threads;
 }
 
 TEST(BuildOptions, theMessageOfARefusedThreadCountNamesTheRange) {
@@ -54,7 +54,7 @@ TEST(BuildOptions, theMessageOfARefusedThreadCountNamesTheRange) {
     try {
         bm3d::BuildOptions options;
         options.threads = 4097;
-        bm3d::build(dir.file("missing.obj"), dir.file("out.nxz"), options);
+        bm3d::build(dir.file("missing.obj"), dir.file("out.bm3d"), options);
         FAIL() << "build() did not throw";
     } catch (const bm3d::Error& e) {
         EXPECT_NE(std::string(e.what()).find("threads"), std::string::npos) << e.what();
@@ -64,7 +64,7 @@ TEST(BuildOptions, theMessageOfARefusedThreadCountNamesTheRange) {
 
 TEST(BuildOptions, aRefusedArgumentLeavesNoOutput) {
     TempDir dir;
-    kindOfFailure(dir.file("missing.obj"), dir.file("out.nxz"), -1);
+    kindOfFailure(dir.file("missing.obj"), dir.file("out.bm3d"), -1);
     EXPECT_TRUE(dir.list().empty());
 }
 
@@ -75,13 +75,13 @@ TEST(BuildErrors, anEmptyOutputPathIsAnInvalidArgument) {
 
 TEST(BuildErrors, anEmptyInputPathIsInvalidInput) {
     TempDir dir;
-    EXPECT_EQ(kindOfFailure({}, dir.file("out.nxz"), 1), ErrorKind::InvalidInput);
+    EXPECT_EQ(kindOfFailure({}, dir.file("out.bm3d"), 1), ErrorKind::InvalidInput);
 }
 
 TEST(BuildErrors, aMissingInputIsInvalidInputAndNamesTheFile) {
     TempDir dir;
     try {
-        bm3d::build(dir.file("absent.obj"), dir.file("out.nxz"));
+        bm3d::build(dir.file("absent.obj"), dir.file("out.bm3d"));
         FAIL() << "build() did not throw";
     } catch (const bm3d::Error& e) {
         EXPECT_EQ(e.kind(), ErrorKind::InvalidInput);

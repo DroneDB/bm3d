@@ -20,7 +20,7 @@
 
 #include "cli_support.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -42,7 +42,7 @@ struct Builds {
 };
 
 std::vector<uint8_t> build(const TempDir& dir, const std::string& input, int threads, int run) {
-    const fs::path out = dir.file("out-" + std::to_string(threads) + "-" + std::to_string(run) + ".nxz");
+    const fs::path out = dir.file("out-" + std::to_string(threads) + "-" + std::to_string(run) + ".bm3d");
     const ProcessResult r = runBm3d({"--threads", std::to_string(threads), pathToUtf8(dir.file(input)), pathToUtf8(out)});
     EXPECT_EQ(r.exitCode, 0) << r.output();
     return readAll(out);
@@ -126,7 +126,7 @@ TEST(Determinism, aTexturedObjIsBuiltTheSameEveryTime) {
     expectDefinedSink(b.threads1[0]);
 
     // the model is large enough to be worth the test: several levels, each node with its texture
-    const NexusFile f = readNexusFile(dir.file("out-1-0.nxz"));
+    const ContainerFile f = readContainerFile(dir.file("out-1-0.bm3d"));
     EXPECT_GT(f.nNodes, 8u);
     EXPECT_GT(f.nTextures, 8u);
 }
@@ -139,7 +139,7 @@ TEST(Determinism, aPlyIsBuiltTheSameEveryTime) {
     expectDeterministic(b);
     expectDefinedSink(b.threads1[0]);
 
-    const NexusFile f = readNexusFile(dir.file("out-1-0.nxz"));
+    const ContainerFile f = readContainerFile(dir.file("out-1-0.bm3d"));
     EXPECT_GT(f.nNodes, 8u);
 }
 

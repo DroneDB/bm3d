@@ -21,7 +21,7 @@ for more details.
 
 #include "error.h"
 
-namespace nx {
+namespace bm3d::detail {
 
 namespace {
 //the file grows by at least this much at a time, so appending many small pieces does not

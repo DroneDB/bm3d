@@ -20,7 +20,7 @@ for more details.
 
 using namespace std;
 using namespace vcg;
-using namespace nx;
+using namespace bm3d::detail;
 
 AnchoredCone3f::AnchoredCone3f() {
 	scaledNormal = Point3f(0,0,0);

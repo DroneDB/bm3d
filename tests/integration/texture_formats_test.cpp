@@ -21,7 +21,7 @@
 #include "bm3d/bm3d.h"
 #include "imageio.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -29,9 +29,9 @@ namespace {
 
 using namespace bm3dtest;
 
-void expectNexusMagic(const NexusFile& h) {
+void expectContainerMagic(const ContainerFile& h) {
     // 'N' 'x' 's' ' ' in a little-endian word
-    EXPECT_EQ(h.magic, kNexusMagic);
+    EXPECT_EQ(h.magic, kContainerMagic);
 }
 
 // The pictures the decoders have to get right and not only to read: a gray PNG with an alpha
@@ -84,11 +84,11 @@ TEST_P(TextureFormat, theTextureEndsUpInTheFile) {
     c.write(dir.file(textureName));
     writeTexturedModel(dir.path(), textureName);
 
-    const fs::path out = dir.file("model.nxz");
+    const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
 
-    const NexusFile h = readNexusFile(out);
-    expectNexusMagic(h);
+    const ContainerFile h = readContainerFile(out);
+    expectContainerMagic(h);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_EQ(h.nvert, 4u);
     ASSERT_GE(h.nTextures, 1u) << "no texture in the file";
@@ -128,9 +128,9 @@ INSTANTIATE_TEST_SUITE_P(
 // --- the colors of the pictures that are easy to get wrong
 
 // The pixel of the image the decoders hand to the builder, 0xffRRGGBB
-nx::Image decodeFile(const fs::path& file) {
+bm3d::detail::Image decodeFile(const fs::path& file) {
     std::string error;
-    nx::Image image = nx::loadImage(pathToUtf8(file), error);
+    bm3d::detail::Image image = bm3d::detail::loadImage(pathToUtf8(file), error);
     EXPECT_FALSE(image.isNull()) << error;
     return image;
 }
@@ -138,29 +138,29 @@ nx::Image decodeFile(const fs::path& file) {
 TEST(TextureDecoding, aGrayPngWithAlphaGivesTheGrayEverywhereWhateverTheAlpha) {
     TempDir dir;
     writePng(dir.file("ga.png"), grayAlphaRaster());
-    const nx::Image image = decodeFile(dir.file("ga.png"));
+    const bm3d::detail::Image image = decodeFile(dir.file("ga.png"));
     ASSERT_EQ(image.width(), 16);
     ASSERT_EQ(image.height(), 16);
     for (int y = 0; y < 16; y++)
         for (int x = 0; x < 16; x++)
-            ASSERT_EQ(image.scanLine(y)[x], nx::Image::rgb(x * 16, x * 16, x * 16)) << "at " << x << ", " << y;
+            ASSERT_EQ(image.scanLine(y)[x], bm3d::detail::Image::rgb(x * 16, x * 16, x * 16)) << "at " << x << ", " << y;
 }
 
 TEST(TextureDecoding, aPngOf16BitSamplesIsScaledTo8BitsWithRounding) {
     TempDir dir;
     writeRgb16Png(dir.file("deep.png"), 16, 16, flat16Bit());
-    const nx::Image image = decodeFile(dir.file("deep.png"));
+    const bm3d::detail::Image image = decodeFile(dir.file("deep.png"));
     ASSERT_EQ(image.width(), 16);
     ASSERT_EQ(image.height(), 16);
     for (int y = 0; y < 16; y++)
         for (int x = 0; x < 16; x++)
-            ASSERT_EQ(image.scanLine(y)[x], nx::Image::rgb(kColor16[0], kColor16[1], kColor16[2])) << "at " << x << ", " << y;
+            ASSERT_EQ(image.scanLine(y)[x], bm3d::detail::Image::rgb(kColor16[0], kColor16[1], kColor16[2])) << "at " << x << ", " << y;
 }
 
 TEST(TextureDecoding, aCmykJpegGivesTheColorOfItsInvertedComponents) {
     TempDir dir;
     writeCmykJpeg(dir.file("cmyk.jpg"), 16, 16, flatCmyk());
-    const nx::Image image = decodeFile(dir.file("cmyk.jpg"));
+    const bm3d::detail::Image image = decodeFile(dir.file("cmyk.jpg"));
     ASSERT_EQ(image.width(), 16);
     ASSERT_EQ(image.height(), 16);
     // at quality 100 the flat color survives the DCT to within a level
@@ -174,7 +174,7 @@ TEST(TextureDecoding, aCmykJpegGivesTheColorOfItsInvertedComponents) {
 }
 
 // Every pixel of a 16 x 16 image is what `expected` says
-void expectPixels(const nx::Image& image, const std::function<uint32_t(int x, int y)>& expected) {
+void expectPixels(const bm3d::detail::Image& image, const std::function<uint32_t(int x, int y)>& expected) {
     ASSERT_EQ(image.width(), 16);
     ASSERT_EQ(image.height(), 16);
     for (int y = 0; y < 16; y++)
@@ -182,7 +182,7 @@ void expectPixels(const nx::Image& image, const std::function<uint32_t(int x, in
             ASSERT_EQ(image.scanLine(y)[x], expected(x, y)) << "at " << x << ", " << y;
 }
 
-nx::Image decodePng(const PngSpec& spec, const std::vector<uint8_t>& rows) {
+bm3d::detail::Image decodePng(const PngSpec& spec, const std::vector<uint8_t>& rows) {
     TempDir dir;
     writeRawPng(dir.file("picture.png"), spec, rows);
     return decodeFile(dir.file("picture.png"));
@@ -205,12 +205,12 @@ TEST(TextureDecoding, theTransparentGrayOfAGrayPngIsBlack) {
     spec.bitDepth = 4;
     spec.transparentGray = 5;
     expectPixels(decodePng(spec, packSamples(16, 16, 4, grayValues([](int x, int y) { return (x + y) % 16; }))),
-                 [](int x, int y) { const int v = (x + y) % 16; return v == 5 ? nx::Image::rgb(0, 0, 0) : nx::Image::rgb(v * 17, v * 17, v * 17); });
+                 [](int x, int y) { const int v = (x + y) % 16; return v == 5 ? bm3d::detail::Image::rgb(0, 0, 0) : bm3d::detail::Image::rgb(v * 17, v * 17, v * 17); });
 
     spec.bitDepth = 8;
     spec.transparentGray = 0x70;
     expectPixels(decodePng(spec, packSamples(16, 16, 8, grayValues([](int x, int y) { return x * 16 + y; }))),
-                 [](int x, int y) { const int v = x * 16 + y; return v == 0x70 ? nx::Image::rgb(0, 0, 0) : nx::Image::rgb(v, v, v); });
+                 [](int x, int y) { const int v = x * 16 + y; return v == 0x70 ? bm3d::detail::Image::rgb(0, 0, 0) : bm3d::detail::Image::rgb(v, v, v); });
 }
 
 TEST(TextureDecoding, aGrayPngOfOneBitIsBlackAndWhite) {
@@ -218,7 +218,7 @@ TEST(TextureDecoding, aGrayPngOfOneBitIsBlackAndWhite) {
     spec.width = spec.height = 16;
     spec.bitDepth = 1;
     expectPixels(decodePng(spec, packSamples(16, 16, 1, grayValues([](int x, int y) { return (x + y) % 2; }))),
-                 [](int x, int y) { const int v = (x + y) % 2 * 255; return nx::Image::rgb(v, v, v); });
+                 [](int x, int y) { const int v = (x + y) % 2 * 255; return bm3d::detail::Image::rgb(v, v, v); });
 }
 
 TEST(TextureDecoding, aPalettePngKeepsTheColorsOfItsTransparentEntries) {
@@ -236,7 +236,7 @@ TEST(TextureDecoding, aPalettePngKeepsTheColorsOfItsTransparentEntries) {
     expectPixels(decodePng(spec, packSamples(16, 16, 4, indices)), [&indices](int x, int y) {
         uint8_t rgb[3];
         paletteColor(indices[size_t(y) * 16 + size_t(x)], rgb);
-        return nx::Image::rgb(rgb[0], rgb[1], rgb[2]);
+        return bm3d::detail::Image::rgb(rgb[0], rgb[1], rgb[2]);
     });
 }
 
@@ -248,7 +248,7 @@ TEST(TextureDecoding, anInterlacedPngIsTheSamePictureAsThePlainOne) {
     spec.interlaced = true;
     expectPixels(decodePng(spec, raster.pixels), [&raster](int x, int y) {
         const uint8_t* p = &raster.pixels[(size_t(y) * 16 + size_t(x)) * 3];
-        return nx::Image::rgb(p[0], p[1], p[2]);
+        return bm3d::detail::Image::rgb(p[0], p[1], p[2]);
     });
 }
 
@@ -273,10 +273,10 @@ TEST_P(TextureColor, theNodeTextureHasTheColorOfThePicture) {
     const std::string textureName = std::string("texture.") + c.extension;
     c.write(dir.file(textureName));
     writeTexturedModel(dir.path(), textureName);
-    const fs::path out = dir.file("model.nxz");
+    const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
 
-    const NexusFile h = readNexusFile(out);
+    const ContainerFile h = readContainerFile(out);
     ASSERT_FALSE(h.textures.empty());
     const DecodedImage texture = decodeWebp(h.textures.front());
     ASSERT_GT(texture.width, 3);
@@ -306,10 +306,10 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(TextureFormats, aModelWithoutTexturesHasNone) {
     TempDir dir;
     writeTextFile(dir.file("model.obj"), kTriangleObj);
-    const fs::path out = dir.file("model.nxz");
+    const fs::path out = dir.file("model.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
-    const NexusFile h = readNexusFile(out);
-    expectNexusMagic(h);
+    const ContainerFile h = readContainerFile(out);
+    expectContainerMagic(h);
     EXPECT_EQ(h.nface, 1u);
     EXPECT_EQ(h.nTextures, 0u);
 }
@@ -323,7 +323,7 @@ TEST(TextureFormats, aTiffTextureIsRefusedByAProgramBuiltWithoutTiffSupport) {
         TempDir dir;
         writeBinaryFile(dir.file("texture.tif"), magic);
         writeTexturedModel(dir.path(), "texture.tif");
-        const fs::path out = dir.file("model.nxz");
+        const fs::path out = dir.file("model.bm3d");
         try {
             bm3d::build(dir.file("model.obj"), out);
             ADD_FAILURE() << "the build should have failed";
@@ -343,11 +343,11 @@ TEST(TextureFormats, aPlyQuadHasTheFacesOfTwoTriangles) {
     writeTextFile(dir.file("quad.ply"), plyHeader(1) + "4 0 1 2 3\n");
     writeTextFile(dir.file("tris.ply"), plyHeader(2) + "3 0 1 2\n3 0 2 3\n");
 
-    ASSERT_NO_THROW(bm3d::build(dir.file("quad.ply"), dir.file("quad.nxz")));
-    ASSERT_NO_THROW(bm3d::build(dir.file("tris.ply"), dir.file("tris.nxz")));
-    const NexusFile quad = readNexusFile(dir.file("quad.nxz"));
-    const NexusFile tris = readNexusFile(dir.file("tris.nxz"));
-    expectNexusMagic(quad);
+    ASSERT_NO_THROW(bm3d::build(dir.file("quad.ply"), dir.file("quad.bm3d")));
+    ASSERT_NO_THROW(bm3d::build(dir.file("tris.ply"), dir.file("tris.bm3d")));
+    const ContainerFile quad = readContainerFile(dir.file("quad.bm3d"));
+    const ContainerFile tris = readContainerFile(dir.file("tris.bm3d"));
+    expectContainerMagic(quad);
     EXPECT_EQ(quad.nface, 2u);
     EXPECT_EQ(quad.nface, tris.nface);
     EXPECT_EQ(quad.nvert, tris.nvert);
@@ -357,11 +357,11 @@ TEST(TextureFormats, aTextureThatCannotBePackedBuildsWithoutTextures) {
     TempDir dir;
     writeBmp(dir.file("wide.bmp"), makeRaster(20000, 8, 3, [](int band, int x, int y) { return double((x + y * 30 + band) & 0xff); }));
     writeTexturedModel(dir.path(), "wide.bmp", "vt 0 0\nvt 0.99 0\nvt 0.99 0.99\nvt 0 0.99\n");
-    const fs::path out = dir.file("model.nxz");
+    const fs::path out = dir.file("model.bm3d");
     // The warning "textures could not be packed" goes to stderr: only the outcome is asserted here
     ASSERT_NO_THROW(bm3d::build(dir.file("model.obj"), out));
-    const NexusFile h = readNexusFile(out);
-    expectNexusMagic(h);
+    const ContainerFile h = readContainerFile(out);
+    expectContainerMagic(h);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_EQ(h.nTextures, 0u);
 }

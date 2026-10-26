@@ -1,0 +1,349 @@
+/*
+Nexus
+
+Copyright(C) 2012 - Federico Ponchio
+ISTI - Italian National Research Council - Visual Computing Lab
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
+for more details.
+*/
+#include <assert.h>
+
+#include "../common/error.h"
+#include "../common/numeric.h"
+
+#include "mesh.h"
+#include <iostream>
+
+using namespace std;
+
+//using namespace vcg;
+
+void Mesh::load(Soup &soup) {
+
+	vcg::tri::Allocator<Mesh>::AddVertices(*this, soup.size() * 3);
+	vcg::tri::Allocator<Mesh>::AddFaces(*this, soup.size());
+
+	for(unsigned int i = 0; i < soup.size(); i++) {
+		Triangle &triangle = soup[i];
+		AFace &f = face[i];
+		for(unsigned int k = 0; k < 3; k++) {
+			Vertex &in = triangle.vertices[k];
+			AVertex &v = vert[i*3 + k];
+			v.P()= vcg::Point3f(in.v[0], in.v[1], in.v[2]);
+			v.C() = vcg::Color4b(in.c[0], in.c[1], in.c[2], in.c[3]);
+			//v.position = i*3 + k;
+			f.V(k) = &v;
+		}
+		f.node = triangle.node;
+	}
+
+	//UNIFICATION PROCESS
+	/*
+	std::sort(vert.begin(), vert.end(), VertexCompare());
+
+	std::vector<int> remap(vert.size());
+	remap[0] = 0;
+	vn = 1;
+	for(unsigned int i = 1; i < vert.size(); i++) {
+		AVertex &current = vert[i];
+		AVertex &previous = vert[vn-1];
+
+		if(current.P() != previous.P()) {
+			vert[vn++] = current;
+		}
+		remap[current.position] = vn-1;
+	}
+	vert.resize(vn);
+
+	AVertex *begin = &*vert.begin();
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &f = face[i];
+		for(int k = 0; k < 3; k++)
+			f.V(k) = begin + remap[f.V(k) - begin];
+	}
+
+	savePly("test.ply"); */
+	vcg::tri::Clean<Mesh>::RemoveDuplicateVertex(*this);
+	vcg::tri::Allocator<Mesh>::CompactVertexVector(*this);
+	vcg::tri::Allocator<Mesh>::CompactFaceVector(*this);
+	vcg::tri::UpdateNormal<Mesh>::PerVertex(*this);
+}
+
+/*void Mesh::lock(std::vector<bool> &locked) {
+	for(unsigned int i = 0; i < face.size(); i++)
+		if(locked[i])
+			face[i].ClearW();
+}*/
+
+void Mesh::lockVertices() {
+	//lock border triangles
+	for(unsigned int i = 0; i < face.size(); i++)
+		if(!face[i].IsW())
+			for(int k = 0; k < 3; k++)
+				face[i].V(k)->ClearW();
+}
+
+
+void Mesh::save(Soup &soup, uint32_t node) {
+	for(unsigned int i = 0; i < face.size(); i++) {
+		Triangle triangle;
+		AFace &t = face[i];
+		for(unsigned int k = 0; k < 3; k++) {
+			Vertex &vertex = triangle.vertices[k];
+			AVertex &v = *t.V(k);
+			vertex.v[0] = v.P()[0];
+			vertex.v[1] = v.P()[1];
+			vertex.v[2] = v.P()[2];
+			vertex.c[0] = v.C()[0];
+			vertex.c[1] = v.C()[1];
+			vertex.c[2] = v.C()[2];
+			vertex.c[3] = v.C()[3];
+		}
+		triangle.node = node;
+		soup.push_back(triangle);
+	}
+}
+
+void Mesh::getTriangles(Triangle *triangles, uint32_t node) {
+	int count = 0;
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &t= face[i];
+		if(t.IsD()) continue;
+
+		Triangle &triangle = triangles[count++];
+		for(unsigned int k = 0; k < 3; k++) {
+			Vertex &vertex = triangle.vertices[k];
+			AVertex &v = *t.V(k);
+			vertex.v[0] = v.P()[0];
+			vertex.v[1] = v.P()[1];
+			vertex.v[2] = v.P()[2];
+			vertex.c[0] = v.C()[0];
+			vertex.c[1] = v.C()[1];
+			vertex.c[2] = v.C()[2];
+			vertex.c[3] = v.C()[3];
+		}
+		triangle.node = node;
+	}
+}
+
+float Mesh::simplify(uint16_t target_faces, Simplification method) {
+
+	float error = -1;
+	switch(method) {
+	case RANDOM: error = randomSimplify(target_faces); break;
+	case QUADRICS: error = quadricSimplify(target_faces); break;
+	default: throw bm3d::detail::Error("unknown simplification method");
+	}
+
+	//unlock everything
+	for(unsigned int i = 0; i < vert.size(); i++)
+		vert[i].SetW();
+	for(unsigned int i = 0; i < face.size(); i++)
+		face[i].SetW();
+
+	return error;
+}
+
+bm3d::detail::Node Mesh::getNode()
+{
+	bm3d::detail::Node node;
+	node.offset = -1;
+	node.nface = face.size();
+	node.nvert = vert.size();
+	node.error = -1;
+	node.first_patch = -1;
+	node.sphere = boundingSphere();
+	node.tight_radius = node.sphere.Radius();
+	node.cone = normalsCone();
+	return node;
+}
+
+uint32_t Mesh::serializedSize(const bm3d::detail::Signature &sig) {
+	assert(vn == (int)vert.size());
+	assert(fn == (int)face.size());
+	uint16_t nvert = vn;
+	uint16_t nface = fn;
+	return nvert*sig.vertex.size() + nface*sig.face.size();
+}
+
+void Mesh:: serialize(unsigned char *buffer, bm3d::detail::Signature &sig, std::vector<bm3d::detail::Patch> &patches) {
+
+
+	uint32_t current_node = 0;
+	//find patches and triangle (splat) offsets
+	if(sig.face.hasIndex()) {
+		//sort face by node.
+		std::sort(face.begin(), face.end());
+
+		//remember triangle_offset is the END of the triangles in the patch
+		current_node = face[0].node;
+		for(unsigned int i = 0; i < face.size(); i++) {
+			AFace &f = face[i];
+			if(f.node != current_node) {
+				bm3d::detail::Patch patch;
+				patch.node = current_node;
+				patch.triangle_offset  = i;
+				patch.texture = 0xffffffff;
+				patches.push_back(patch);
+				current_node  = f.node;
+			}
+		}
+	} else {
+		std::sort(vert.begin(), vert.end(), VertexNodeCompare());
+		current_node = vert[0].node;
+		for(unsigned int i = 0; i < vert.size(); i++) {
+			AVertex &v = vert[i];
+			if(v.node != current_node) {
+				bm3d::detail::Patch patch;
+				patch.node = current_node;
+				patch.triangle_offset  = i;
+				patch.texture = 0xffffffff;
+				patches.push_back(patch);
+				current_node  = v.node;
+			}
+		}
+	}
+
+
+	bm3d::detail::Patch patch;
+	patch.node = current_node;
+	if(sig.face.hasIndex()) {
+		patch.triangle_offset  = face.size();
+	} else {
+		patch.triangle_offset  = vert.size();
+	}
+	patch.texture = 0xffffffff;
+	patches.push_back(patch);
+
+	if(sig.vertex.hasNormals() && sig.face.hasIndex())
+		vcg::tri::UpdateNormal<Mesh>::PerVertexNormalized(*this);
+
+	vcg::Point3f *c = (vcg::Point3f *)buffer;
+	for(unsigned int i = 0; i < vert.size(); i++)
+		c[i] = vert[i].P();
+
+	buffer += vert.size()*sizeof(vcg::Point3f);
+
+	//assert(!sig.vertex.hasTextures());
+
+	if(sig.vertex.hasNormals()) {
+		vcg::Point3s *nstart = (vcg::Point3s *)buffer;
+		for(unsigned int i = 0; i < vert.size(); i++) {
+			vcg::Point3f nf = vert[i].N();
+			nf.Normalize();
+			vcg::Point3s &ns = nstart[i];
+			for(int k = 0; k < 3; k++)
+				ns[k] = (short)(nf[k]*32766);
+		}
+		buffer += vert.size() * sizeof(vcg::Point3s);
+	}
+
+	if(sig.vertex.hasColors()) {
+		vcg::Color4b *cstart = (vcg::Color4b *)buffer;
+		for(unsigned int i = 0; i < vert.size(); i++)
+			cstart[i] = vert[i].C();
+		buffer += vert.size() * sizeof(vcg::Color4b);
+	}
+
+	uint16_t *faces = (uint16_t *)buffer;
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &f = face[i];
+		for(int k = 0; k < 3; k++) {
+			AVertex *v = f.V(k);
+			faces[i*3 + k] = v - &*vert.begin();
+		}
+	}
+	buffer += face.size() * 6;
+}
+
+vcg::Sphere3f Mesh::boundingSphere() {
+	std::vector<vcg::Point3f> vertices(vert.size());
+	for(uint32_t i = 0; i < vert.size(); i++)
+		vertices[i] = vert[i].P();
+	vcg::Sphere3f sphere;
+	sphere.CreateTight(vertices);
+	return sphere;
+}
+
+bm3d::detail::Cone3s Mesh::normalsCone() {
+	std::vector<vcg::Point3f> normals;
+	normals.reserve(face.size());
+	//compute face normals
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &f = face[i];
+		vcg::Point3f &v0 = f.V(0)->P();
+		vcg::Point3f &v1 = f.V(1)->P();
+		vcg::Point3f &v2 = f.V(2)->P();
+
+		vcg::Point3f norm = (v1 - v0) ^ (v2 - v0);
+		float len = norm.Norm();
+		float l1 = (v1 - v0).Norm();
+		float l2 = (v2 - v0).Norm();
+		float bigger = l1>l2?l1:l2;
+		//skip very thin faces.
+		if(bm3d::detail::fuzzyCompare(bigger, bigger + len))
+			continue;
+		norm /= len;
+		normals.push_back(norm);
+	}
+	if(normals.size() == 0) {
+		return bm3d::detail::Cone3s();
+	}
+	bm3d::detail::AnchoredCone3f acone;
+	acone.AddNormals(normals, 0.95f);
+
+	bm3d::detail::Cone3s cone;
+	cone.Import(acone);
+	return cone;
+}
+
+float Mesh::randomSimplify(uint16_t /*target_faces*/) {
+	assert(0);
+	return -1;
+}
+
+void Mesh::quadricInit() {
+	vcg::tri::UpdateTopology<Mesh>::VertexFace(*this);
+	qparams = new vcg::tri::TriEdgeCollapseQuadricParameter();
+	qparams->NormalCheck = true;
+	qparams->QualityQuadric = true;
+	deciSession = new vcg::LocalOptimization<Mesh>(*this, qparams);
+
+	deciSession->Init<TriEdgeCollapse>();
+}
+
+float Mesh::quadricSimplify(uint16_t target) {
+
+	deciSession->SetTargetSimplices(target);
+	deciSession->DoOptimization();
+	delete deciSession;
+	delete qparams;
+	return edgeLengthError();
+}
+
+float Mesh::edgeLengthError() {
+	if(!face.size()) return 0;
+	float error = 0;
+	int recount = 0;
+	for(unsigned int i = 0; i < face.size(); i++) {
+		AFace &f = face[i];
+		if(f.IsD()) continue;
+		for(int k = 0; k < 3; k++) {
+			float err = (f.cV(k)->cP() - f.cV((k+1)%3)->cP()).SquaredNorm();
+			error += err;
+			recount++;
+		}
+	}
+	return sqrt(error/recount);
+}
+
+

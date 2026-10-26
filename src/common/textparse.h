@@ -14,8 +14,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_TEXTPARSE_H
-#define NX_TEXTPARSE_H
+#ifndef BM3D_TEXTPARSE_H
+#define BM3D_TEXTPARSE_H
 
 #include <cctype>
 #include <cmath>
@@ -24,10 +24,10 @@ for more details.
 #include <string>
 
 //Small helpers for the loaders of text formats. Numbers are read with strtod/strtof, which
-//follow the numeric locale of the process: the code that builds a Nexus file sets it to "C"
-//for the duration of the build (see nexusBuild).
+//follow the numeric locale of the process: the code that builds a model sets it to "C"
+//for the duration of the build (see build).
 
-namespace nx {
+namespace bm3d::detail {
 namespace text {
 
 inline bool isSpace(char c) {
@@ -157,4 +157,4 @@ inline bool parseInteger(const char *&p, int64_t &value) {
 } //namespace
 } //namespace
 
-#endif // NX_TEXTPARSE_H
+#endif // BM3D_TEXTPARSE_H

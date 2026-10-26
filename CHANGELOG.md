@@ -2,6 +2,23 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## Unreleased
+
+- Every Nexus name in the code is a bm3d name; the output does not change (the byte gate is the
+  same on all eight reference models). The namespace `nx` is `bm3d::detail` (the public API stays
+  in `bm3d`), `NexusBuilder` is `Builder`, `NexusData` is `Reader`, `NexusFile` is `File`,
+  `Extractor` is `Compressor`; `src/nxsbuild` is `src/build` and `src/nxsedit` is `src/compress`,
+  with the files renamed to match (`nexusbuilder` to `builder`, `nexusdata` to `reader`,
+  `extractor` to `compressor`, `nexusfile` and `stdnexusfile` to `file` and `stdfile`); the scratch
+  files of a build are named `bm3d_cache_*` and `<output>.tmp.bm3d`. The licence headers of the
+  imported files, the attribution to Nexus and the bytes of the container (format 0) are unchanged.
+- `scripts/import-nexus.py` keeps tracing the imported files after the move: `src/NEXUS_SOURCE`
+  has a `moved` section (upstream path to current path), `--check` reports a moved file as
+  renamed and an edited one as modified instead of removed, and `--move OLD NEW` records a move.
+  `PROVENANCE.md` has a table of the renamed files. `scripts/nxzread.py` is `scripts/format0.py`.
+- `scripts/check-spdx.py` skips build directories only at the top of the repository, so that
+  `src/build/` is checked.
+
 ## 0.2.0
 
 - Eigen is gone: neither the program nor the library needs it, and `eigen3` is no longer in

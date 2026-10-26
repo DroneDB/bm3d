@@ -18,7 +18,7 @@
 
 #include "bm3d/bm3d.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -38,7 +38,7 @@ void writeTexture(const fs::path& file, int side, const PixelValue& value) {
 fs::path buildGrid(const TempDir& dir, int cells, int textureSide, const PixelValue& value) {
     writeTexture(dir.file("texture.bmp"), textureSide, value);
     writeGridModel(dir.path(), cells, "texture.bmp");
-    const fs::path out = dir.file("grid.nxz");
+    const fs::path out = dir.file("grid.bm3d");
     EXPECT_NO_THROW(bm3d::build(dir.file("grid.obj"), out));
     return out;
 }
@@ -53,7 +53,7 @@ struct TexelCount {
     int largestSide = 0;
 };
 
-TexelCount countTexels(const NexusFile& n) {
+TexelCount countTexels(const ContainerFile& n) {
     TexelCount c;
     std::vector<DecodedImage> images;
     for (const auto& t : n.textures)
@@ -73,7 +73,7 @@ TexelCount countTexels(const NexusFile& n) {
 
 TEST(TextureResolution, theNodeTexturesAreWebp) {
     TempDir dir;
-    const NexusFile n = readNexusFile(buildGrid(dir, 4, 64, detail));
+    const ContainerFile n = readContainerFile(buildGrid(dir, 4, 64, detail));
     ASSERT_FALSE(n.textures.empty());
     for (const auto& t : n.textures)
         EXPECT_TRUE(isWebp(t));
@@ -84,7 +84,7 @@ TEST(TextureResolution, theNodeTexturesAreWebp) {
 TEST(TextureResolution, theLeavesKeepTheResolutionOfAFewTrianglesWithALargeTexture) {
     TempDir dir;
     const int side = 4096;
-    const NexusFile n = readNexusFile(buildGrid(dir, 32, side, detail));
+    const ContainerFile n = readContainerFile(buildGrid(dir, 32, side, detail));
     const TexelCount c = countTexels(n);
     EXPECT_GE(c.leaves, 0.9 * side * side) << "the leaves hold " << c.leaves << " texels";
     EXPECT_LE(c.largestSide, kMaxNodeTextureSide);
@@ -97,7 +97,7 @@ TEST(TextureResolution, theLeavesKeepTheResolutionOfAFewTrianglesWithALargeTextu
 TEST(TextureResolution, theErrorOfALeafIsTheSizeOfItsTexels) {
     TempDir dir;
     const int cells = 32, side = 4096;
-    const NexusFile n = readNexusFile(buildGrid(dir, cells, side, detail));
+    const ContainerFile n = readContainerFile(buildGrid(dir, cells, side, detail));
     const double texel = double(cells) / side;  // the grid squares have a side of 1
     bool sawLeaf = false;
     for (size_t node = 0; node < n.leaf.size(); node++) {
@@ -116,7 +116,7 @@ TEST(TextureResolution, theErrorOfALeafIsTheSizeOfItsTexels) {
 TEST(TextureResolution, theCoarserLevelsKeepTheTrianglesWhileTheTextureIsFinerThanThem) {
     TempDir dir;
     const int cells = 32, triangles = 2 * cells * cells;
-    const NexusFile n = readNexusFile(buildGrid(dir, cells, 4096, detail));
+    const ContainerFile n = readContainerFile(buildGrid(dir, cells, 4096, detail));
     EXPECT_GE(n.nface, uint64_t(4 * triangles)) << "the levels hold " << n.nface << " triangles";
     const TexelCount c = countTexels(n);
     EXPECT_LT(c.inner, c.leaves) << "the coarser levels hold " << c.inner << " texels";
@@ -130,7 +130,7 @@ TEST(TextureResolution, theCoarserLevelsKeepTheTrianglesWhileTheTextureIsFinerTh
 TEST(TextureResolution, theCoarserLevelsHoldAThirdOfTheTexelsOfTheLeaves) {
     TempDir dir;
     const int side = 4096;
-    const NexusFile n = readNexusFile(buildGrid(dir, 72, side, detail));
+    const ContainerFile n = readContainerFile(buildGrid(dir, 72, side, detail));
     const TexelCount c = countTexels(n);
     EXPECT_GE(c.leaves, 0.9 * side * side) << "the leaves hold " << c.leaves << " texels";
     EXPECT_GE(c.inner, 0.2 * c.leaves) << "the coarser levels hold " << c.inner << " texels";
@@ -149,9 +149,9 @@ TEST(TextureResolution, theTexelsNoTriangleDrawsAreBlank) {
                   "mtllib half.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
                   "vt 0 0\nvt 1 0\nvt 0 1\nusemtl m\nf 1/1 2/2 3/3\n");
     writeTextFile(dir.file("half.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd texture.bmp\n");
-    const fs::path out = dir.file("half.nxz");
+    const fs::path out = dir.file("half.bm3d");
     ASSERT_NO_THROW(bm3d::build(dir.file("half.obj"), out));
-    const NexusFile n = readNexusFile(out);
+    const ContainerFile n = readContainerFile(out);
     ASSERT_FALSE(n.textures.empty());
     const DecodedImage img = decodeWebp(n.textures.front());
     ASSERT_GE(img.width, 64);
@@ -183,7 +183,7 @@ TEST(TextureResolution, eachNodeHasTheTextureOfItsPlace) {
     TempDir dir;
     const int cells = 72, side = 2048;
     // bands count from 1, and texture rows run from v = 1 at the top
-    const NexusFile n = readNexusFile(buildGrid(dir, cells, side, [side](int band, int x, int y) {
+    const ContainerFile n = readContainerFile(buildGrid(dir, cells, side, [side](int band, int x, int y) {
         return band == 1 ? 255.0 * x / side : band == 2 ? 255.0 * (side - 1 - y) / side : 128.0;
     }));
     ASSERT_GT(n.textures.size(), 4u);
@@ -206,8 +206,8 @@ TEST(TextureResolution, eachNodeHasTheTextureOfItsPlace) {
 // resize picks
 TEST(TextureResolution, aCoarserTextureAveragesTheDetailsOfTheFinerOne) {
     TempDir dir;
-    const NexusFile n =
-        readNexusFile(buildGrid(dir, 72, 1024, [](int, int x, int y) { return ((x + y) % 2) ? 255.0 : 0.0; }));
+    const ContainerFile n =
+        readContainerFile(buildGrid(dir, 72, 1024, [](int, int x, int y) { return ((x + y) % 2) ? 255.0 : 0.0; }));
     bool sawInner = false;
     for (size_t node = 0; node < n.nodeTexture.size(); node++) {
         if (n.leaf[node])

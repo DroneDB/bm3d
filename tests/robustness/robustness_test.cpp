@@ -19,7 +19,7 @@
 #include <gtest/gtest.h>
 
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "outcome.h"
 #include "pictures.h"
 #include "temp_dir.h"
@@ -53,7 +53,7 @@ void expectInvalidInput(const Outcome& o, const std::vector<std::string>& parts,
 }
 
 uint64_t facesOf(const Outcome& o) {
-    return readNexusFile(o.output).nface;
+    return readContainerFile(o.output).nface;
 }
 
 // --- PLY face lists
@@ -135,7 +135,7 @@ void expectTheSquare(const Case& c, const char* countType, const char* indexType
     writeBinaryPly<Count, Index>(c.in / name, countType, indexType);
     const Outcome o = runOn(c.dir, c.in / name);
     expectExit(o, 0, name);
-    const NexusFile h = readNexusFile(o.output);
+    const ContainerFile h = readContainerFile(o.output);
     EXPECT_EQ(h.nface, 2u) << name;
     EXPECT_EQ(h.nvert, 4u) << name;
 }
@@ -213,7 +213,7 @@ TEST(PlyHeader, aTextureNamedInALongCommentIsFoundAndUsed) {
                       "end_header\n0 0 0 0 0\n1 0 0 1 0\n1 1 0 1 1\n0 1 0 0 1\n3 0 1 2\n3 0 2 3\n");
     const Outcome o = runOn(c.dir, c.in / "t.ply");
     expectExit(o, 0);
-    EXPECT_GE(readNexusFile(o.output).nTextures, 1u);
+    EXPECT_GE(readContainerFile(o.output).nTextures, 1u);
 }
 
 // --- OBJ
@@ -349,7 +349,7 @@ TEST(Triangles, trianglesWithNoAreaBuildAndEveryNormalIsFinite) {
     for (const std::string& format : {std::string("obj"), std::string("stl")}) {
         const Outcome o = c.run("flat." + format, format == "obj" ? objOf(triangles) : binaryStl(triangles));
         expectExit(o, 0, format);
-        const NexusFile h = readNexusFile(o.output);
+        const ContainerFile h = readContainerFile(o.output);
         EXPECT_GE(h.nface, good) << format;
         for (uint32_t node = 0; node + 1 < h.nNodes; node++)
             for (const auto& normal : readNode(o.output, node).normals)

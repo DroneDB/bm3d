@@ -18,7 +18,7 @@
 
 #include "bm3d/bm3d.h"
 #include "model_files.h"
-#include "nexus_file.h"
+#include "container_file.h"
 #include "pictures.h"
 #include "temp_dir.h"
 
@@ -29,17 +29,17 @@ using namespace bm3dtest;
 // A surface of 20 x 20 squares: 800 triangles, fewer than a node holds
 constexpr int kSquares = 20;
 
-NexusFile buildFile(const TempDir& dir, const std::string& input, const std::string& output) {
+ContainerFile buildFile(const TempDir& dir, const std::string& input, const std::string& output) {
     EXPECT_NO_THROW(bm3d::build(dir.file(input), dir.file(output)));
-    return readNexusFile(dir.file(output));
+    return readContainerFile(dir.file(output));
 }
 
 TEST(MeshFormats, anObjBuildsTheTrianglesItHolds) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeTextFile(dir.file("wave.obj"), objOf(triangles));
-    const NexusFile h = buildFile(dir, "wave.obj", "wave.nxz");
-    EXPECT_EQ(h.magic, kNexusMagic);
+    const ContainerFile h = buildFile(dir, "wave.obj", "wave.bm3d");
+    EXPECT_EQ(h.magic, kContainerMagic);
     EXPECT_EQ(h.nface, triangles.size());
     EXPECT_EQ(h.nTextures, 0u);
 }
@@ -48,8 +48,8 @@ TEST(MeshFormats, anAsciiPlyBuildsTheTrianglesItHolds) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeTextFile(dir.file("wave.ply"), plyOf(triangles));
-    const NexusFile h = buildFile(dir, "wave.ply", "wave.nxz");
-    EXPECT_EQ(h.magic, kNexusMagic);
+    const ContainerFile h = buildFile(dir, "wave.ply", "wave.bm3d");
+    EXPECT_EQ(h.magic, kContainerMagic);
     EXPECT_EQ(h.nface, triangles.size());
 }
 
@@ -57,8 +57,8 @@ TEST(MeshFormats, anAsciiStlBuildsTheTrianglesItHolds) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeTextFile(dir.file("wave.stl"), asciiStl(triangles));
-    const NexusFile h = buildFile(dir, "wave.stl", "wave.nxz");
-    EXPECT_EQ(h.magic, kNexusMagic);
+    const ContainerFile h = buildFile(dir, "wave.stl", "wave.bm3d");
+    EXPECT_EQ(h.magic, kContainerMagic);
     EXPECT_EQ(h.nface, triangles.size());
 }
 
@@ -66,8 +66,8 @@ TEST(MeshFormats, aBinaryStlBuildsTheTrianglesItHolds) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeBinaryFile(dir.file("wave.stl"), binaryStl(triangles));
-    const NexusFile h = buildFile(dir, "wave.stl", "wave.nxz");
-    EXPECT_EQ(h.magic, kNexusMagic);
+    const ContainerFile h = buildFile(dir, "wave.stl", "wave.bm3d");
+    EXPECT_EQ(h.magic, kContainerMagic);
     EXPECT_EQ(h.nface, triangles.size());
 }
 
@@ -96,15 +96,15 @@ TEST(MeshFormats, theExtensionIsReadInAnyCase) {
         writeBinaryFile(dir.file(c.lower), c.bytes);
         writeBinaryFile(dir.file(c.upper), c.bytes);
         writeBinaryFile(dir.file(c.mixed), c.bytes);
-        const NexusFile lower = buildFile(dir, c.lower, std::string(c.lower) + ".nxz");
+        const ContainerFile lower = buildFile(dir, c.lower, std::string(c.lower) + ".bm3d");
         for (const char* name : {c.upper, c.mixed}) {
-            const NexusFile other = buildFile(dir, name, std::string(name) + ".nxz");
+            const ContainerFile other = buildFile(dir, name, std::string(name) + ".bm3d");
             EXPECT_EQ(other.nface, triangles.size()) << name;
             EXPECT_EQ(other.nface, lower.nface) << name;
             EXPECT_EQ(other.nvert, lower.nvert) << name;
             EXPECT_EQ(other.nNodes, lower.nNodes) << name;
             // the same loader reads it, so the file is the same byte for byte
-            EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".nxz")), readBinaryFile(dir.file(std::string(c.lower) + ".nxz")))
+            EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".bm3d")), readBinaryFile(dir.file(std::string(c.lower) + ".bm3d")))
                 << name;
         }
     }
@@ -118,9 +118,9 @@ TEST(MeshFormats, theSameSurfaceInEveryFormatGivesTheSameModel) {
     writeTextFile(dir.file("ascii.stl"), asciiStl(triangles));
     writeBinaryFile(dir.file("binary.stl"), binaryStl(triangles));
 
-    const NexusFile obj = buildFile(dir, "wave.obj", "obj.nxz");
+    const ContainerFile obj = buildFile(dir, "wave.obj", "obj.bm3d");
     for (const char* input : {"wave.ply", "ascii.stl", "binary.stl"}) {
-        const NexusFile other = buildFile(dir, input, std::string(input) + ".nxz");
+        const ContainerFile other = buildFile(dir, input, std::string(input) + ".bm3d");
         EXPECT_EQ(other.nface, obj.nface) << input;
         EXPECT_EQ(other.nvert, obj.nvert) << input;
         EXPECT_EQ(other.nNodes, obj.nNodes) << input;
@@ -131,7 +131,7 @@ TEST(MeshFormats, aTexturedObjKeepsItsTexture) {
     TempDir dir;
     writePng(dir.file("texture.png"), gradientRaster(3));
     writeTexturedModel(dir.path(), "texture.png");
-    const NexusFile h = buildFile(dir, "model.obj", "model.nxz");
+    const ContainerFile h = buildFile(dir, "model.obj", "model.bm3d");
     EXPECT_EQ(h.nface, 2u);
     EXPECT_GE(h.nTextures, 1u);
 }
@@ -141,7 +141,7 @@ TEST(MeshFormats, aSurfaceOfManyTrianglesIsBuiltInLevels) {
     TempDir dir;
     const auto triangles = waveTriangles(150);  // 45000 triangles
     writeBinaryFile(dir.file("big.stl"), binaryStl(triangles));
-    const NexusFile h = buildFile(dir, "big.stl", "big.nxz");
+    const ContainerFile h = buildFile(dir, "big.stl", "big.bm3d");
     EXPECT_GE(h.nface, triangles.size());
     EXPECT_GT(h.nNodes, 3u);
 }
@@ -152,7 +152,7 @@ TEST(MeshFormats, theTexturesOfAnObjBesideItAreFoundByTheirMaterial) {
     writeBmp(dir.file("model/texture.bmp"), gradientRaster(3));
     writeTexturedModel(dir.makeDir("model"), "texture.bmp");
     // the texture is named relative to the folder of the model, not to the one of the output
-    const NexusFile h = buildFile(dir, "model/model.obj", "out.nxz");
+    const ContainerFile h = buildFile(dir, "model/model.obj", "out.bm3d");
     EXPECT_GE(h.nTextures, 1u);
 }
 
@@ -161,13 +161,13 @@ TEST(MeshFormats, theThreadsOfABuildDoNotChangeTheModel) {
     TempDir dir;
     const auto triangles = waveTriangles(150);
     writeBinaryFile(dir.file("big.stl"), binaryStl(triangles));
-    const NexusFile reference = buildFile(dir, "big.stl", "default.nxz");
+    const ContainerFile reference = buildFile(dir, "big.stl", "default.bm3d");
     for (const int threads : {1, 3}) {
         bm3d::BuildOptions options;
         options.threads = threads;
-        const fs::path out = dir.file("threads" + std::to_string(threads) + ".nxz");
+        const fs::path out = dir.file("threads" + std::to_string(threads) + ".bm3d");
         ASSERT_NO_THROW(bm3d::build(dir.file("big.stl"), out, options)) << threads;
-        const NexusFile h = readNexusFile(out);
+        const ContainerFile h = readContainerFile(out);
         EXPECT_EQ(h.nface, reference.nface) << threads;
         EXPECT_EQ(h.nvert, reference.nvert) << threads;
         EXPECT_EQ(h.nNodes, reference.nNodes) << threads;
@@ -183,7 +183,7 @@ TEST(MeshFormats, aPlyWithTextureCoordinatesPerVertexKeepsItsTexture) {
                   "property float x\nproperty float y\nproperty float z\nproperty float s\nproperty float t\n"
                   "element face 2\nproperty list uchar int vertex_indices\nend_header\n"
                   "0 0 0 0 0\n1 0 0 1 0\n1 1 0 1 1\n0 1 0 0 1\n3 0 1 2\n3 0 2 3\n");
-    const NexusFile h = buildFile(dir, "textured.ply", "textured.nxz");
+    const ContainerFile h = buildFile(dir, "textured.ply", "textured.bm3d");
     EXPECT_EQ(h.nface, 2u);
     EXPECT_GE(h.nTextures, 1u);
 }
@@ -197,7 +197,7 @@ TEST(MeshFormats, aPlyWithTextureCoordinatesPerFaceKeepsItsTexture) {
                   "element face 2\nproperty list uchar int vertex_indices\nproperty list uchar float texcoord\n"
                   "end_header\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
                   "3 0 1 2 6 0 0 1 0 1 1\n3 0 2 3 6 0 0 1 1 0 1\n");
-    const NexusFile h = buildFile(dir, "textured.ply", "textured.nxz");
+    const ContainerFile h = buildFile(dir, "textured.ply", "textured.bm3d");
     EXPECT_EQ(h.nface, 2u);
     EXPECT_GE(h.nTextures, 1u);
 }
@@ -247,7 +247,7 @@ TEST(StlFormats, aBinaryStlWhoseHeaderStartsWithSolidIsReadAsBinary) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeBinaryFile(dir.file("solid.stl"), binaryStl(triangles, "solid wave exported by a program that writes binary"));
-    const NexusFile h = buildFile(dir, "solid.stl", "solid.nxz");
+    const ContainerFile h = buildFile(dir, "solid.stl", "solid.bm3d");
     EXPECT_EQ(h.nface, triangles.size());
 }
 
@@ -256,14 +256,14 @@ TEST(StlFormats, bytesAfterTheLastTriangleOfABinaryStlAreIgnored) {
     TempDir dir;
     const auto triangles = waveTriangles(kSquares);
     writeBinaryFile(dir.file("padded.stl"), binaryStl(triangles) + std::string(7, 'x'));
-    EXPECT_EQ(buildFile(dir, "padded.stl", "padded.nxz").nface, triangles.size());
+    EXPECT_EQ(buildFile(dir, "padded.stl", "padded.bm3d").nface, triangles.size());
 
     // the header counts fewer triangles than the file holds: the ones it counts are read
     auto bytes = binaryStl(triangles);
     bytes[80] = char(100);
     bytes[81] = bytes[82] = bytes[83] = 0;
     writeBinaryFile(dir.file("counted.stl"), bytes);
-    EXPECT_EQ(buildFile(dir, "counted.stl", "counted.nxz").nface, 100u);
+    EXPECT_EQ(buildFile(dir, "counted.stl", "counted.bm3d").nface, 100u);
 }
 
 // A text file that starts with "solid" is ASCII whatever its layout: any white space, blank lines,
@@ -287,7 +287,7 @@ TEST(StlFormats, anAsciiStlIsReadWhateverItsLayout) {
     };
     for (const auto& layout : layouts) {
         writeBinaryFile(dir.file(layout.first), layout.second);
-        EXPECT_EQ(buildFile(dir, layout.first, std::string(layout.first) + ".nxz").nface, triangles.size())
+        EXPECT_EQ(buildFile(dir, layout.first, std::string(layout.first) + ".bm3d").nface, triangles.size())
             << layout.first;
     }
 }
@@ -300,7 +300,7 @@ TEST(StlFormats, anAsciiStlWithSeveralSolidsHoldsTheTrianglesOfAll) {
         for (auto& c : t)
             c[0] += 3.0f;  // beside the first one, so that nothing is welded
     writeTextFile(dir.file("two.stl"), asciiStl(first) + "\n" + asciiStl(second));
-    EXPECT_EQ(buildFile(dir, "two.stl", "two.nxz").nface, first.size() + second.size());
+    EXPECT_EQ(buildFile(dir, "two.stl", "two.bm3d").nface, first.size() + second.size());
 }
 
 // Materialise Magics keeps a colour for the faces without one in the header ("COLOR=" and red,
@@ -344,10 +344,10 @@ TEST(StlFormats, theColoursOfAMaterialiseStlAreTheColoursOfTheVerticesOfItsFaces
     };
     const uint16_t red = 0x8000 | 31, green = 0x8000 | (31 << 5), blue = 0x8000 | (31 << 10), none = 0;
     writeBinaryFile(dir.file("colored.stl"), binaryStl(triangles, materialiseHeader(), {red, green, blue, none}));
-    const NexusFile h = buildFile(dir, "colored.stl", "colored.nxz");
+    const ContainerFile h = buildFile(dir, "colored.stl", "colored.bm3d");
     ASSERT_EQ(h.nNodes, 2u);  // one node and the sink
     ASSERT_TRUE(h.hasColors);
-    const NodeMesh mesh = readNode(dir.file("colored.nxz"));
+    const NodeMesh mesh = readNode(dir.file("colored.bm3d"));
     ASSERT_EQ(mesh.colors.size(), mesh.positions.size());
     expectColor(colorAt(mesh, {0, 0, 0}), {255, 0, 0, 255}, "red face");
     expectColor(colorAt(mesh, {6, 0, 0}), {0, 255, 0, 255}, "green face");
@@ -361,7 +361,7 @@ TEST(StlFormats, aMaterialiseStlWithNoColourInItsFacesHasNoColours) {
     TempDir dir;
     const auto triangles = waveTriangles(3);
     writeBinaryFile(dir.file("grey.stl"), binaryStl(triangles, materialiseHeader()));
-    const NexusFile h = buildFile(dir, "grey.stl", "grey.nxz");
+    const ContainerFile h = buildFile(dir, "grey.stl", "grey.bm3d");
     EXPECT_FALSE(h.hasColors);
     EXPECT_EQ(h.nface, triangles.size());
 }
@@ -372,7 +372,7 @@ TEST(StlFormats, theTwoBytesAfterAFaceAreNotAColourWithoutTheMaterialiseHeader) 
     TempDir dir;
     const auto triangles = waveTriangles(3);
     writeBinaryFile(dir.file("plain.stl"), binaryStl(triangles, "plain", std::vector<uint16_t>(triangles.size(), 0xFFFF)));
-    const NexusFile h = buildFile(dir, "plain.stl", "plain.nxz");
+    const ContainerFile h = buildFile(dir, "plain.stl", "plain.bm3d");
     EXPECT_FALSE(h.hasColors);
     EXPECT_EQ(h.nface, triangles.size());
 }
@@ -388,8 +388,8 @@ TEST(StlFormats, theSampleBinaryStlIsBuilt) {
     if (!fs::exists(model))
         GTEST_SKIP() << pathToUtf8(model) << " is not there";
     TempDir dir;
-    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.nxz")));
-    const NexusFile h = readNexusFile(dir.file("out.nxz"));
+    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.bm3d")));
+    const ContainerFile h = readContainerFile(dir.file("out.bm3d"));
     // 84 bytes of header and count, and 50 for each triangle; a model of many triangles is built in levels,
     // and the file holds the faces of every one
     EXPECT_GE(h.nface, (fs::file_size(model) - 84) / 50);
@@ -406,24 +406,24 @@ TEST(StlFormats, theSampleAsciiStlIsBuilt) {
             facets++;
     ASSERT_GT(facets, 0u);
     TempDir dir;
-    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.nxz")));
-    EXPECT_GE(readNexusFile(dir.file("out.nxz")).nface, facets);
+    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.bm3d")));
+    EXPECT_GE(readContainerFile(dir.file("out.bm3d")).nface, facets);
 }
 
 // --- PLY and OBJ colours and texture coordinates
 
 // The model of one triangle that `input` holds, built and decoded
 struct Built {
-    NexusFile file;
+    ContainerFile file;
     NodeMesh mesh;
 };
 
 Built buildAndDecode(const TempDir& dir, const std::string& input) {
     Built built;
-    built.file = buildFile(dir, input, input + ".nxz");
+    built.file = buildFile(dir, input, input + ".bm3d");
     EXPECT_EQ(built.file.nNodes, 2u) << input;  // one node and the sink
     if (built.file.nNodes == 2u)
-        built.mesh = readNode(dir.file(input + ".nxz"));
+        built.mesh = readNode(dir.file(input + ".bm3d"));
     return built;
 }
 
@@ -477,13 +477,13 @@ TEST(PlyFormats, theTextureCoordinatesOfAVertexGoByAnyOfThreePairsOfNames) {
                           n.first + "\nproperty float " + n.second +
                           "\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n"
                           "0 0 0 0 0\n1 0 0 1 0\n1 1 0 1 0.5\n0 1 0 0 0.5\n3 0 1 2\n3 0 2 3\n");
-    const NexusFile st = buildFile(dir, "st.ply", "st.nxz");
+    const ContainerFile st = buildFile(dir, "st.ply", "st.bm3d");
     EXPECT_GE(st.nTextures, 1u);
     for (const char* name : {"uv.ply", "texture.ply"}) {
-        const NexusFile other = buildFile(dir, name, std::string(name) + ".nxz");
+        const ContainerFile other = buildFile(dir, name, std::string(name) + ".bm3d");
         EXPECT_GE(other.nTextures, 1u) << name;
         // the same coordinates give the same model, byte for byte
-        EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".nxz")), readBinaryFile(dir.file("st.nxz"))) << name;
+        EXPECT_EQ(readBinaryFile(dir.file(std::string(name) + ".bm3d")), readBinaryFile(dir.file("st.bm3d"))) << name;
     }
 }
 
@@ -510,9 +510,9 @@ TEST(PlyFormats, aTextureCoordinateBeyondOneIsTheSameAsItsFractionalPart) {
     writeTextFile(dir.file("one.ply"), ply(1.0f));
     writeTextFile(dir.file("two.ply"), ply(2.0f));
     for (const char* name : {"inside.ply", "one.ply", "two.ply"})
-        buildFile(dir, name, std::string(name) + ".nxz");
-    EXPECT_EQ(readBinaryFile(dir.file("one.ply.nxz")), readBinaryFile(dir.file("inside.ply.nxz")));
-    EXPECT_EQ(readBinaryFile(dir.file("two.ply.nxz")), readBinaryFile(dir.file("inside.ply.nxz")));
+        buildFile(dir, name, std::string(name) + ".bm3d");
+    EXPECT_EQ(readBinaryFile(dir.file("one.ply.bm3d")), readBinaryFile(dir.file("inside.ply.bm3d")));
+    EXPECT_EQ(readBinaryFile(dir.file("two.ply.bm3d")), readBinaryFile(dir.file("inside.ply.bm3d")));
 }
 
 // `v x y z r g b` is a colour of the vertex, 0..1 unless a component of the vertex is more than 1: then
@@ -538,8 +538,8 @@ TEST(ObjFormats, theSampleObjWithTheColoursOfMeshLabKeepsThem) {
     if (!fs::exists(model))
         GTEST_SKIP() << pathToUtf8(model) << " is not there";
     TempDir dir;
-    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.nxz")));
-    EXPECT_TRUE(readNexusFile(dir.file("out.nxz")).hasColors);
+    ASSERT_NO_THROW(bm3d::build(model, dir.file("out.bm3d")));
+    EXPECT_TRUE(readContainerFile(dir.file("out.bm3d")).hasColors);
 }
 
 TEST(ObjFormats, aVertexLineWithAWeightOrAnotherCountOfNumbersIsNotAColour) {
@@ -581,9 +581,9 @@ TEST(MeshFormats, aModelAndItsTextureUnderFoldersInOtherAlphabetsAreBuilt) {
     dir.makeDir("выход/出力");
     writePng(folder / pathFromUtf8("текстура.png"), gradientRaster(3));
     writeTexturedModel(folder, "текстура.png");
-    const fs::path out = dir.file("выход/出力/результат.nxz");
+    const fs::path out = dir.file("выход/出力/результат.bm3d");
     ASSERT_NO_THROW(bm3d::build(folder / "model.obj", out));
-    const NexusFile h = readNexusFile(out);
+    const ContainerFile h = readContainerFile(out);
     EXPECT_EQ(h.nface, 2u);
     EXPECT_GE(h.nTextures, 1u);
 }

@@ -27,7 +27,7 @@ include(GoogleTest)
 add_library(bm3d_test_support STATIC
     support/env_var_guard.cpp
     support/model_files.cpp
-    support/nexus_file.cpp
+    support/container_file.cpp
     support/pictures.cpp
     support/process_runner.cpp
     support/temp_dir.cpp
@@ -82,7 +82,7 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/texture_formats_test.cpp
     integration/texture_resolution_test.cpp)
 # The decoders are internal to the program: the texture tests read pictures with them directly
-target_include_directories(bm3d_integration_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/nxsbuild)
+target_include_directories(bm3d_integration_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/build)
 
 bm3d_add_tests(bm3d_cli_tests cli
     cli/cli_test.cpp

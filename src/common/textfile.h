@@ -14,15 +14,15 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_TEXTFILE_H
-#define NX_TEXTFILE_H
+#ifndef BM3D_TEXTFILE_H
+#define BM3D_TEXTFILE_H
 
 #include <cstdint>
 #include <fstream>
 #include <string>
 #include <vector>
 
-namespace nx {
+namespace bm3d::detail {
 
 //Sequential reading of a file, by lines or by blocks, with a position that can be saved and
 //restored (the loaders read the same OBJ or TS file several times). Buffered: a line costs
@@ -62,11 +62,11 @@ private:
 	bool terminatorPatched_ = false;
 };
 
-//the whole content of a file; throws nx::Error when it cannot be read
+//the whole content of a file; throws Error when it cannot be read
 std::vector<char> readFile(const std::string &path);
 
 //Writing of a file from the start, with seeking back to patch what was written before.
-//Every failure throws nx::Error.
+//Every failure throws Error.
 class OutputFile {
 public:
 	OutputFile() = default;
@@ -97,4 +97,4 @@ private:
 
 } //namespace
 
-#endif // NX_TEXTFILE_H
+#endif // BM3D_TEXTFILE_H

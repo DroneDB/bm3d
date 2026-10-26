@@ -19,7 +19,7 @@ forward slashes. Re-run it against this repository's own build to find out which
 files are still needed, e.g.
 
   scripts/closure.py --depfile-dir build --root vcg=third_party/vcg \\
-      --root corto=third_party/corto --root nexus=src
+      --root corto=third_party/corto --root bm3d=src
 """
 import argparse
 import ntpath

@@ -52,7 +52,7 @@ void build(const std::filesystem::path& input,
 // The version of this library, as in the VERSION file at the root of the sources.
 const char* version() noexcept;
 
-// The version of the file format build() writes. 0 is the Nexus container.
+// The version of the file format build() writes. 0 is the container Nexus wrote, the format of the first releases.
 int formatVersion() noexcept;
 
 }  // namespace bm3d

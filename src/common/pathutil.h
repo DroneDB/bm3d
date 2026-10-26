@@ -14,8 +14,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_PATHUTIL_H
-#define NX_PATHUTIL_H
+#ifndef BM3D_PATHUTIL_H
+#define BM3D_PATHUTIL_H
 
 #include <filesystem>
 #include <string>
@@ -24,12 +24,12 @@ for more details.
 
 #include "error.h"
 
-//File names are UTF-8 std::string everywhere in Nexus. They are turned into a
+//File names are UTF-8 std::string everywhere in bm3d. They are turned into a
 //std::filesystem::path (which is UTF-16 on Windows, so any script can be opened) only where a
 //file is touched, through nativePath or systemPath so that the length of a path is no limit
 //either, and every path that comes out of here is UTF-8 with '/' separators.
 
-namespace nx {
+namespace bm3d::detail {
 
 inline std::filesystem::path pathFromUtf8(const std::string &utf8) {
 	//u8path is deprecated only from C++20, where the char8_t constructor takes its place
@@ -123,7 +123,7 @@ inline std::string windowsLongPath(const std::string &path, const std::string &b
 
 //The path to give the file functions of the system, as UTF-8: on Windows windowsLongPath of it
 //(a relative path is relative to the working directory), elsewhere the path as it is. Every
-//file Nexus opens, creates, renames or removes goes through here or nativePath.
+//file the builder opens, creates, renames or removes goes through here or nativePath.
 inline std::string systemPath(const std::string &utf8) {
 #ifdef _WIN32
 	std::error_code ec;
@@ -181,7 +181,7 @@ inline std::string temporaryDirectory() {
 	return pathToUtf8(dir);
 }
 
-//case sensitive, like the extension tests Nexus has always done
+//case sensitive, like the extension tests the builder has always done
 inline bool endsWith(const std::string &text, const std::string &suffix) {
 	return text.size() >= suffix.size() &&
 	       text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
@@ -202,4 +202,4 @@ inline bool endsWithNoCase(const std::string &text, const std::string &suffix) {
 
 } //namespace
 
-#endif // NX_PATHUTIL_H
+#endif // BM3D_PATHUTIL_H

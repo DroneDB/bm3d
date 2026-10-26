@@ -14,8 +14,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#ifndef NX_SCRATCHFILE_H
-#define NX_SCRATCHFILE_H
+#ifndef BM3D_SCRATCHFILE_H
+#define BM3D_SCRATCHFILE_H
 
 #include <cstddef>
 #include <cstdint>
@@ -23,11 +23,11 @@ for more details.
 
 #include "mappedfile.h"
 
-namespace nx {
+namespace bm3d::detail {
 
 //Scratch space on disk for data that is written once, at the end, and read back later: a
 //temporary file (see MappedFile::createTemporary) that only grows. Nothing stays mapped
-//between two calls, so the file can be extended at any time. Every failure throws nx::Error.
+//between two calls, so the file can be extended at any time. Every failure throws Error.
 class ScratchFile {
 public:
 	//creates the file next to prefix; an absolute prefix is used as it is
@@ -52,4 +52,4 @@ private:
 
 } //namespace
 
-#endif // NX_SCRATCHFILE_H
+#endif // BM3D_SCRATCHFILE_H

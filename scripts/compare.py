@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 Digipa
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Structural parity between Nexus files built by a reference program and by a candidate.
+"""Structural parity between format 0 files built by a reference program and by a candidate.
 
   compare.py --ref a.nxz [--ref b.nxz ...] --cand c.nxz [--json out.json]
 
@@ -44,49 +44,49 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from nxzread import NexusFile, NexusFormatError  # noqa: E402
+from format0 import Format0File, Format0Error  # noqa: E402
 
 PSNR_CAP = 100.0
 SSIM_WINDOW = 8
 
 
 # --- statistics of one file ---------------------------------------------------------------
-def texture_pixels(nexus, node):
+def texture_pixels(model, node):
     """Pixels of the textures a node uses (0 for a node without texture)."""
     total = 0
-    for index in nexus.node_textures(node):
-        width, height = nexus.texture_size(index)
+    for index in model.node_textures(node):
+        width, height = model.texture_size(index)
         total += width * height
     return total
 
 
-def level_texels(nexus):
+def level_texels(model):
     """Pixels of the node textures, summed per level."""
-    texels = [0] * nexus.n_levels
-    if nexus.n_textures > 1:
-        for node in range(nexus.n_real_nodes):
-            texels[int(nexus.level[node])] += texture_pixels(nexus, node)
+    texels = [0] * model.n_levels
+    if model.n_textures > 1:
+        for node in range(model.n_real_nodes):
+            texels[int(model.level[node])] += texture_pixels(model, node)
     return texels
 
 
-def summarise(nexus):
-    nodes = nexus.real_nodes
+def summarise(model):
+    nodes = model.real_nodes
     return {
-        "layout": nexus.layout,
-        "nodes": nexus.n_nodes,
-        "patches": nexus.n_patches,
-        "textures": nexus.n_textures,
-        "levels": nexus.n_levels,
-        "leaves": int(nexus.leaf.sum()),
-        "vertices": int(nexus.nvert),
-        "faces": int(nexus.nface),
+        "layout": model.layout,
+        "nodes": model.n_nodes,
+        "patches": model.n_patches,
+        "textures": model.n_textures,
+        "levels": model.n_levels,
+        "leaves": int(model.leaf.sum()),
+        "vertices": int(model.nvert),
+        "faces": int(model.nface),
         "node vertices": int(nodes["nvert"].astype(np.int64).sum()),
         "node faces": int(nodes["nface"].astype(np.int64).sum()),
         "error sum": float(nodes["error"].astype(np.float64).sum()),
         "root error": float(nodes["error"][0]),
-        "sphere": [float(v) for v in nexus.sphere],
-        "texels": level_texels(nexus),
-        "size": nexus.size,
+        "sphere": [float(v) for v in model.sphere],
+        "texels": level_texels(model),
+        "size": model.size,
     }
 
 
@@ -198,16 +198,16 @@ def ssim(a, b):
     return float(score.mean())
 
 
-def sample_nodes(nexus, count, seed):
+def sample_nodes(model, count, seed):
     """All the textured nodes when they are few, else a seeded sample with every level in it."""
-    nodes = [n for n in range(nexus.n_real_nodes) if nexus.node_textures(n)]
+    nodes = [n for n in range(model.n_real_nodes) if model.node_textures(n)]
     if len(nodes) <= count:
         return nodes
     rng = random.Random(seed)
     chosen = set()
     by_level = {}
     for n in nodes:
-        by_level.setdefault(int(nexus.level[n]), []).append(n)
+        by_level.setdefault(int(model.level[n]), []).append(n)
     for level in sorted(by_level):
         chosen.add(rng.choice(by_level[level]))
     rest = [n for n in nodes if n not in chosen]
@@ -326,12 +326,12 @@ def build_parser():
 def main(argv=None):
     options = build_parser().parse_args(argv)
     try:
-        refs = [NexusFile(path) for path in options.ref]
-        cand = NexusFile(options.cand)
+        refs = [Format0File(path) for path in options.ref]
+        cand = Format0File(options.cand)
         checks = compare_summaries(summarise(cand), [summarise(r) for r in refs], options)
         pixels, detail = pixel_checks(refs[0], cand, options)
         checks.extend(pixels)
-    except (OSError, NexusFormatError) as error:
+    except (OSError, Format0Error) as error:
         print("compare.py: %s" % error, file=sys.stderr)
         return 2
     print(render(checks))

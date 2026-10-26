@@ -110,7 +110,7 @@ void printUsage(std::ostream& out) {
         << "       " << kProgram << " --version\n"
         << "       " << kProgram << " --help\n"
         << "Builds a multiresolution model from an OBJ, PLY or STL mesh (and the textures it names),\n"
-        << "corto-compressed. The output is in format 0, the Nexus container.\n"
+        << "corto-compressed. The output is in format 0.\n"
         << "  --threads N          keep at most N threads busy, from 1 to " << kMaxThreads
         << " (default: one per core)\n"
         << "  --metadata <file>    a JSON object to store in the file; checked, and not stored yet in format 0\n"
