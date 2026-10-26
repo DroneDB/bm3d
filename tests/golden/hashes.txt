@@ -1,9 +1,12 @@
 # The content hashes (docs/FORMAT.md, section 9) of the golden files, one "name hash" line each.
 # tests/golden/golden_test.cpp compares them; a hash that has to change on purpose is replaced
-# by the one the failure prints.
+# by the one the failure prints. A line "name@library hash" is for a file whose bytes depend on the
+# standard library the program is built with (libstdc++ or msvc): the builder sorts the triangles
+# of a node with std::sort, which orders triangles with equal keys as the library does.
 cube ee98995a59c7577ce5e85f8124b3c7df46c7207424ce2868480f62c4ae36cb91
 pyramid-colors 6630a314e8cc8d19729af62fa9157cf4027e6fe7180d440bae9f7e388bb09b8a
-wave 53e84a5fbfccdb7085976b2f47e442cd9a2451ab821ce2c51f5ce276422ccb9f
+wave 43c99f51690c65282dc5ca5db44d7bfe49b8b33ea5e91fc84f340320ea98c1f9
 degenerate 78f225240b74a2b295d05692e9f72160618a8fb92e5d2e4007291c7a13c16a13
 textured b02511fc6601774e098ee03c4319468c67b99929a8245b5e11f4741db2aaa328
-grid 6d88f0cd0a7b0d22be6bf8cd97c8bf07b794f78cd2e49f28779db850991eaeca
+grid@libstdc++ 6d88f0cd0a7b0d22be6bf8cd97c8bf07b794f78cd2e49f28779db850991eaeca
+grid@msvc eb8cbf13c17f372896c950d5fd01afb53985bd6ec726edfd976886dd33881771
