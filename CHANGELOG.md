@@ -2,7 +2,7 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## Unreleased
+## 0.2.0
 
 - Eigen is gone: neither the program nor the library needs it, and `eigen3` is no longer in
   `vcpkg.json`, in the CMake files or in the CMake package. The simplification of a mesh without

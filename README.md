@@ -5,7 +5,7 @@ bm3d is a builder, a file format and a web viewer for multiresolution 3D models.
 the detail it needs, so a model of many millions of triangles and gigapixels of texture opens in
 a web page.
 
-Status of this version (0.1.0): the builder and its command line are in place. The output is
+Status of this version (0.2.0): the builder and its command line are in place. The output is
 still the Nexus container ("format 0"), always corto-compressed. The `.bm3d` format, its
 specification and the web viewer arrive in later releases.
 
@@ -24,7 +24,7 @@ commits.
 
 - No Qt: images, files and paths are handled with the C++ standard library and a small set of
   image libraries.
-- Its own file format, version 1 (not readable by the Nexus tools). Version 0.1.0 still writes
+- Its own file format, version 1 (not readable by the Nexus tools). Version 0.2.0 still writes
   the Nexus container.
 - Full-resolution WebP textures, sized by texels instead of capped at 1024 pixels.
 - Hardened loaders for OBJ, PLY and STL.
@@ -100,9 +100,9 @@ workflow runs them.
     bm3d --help
 
 - `--threads N` limits the build to N threads, from 1 to 4096. The default is one thread per core.
-- `--metadata <file.json>` is a JSON object to store in the file. Version 0.1.0 checks it and
+- `--metadata <file.json>` is a JSON object to store in the file. Version 0.2.0 checks it and
   does not store it yet.
-- `--version` prints `bm3d <version> (format <N>)`; for 0.1.0 that is `bm3d 0.1.0 (format 0)`,
+- `--version` prints `bm3d <version> (format <N>)`; for 0.2.0 that is `bm3d 0.2.0 (format 0)`,
   where 0 means the Nexus container.
 - The output is always corto-compressed; there is no option to turn compression off.
 - The input type is chosen by the extension, in any letter case.
