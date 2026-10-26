@@ -32,7 +32,8 @@ add_library(bm3d_test_support STATIC
     support/process_runner.cpp
     support/temp_dir.cpp
     support/version_file.cpp)
-target_include_directories(bm3d_test_support PUBLIC support PRIVATE ${Stb_INCLUDE_DIR})
+# the headers of src/format are included as format/<name>.h
+target_include_directories(bm3d_test_support PUBLIC support ${PROJECT_SOURCE_DIR}/src PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_test_support
     PUBLIC GTest::gtest bm3d::bm3d
     PRIVATE bm3d_corto JPEG::JPEG PNG::PNG WebP::webp Threads::Threads)
@@ -71,10 +72,15 @@ endfunction()
 
 bm3d_add_tests(bm3d_unit_tests unit
     unit/build_options_test.cpp
+    unit/format_records_test.cpp
+    unit/format_writer_reader_test.cpp
     unit/json_object_test.cpp
+    unit/metadata_test.cpp
+    unit/sha256_test.cpp
     unit/version_test.cpp)
 # The JSON checker is internal to the program: its header is not part of the library's interface
-target_include_directories(bm3d_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/api)
+target_include_directories(bm3d_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/format)
+target_link_libraries(bm3d_unit_tests PRIVATE bm3d_corto)
 
 bm3d_add_tests(bm3d_integration_tests integration
     integration/build_failure_test.cpp

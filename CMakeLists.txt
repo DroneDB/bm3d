@@ -116,7 +116,6 @@ endif()
 add_library(bm3d_core STATIC
     third_party/vcg/wrap/ply/plylib.cpp
     src/api/bm3d.cpp
-    src/api/json_object.cpp
     src/build/builder.cpp
     src/build/image.cpp
     src/build/imageio.cpp
@@ -138,7 +137,13 @@ add_library(bm3d_core STATIC
     src/common/textfile.cpp
     src/common/traversal.cpp
     src/common/virtualarray.cpp
-    src/compress/compressor.cpp)
+    src/compress/compressor.cpp
+    src/format/bm3d_format.cpp
+    src/format/bm3d_reader.cpp
+    src/format/bm3d_writer.cpp
+    src/format/json_object.cpp
+    src/format/metadata.cpp
+    src/format/sha256.cpp)
 add_library(bm3d::bm3d ALIAS bm3d_core)
 set_target_properties(bm3d_core PROPERTIES
     EXPORT_NAME bm3d
@@ -180,7 +185,7 @@ endif()
 
 # --- The program
 add_executable(bm3d cli/main.cpp)
-target_include_directories(bm3d PRIVATE src/api)
+target_include_directories(bm3d PRIVATE src/format)
 target_link_libraries(bm3d PRIVATE bm3d_core Threads::Threads)
 # UTF-8 sources, as for bm3d_core
 target_compile_options(bm3d PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)

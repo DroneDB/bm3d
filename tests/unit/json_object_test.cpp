@@ -5,6 +5,7 @@
 // what RFC 8259 calls an object, since what it accepts is stored as it is.
 
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -207,6 +208,55 @@ TEST(JsonObject, aLongStringAndALongArrayAreAccepted) {
     for (int i = 0; i < 100000; ++i)
         array += i == 0 ? "1" : ",1";
     EXPECT_EQ(jsonObjectError(array + "]}"), "");
+}
+
+}  // namespace
+
+namespace {
+
+using bm3d::JsonMember;
+using bm3d::jsonObjectMembers;
+
+TEST(JsonObjectMembers, theMembersOfTheTopLevelObjectAreGivenInOrderWithTheirTextAsWritten) {
+    std::vector<JsonMember> members;
+    EXPECT_EQ(jsonObjectMembers(" {\"b\" : [1, {\"x\":2}] ,\"a\":\"t\\n\",\"c\":null, \"d\" : 1.50 }\n", members), "");
+    ASSERT_EQ(members.size(), 4u);
+    EXPECT_EQ(members[0].name, "b");
+    EXPECT_EQ(members[0].rawName, "\"b\"");
+    EXPECT_EQ(members[0].rawValue, "[1, {\"x\":2}]");  // the white space around it is not part of it
+    EXPECT_EQ(members[1].name, "a");
+    EXPECT_EQ(members[1].rawValue, "\"t\\n\"");
+    EXPECT_EQ(members[2].rawValue, "null");
+    EXPECT_EQ(members[3].rawValue, "1.50");
+}
+
+TEST(JsonObjectMembers, theNameIsTheOneItSpells) {
+    std::vector<JsonMember> members;
+    EXPECT_EQ(jsonObjectMembers("{\"a\\u0062c\":1,\"q\\\"\\\\\\/\\b\\f\\n\\r\\t\":2,\"\\u00e9\\u6a21\\ud83d\\ude00\":3,\"\xC3\xA9\":4}", members), "");
+    ASSERT_EQ(members.size(), 4u);
+    EXPECT_EQ(members[0].name, "abc");
+    EXPECT_EQ(members[0].rawName, "\"a\\u0062c\"");
+    EXPECT_EQ(members[1].name, "q\"\\/\b\f\n\r\t");
+    EXPECT_EQ(members[2].name, "\xC3\xA9\xE6\xA8\xA1\xF0\x9F\x98\x80");
+    EXPECT_EQ(members[3].name, "\xC3\xA9");
+}
+
+TEST(JsonObjectMembers, repeatedNamesAreKeptForTheCallerToJudge) {
+    std::vector<JsonMember> members;
+    EXPECT_EQ(jsonObjectMembers("{\"a\":1,\"a\":2}", members), "");
+    EXPECT_EQ(members.size(), 2u);
+}
+
+TEST(JsonObjectMembers, anEmptyObjectHasNoMembersAndABadOneReportsWhatJsonObjectErrorReports) {
+    std::vector<JsonMember> members;
+    EXPECT_EQ(jsonObjectMembers("{}", members), "");
+    EXPECT_TRUE(members.empty());
+    const char* bad = "{\"a\":1,\"b\":}";
+    EXPECT_EQ(jsonObjectMembers(bad, members), jsonObjectError(bad));
+    EXPECT_TRUE(members.empty());
+    EXPECT_EQ(jsonObjectMembers("\xEF\xBB\xBF{\"k\":1}", members), "");  // a byte order mark is skipped
+    ASSERT_EQ(members.size(), 1u);
+    EXPECT_EQ(members[0].rawName, "\"k\"");
 }
 
 }  // namespace

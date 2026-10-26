@@ -17,7 +17,8 @@ struct Problem {
 
 class Checker {
 public:
-    explicit Checker(std::string_view text) : text_(text) {}
+    // `members`, when given, receives the members of the top-level object
+    Checker(std::string_view text, std::vector<JsonMember>* members) : text_(text), members_(members) {}
 
     void checkDocument() {
         if (text_.substr(0, 3) == "\xEF\xBB\xBF")
@@ -87,11 +88,17 @@ private:
             skipWhiteSpace();
             if (atEnd() || peek() != '"')
                 fail("expected a string as the name of a member");
+            const size_t nameStart = pos_;
             string();
+            const size_t nameEnd = pos_;
             skipWhiteSpace();
             expect(':', "':' after the name of a member");
             skipWhiteSpace();
+            const size_t valueStart = pos_;
             value(depth);
+            if (members_ && depth == 1)
+                members_->push_back({decodeName(nameStart + 1, nameEnd - 1), std::string(text_.substr(nameStart, nameEnd - nameStart)),
+                                     std::string(text_.substr(valueStart, pos_ - valueStart))});
             skipWhiteSpace();
             if (!atEnd() && peek() == ',') {
                 ++pos_;
@@ -256,15 +263,86 @@ private:
         }
     }
 
+    // The text between two quotes of a string that has been checked, with its escapes resolved
+    std::string decodeName(size_t begin, size_t end) const {
+        std::string out;
+        for (size_t i = begin; i < end;) {
+            if (text_[i] != '\\') {
+                out += text_[i++];
+                continue;
+            }
+            const char e = text_[i + 1];
+            i += 2;
+            switch (e) {
+                case 'b': out += '\b'; break;
+                case 'f': out += '\f'; break;
+                case 'n': out += '\n'; break;
+                case 'r': out += '\r'; break;
+                case 't': out += '\t'; break;
+                case 'u': {
+                    uint32_t code = hexValue(i);
+                    i += 4;
+                    if (code >= 0xD800 && code <= 0xDBFF) {  // the checker guarantees a low surrogate follows
+                        code = 0x10000 + ((code - 0xD800) << 10) + (hexValue(i + 2) - 0xDC00);
+                        i += 6;
+                    }
+                    appendUtf8(out, code);
+                    break;
+                }
+                default: out += e; break;  // a quote, a backslash or a slash
+            }
+        }
+        return out;
+    }
+
+    uint32_t hexValue(size_t at) const {
+        uint32_t v = 0;
+        for (size_t i = at; i < at + 4; i++) {
+            const char c = text_[i];
+            v = v * 16 + static_cast<uint32_t>(c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10);
+        }
+        return v;
+    }
+
+    static void appendUtf8(std::string& out, uint32_t code) {
+        if (code < 0x80) {
+            out += static_cast<char>(code);
+        } else if (code < 0x800) {
+            out += static_cast<char>(0xC0 | (code >> 6));
+            out += static_cast<char>(0x80 | (code & 0x3F));
+        } else if (code < 0x10000) {
+            out += static_cast<char>(0xE0 | (code >> 12));
+            out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (code & 0x3F));
+        } else {
+            out += static_cast<char>(0xF0 | (code >> 18));
+            out += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+            out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (code & 0x3F));
+        }
+    }
+
     std::string_view text_;
+    std::vector<JsonMember>* members_;
     size_t pos_ = 0;
 };
 
 }  // namespace
 
+std::string jsonObjectMembers(std::string_view text, std::vector<JsonMember>& members) {
+    members.clear();
+    try {
+        Checker(text, &members).checkDocument();
+        return {};
+    } catch (const Problem& problem) {
+        members.clear();
+        return problem.message + " (at byte " + std::to_string(problem.offset) + ")";
+    }
+}
+
 std::string jsonObjectError(std::string_view text) {
     try {
-        Checker(text).checkDocument();
+        Checker(text, nullptr).checkDocument();
         return {};
     } catch (const Problem& problem) {
         return problem.message + " (at byte " + std::to_string(problem.offset) + ")";
