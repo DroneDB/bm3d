@@ -23,7 +23,9 @@ for more details.
 #include <cstring>
 #include <new>
 
+#ifdef BM3D_WITH_TIFF
 #include <tiffio.h>
+#endif
 #include <webp/decode.h>
 #include <webp/encode.h>
 
@@ -51,6 +53,8 @@ namespace {
 // ---------------------------------------------------------------------------------------
 // TIFF
 // ---------------------------------------------------------------------------------------
+
+#ifdef BM3D_WITH_TIFF
 
 struct TiffReader {
 	const unsigned char *data = nullptr;
@@ -184,6 +188,17 @@ bool readTiff(const unsigned char *data, size_t size, Image &image, std::string 
 	TIFFClose(tiff);
 	return ok;
 }
+
+#else
+
+//A program built with BM3D_WITH_TIFF=OFF does not link libtiff: a TIFF texture is refused by name
+//and not as "unknown image format", so that the way out (another format, another build) is clear.
+bool readTiff(const unsigned char *, size_t, Image &, std::string &error) {
+	error = "this bm3d was built without TIFF support (BM3D_WITH_TIFF=OFF): convert the TIFF texture to PNG or JPEG";
+	return false;
+}
+
+#endif
 
 // ---------------------------------------------------------------------------------------
 // WebP

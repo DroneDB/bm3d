@@ -108,7 +108,9 @@ INSTANTIATE_TEST_SUITE_P(
         TextureCase{"pngGrayAlpha", "png", [](const fs::path& f) { writePng(f, grayAlphaRaster()); }},
         TextureCase{"png16Bit", "png", [](const fs::path& f) { writeRgb16Png(f, 16, 16, flat16Bit()); }},
         TextureCase{"jpegCmyk", "jpg", [](const fs::path& f) { writeCmykJpeg(f, 16, 16, flatCmyk()); }},
+#ifdef BM3D_WITH_TIFF
         TextureCase{"tiff", "tif", [](const fs::path& f) { writeTiff(f, gradientRaster(3)); }},
+#endif
         TextureCase{"webp", "webp", [](const fs::path& f) { writeWebp(f, gradientRaster(3)); }},
         TextureCase{"bmp", "bmp", [](const fs::path& f) { writeBmp(f, gradientRaster(3)); }},
         // The one picture that is a file of the repository: nothing here writes a GIF
@@ -303,6 +305,30 @@ TEST(TextureFormats, aModelWithoutTexturesHasNone) {
     EXPECT_EQ(h.nface, 1u);
     EXPECT_EQ(h.nTextures, 0u);
 }
+
+#ifndef BM3D_WITH_TIFF
+// A program built without libtiff refuses a TIFF texture by name, as invalid input, and says that
+// the program was built without it, not that the format is unknown. The first bytes decide, so
+// the file needs no libtiff to be written.
+TEST(TextureFormats, aTiffTextureIsRefusedByAProgramBuiltWithoutTiffSupport) {
+    for (const std::string& magic : {std::string("II*\0\x08\0\0\0", 8), std::string("MM\0*\0\0\0\x08", 8)}) {
+        TempDir dir;
+        writeBinaryFile(dir.file("texture.tif"), magic);
+        writeTexturedModel(dir.path(), "texture.tif");
+        const fs::path out = dir.file("model.nxz");
+        try {
+            bm3d::build(dir.file("model.obj"), out);
+            ADD_FAILURE() << "the build should have failed";
+        } catch (const bm3d::Error& e) {
+            EXPECT_EQ(e.kind(), bm3d::ErrorKind::InvalidInput);
+            const std::string message = e.what();
+            EXPECT_NE(message.find("texture.tif"), std::string::npos) << message;
+            EXPECT_NE(message.find("without TIFF support"), std::string::npos) << message;
+        }
+        EXPECT_FALSE(fs::exists(out));
+    }
+}
+#endif
 
 TEST(TextureFormats, aPlyQuadHasTheFacesOfTwoTriangles) {
     TempDir dir;

@@ -26,8 +26,10 @@ for more details.
 namespace nx {
 
 //Reads a texture file: JPEG, PNG, TIFF, WebP, BMP, GIF or TGA, told apart by their
-//content, not by the extension. The alpha channel of an image is dropped and its colors kept
-//as they are stored (a pixel that is transparent keeps the color it has in the file).
+//content, not by the extension. A TIFF is read only when the program is built with
+//BM3D_WITH_TIFF (the default); without it the file is refused with an error that says so.
+//The alpha channel of an image is dropped and its colors kept as they are stored (a pixel that is
+//transparent keeps the color it has in the file).
 //Returns a null image, and the reason in error (UTF-8), when the file cannot be opened or read
 //as an image.
 Image loadImage(const std::string &path, std::string &error);

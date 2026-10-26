@@ -186,7 +186,8 @@ used.
 
 - `src/nxsbuild/imageio.{h,cpp}`: PNG is read by stb (`stbi_load_from_memory`, and the 16 bit
   variant scaled with rounding) instead of libpng, with the old treatment of a gray PNG with a
-  transparent gray kept. Output does not change.
+  transparent gray kept, and the TIFF reader is compiled only when `BM3D_WITH_TIFF` is defined
+  (otherwise a TIFF is refused by name). Output does not change.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

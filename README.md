@@ -53,6 +53,12 @@ and leaves the output directories alone. The options `BM3D_BUILD_TESTS` and
 
 The version is the text of `VERSION`; `vcpkg.json` repeats it and must be kept in step by hand.
 
+`BM3D_WITH_TIFF` (on by default) reads TIFF textures with libtiff. Off, libtiff is neither found nor
+linked (`-DBM3D_WITH_TIFF=OFF`; vcpkg then does not install it either, because `tiff` is a default
+feature of `vcpkg.json` and the option turns the defaults off), the program is a quarter smaller, and a
+`.tif` texture is refused as invalid input (exit code 2) with a message that says this bm3d was built
+without TIFF support. Photogrammetry software writes PNG or JPEG textures, so most uses do not need it.
+
 ### Dependencies
 
 What reads the pictures of a model (textures are told apart by their first bytes, not by the
@@ -63,7 +69,7 @@ extension):
 | PNG, BMP, GIF, TGA | stb_image (header only, from the `stb` port) | For PNG it decoded the 72 textures of a large photogrammetry model (1.56 gigapixels) 2.3% faster than libpng and the output file was byte for byte the same (below). One header replaces libpng in the program. |
 | JPEG | libjpeg-turbo | stb's JPEG decoder is as fast but not the same: its inverse DCT and chroma upsampling round differently, so the output changed. libjpeg-turbo is also needed to write the JPEG tiles the texture cache spills to disk. |
 | WebP | libwebp | Reads WebP textures and writes every node texture. |
-| TIFF | libtiff | Reads TIFF textures. |
+| TIFF | libtiff (optional, `BM3D_WITH_TIFF`) | The largest of the image libraries and the one few models need. |
 
 Eigen is used by the VCGLib simplification code; corto (mesh compression) and VCGLib are in
 `third_party/`. libpng is only used by the tests, to write the PNG pictures stb cannot (a palette,

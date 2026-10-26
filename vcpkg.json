@@ -5,10 +5,18 @@
     "eigen3",
     "libjpeg-turbo",
     "libwebp",
-    "stb",
+    "stb"
+  ],
+  "default-features": [
     "tiff"
   ],
   "features": {
+    "tiff": {
+      "description": "Read TIFF textures (the option BM3D_WITH_TIFF)",
+      "dependencies": [
+        "tiff"
+      ]
+    },
     "tests": {
       "description": "The tests (libpng writes the PNG pictures that stb cannot: a palette, 16 bit samples)",
       "dependencies": [

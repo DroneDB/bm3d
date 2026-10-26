@@ -23,7 +23,13 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   color; the transparent gray of a gray PNG, a 1 bit PNG, a palette with transparent entries and an
   interlaced PNG read to the exact pixels (the same on libpng, which read them before). The
   mutation loop of the robustness tests also damages a PNG texture (a sixth of the runs, under the
-  sanitizers too).
+  sanitizers too). The tests that used a TIFF as a convenient uncompressed picture use a BMP.
+- The option `BM3D_WITH_TIFF` (on by default). Off, libtiff is not found, not linked and not
+  compiled in (the program is 2.6 MB against 3.5 MB), a `.tif` texture is refused as invalid input
+  (exit code 2) with a message that says this bm3d was built without TIFF support, `tiff` is a
+  default feature of `vcpkg.json` that `-DBM3D_WITH_TIFF=OFF` drops from a standalone build (a
+  parent project lists its own dependencies), the CMake package asks for TIFF only when it is on,
+  and `ci.yml` builds and tests a Linux GCC leg with it off.
 - Robustness tests (`ctest -L robustness`, `tests/robustness`): the PLY face-list bound and every
   count and index type, long header comments, garbage OBJ faces, texture coordinates with only u or
   not usable, coincident and zero-area triangles, truncated and `solid`-prefixed STL, and the pieces

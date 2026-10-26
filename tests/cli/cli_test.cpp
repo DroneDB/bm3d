@@ -215,6 +215,21 @@ TEST(CliExitCodes, aFileOfAFormatTheProgramDoesNotReadExitsWithTwoAndNamesTheFor
     EXPECT_TRUE(f.dir.list("out").empty());
 }
 
+// A file that opens with the TIFF magic number is a TIFF texture. With libtiff it does not parse; a
+// program built without it says so, and both are invalid input.
+TEST(CliExitCodes, aTiffTextureThatCannotBeReadExitsWithTwoAndNamesIt) {
+    Folders f;
+    writeTexturedModel(f.in, "texture.tif");
+    writeBinaryFile(f.in / "texture.tif", std::string("II*\0\x08\0\0\0", 8));
+    const ProcessResult r = runBm3d({f.input(), f.output()});
+    EXPECT_EQ(r.exitCode, 2) << r.output();
+    EXPECT_NE(r.err.find("texture.tif"), std::string::npos) << r.err;
+#ifndef BM3D_WITH_TIFF
+    EXPECT_NE(r.err.find("without TIFF support"), std::string::npos) << r.err;
+#endif
+    EXPECT_TRUE(f.dir.list("out").empty());
+}
+
 TEST(CliExitCodes, aModelWithAnUpperCaseExtensionIsBuilt) {
     Folders f;
     writeTextFile(f.in / "MODEL.OBJ", kTriangleObj);

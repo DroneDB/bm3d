@@ -1,8 +1,9 @@
 # Copyright (C) 2026 Digipa
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Builds and tests bm3d with GCC and Clang on Linux and with MSVC on Windows, and checks that the
-# imported third-party and Nexus sources still are what their manifests say.
+# Builds and tests bm3d with GCC and Clang on Linux (GCC also without TIFF support) and with MSVC
+# on Windows, and checks that the imported third-party and Nexus sources still are what their
+# manifests say.
 #
 # The dependencies come from vcpkg at the commit the manifest (vcpkg.json) pins as its baseline,
 # so a port is the version the reference outputs were built with. The binary archives vcpkg
@@ -68,6 +69,16 @@ jobs:
             cxx: clang++-18
             generator: Unix Makefiles
             triplet: x64-linux
+          - name: linux-gcc-no-tiff
+            # The program without libtiff (BM3D_WITH_TIFF=OFF): its ports are those of linux-gcc
+            # but tiff, so that cache is where it starts from.
+            os: ubuntu-24.04
+            cc: gcc
+            cxx: g++
+            generator: Unix Makefiles
+            triplet: x64-linux
+            with_tiff: "OFF"
+            cache_from: linux-gcc
           - name: windows-msvc
             os: windows-2022
             cc: cl
@@ -136,6 +147,7 @@ jobs:
           key: vcpkg-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ matrix.name }}-
+            vcpkg-${{ runner.os }}-${{ matrix.cache_from || matrix.name }}-
 
       - name: Set up vcpkg at the pinned commit
         shell: bash
@@ -167,6 +179,7 @@ jobs:
           cmake --preset release
           -G "${{ matrix.generator }}"
           -DBM3D_BUILD_TESTS=ON
+          -DBM3D_WITH_TIFF=${{ matrix.with_tiff || 'ON' }}
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
           -DVCPKG_HOST_TRIPLET=${{ matrix.triplet }}
 

@@ -116,10 +116,10 @@ constexpr int kGridCells = 72;     // 10368 triangles, over a texture of 1024 pi
 
 TEST(Determinism, aTexturedObjIsBuiltTheSameEveryTime) {
     TempDir dir;
-    writeTiff(dir.file("texture.tif"), makeRaster(1024, 1024, 3, [](int band, int x, int y) {
+    writeBmp(dir.file("texture.bmp"), makeRaster(1024, 1024, 3, [](int band, int x, int y) {
         return double((x * 7 + y * 13 + band * 50) % 256);
     }));
-    writeGridModel(dir.path(), kGridCells, "texture.tif");
+    writeGridModel(dir.path(), kGridCells, "texture.bmp");
 
     const Builds b = buildTwice(dir, "grid.obj");
     expectDeterministic(b);

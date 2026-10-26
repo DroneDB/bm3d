@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Pictures for the tests: made in memory, written in each of the texture file formats the
-// program reads (with stb_image_write, libjpeg, libpng, libtiff and libwebp), and a decoder for the WebP
+// program reads (with stb_image_write, libjpeg, libpng, libtiff when built with it, and libwebp), and a decoder for the WebP
 // the program writes in the node textures.
 
 #pragma once
@@ -40,7 +40,9 @@ void paletteColor(int index, uint8_t rgb[3]);
 void writeJpeg(const fs::path& file, const Raster& raster);
 void writePng(const fs::path& file, const Raster& raster);
 void writeBmp(const fs::path& file, const Raster& raster);  // 24 bit, RGB
+#ifdef BM3D_WITH_TIFF  // the tests write TIFFs with libtiff, which a build without TIFF support does not have
 void writeTiff(const fs::path& file, const Raster& raster);  // 8 bit, uncompressed, in strips
+#endif
 void writeWebp(const fs::path& file, const Raster& raster);  // lossless, RGB
 // A PNG with a palette of 16 colors (4 bits per pixel); `indices` has one entry per pixel
 void writePalettedPng(const fs::path& file, int width, int height, const std::vector<uint8_t>& indices);

@@ -29,6 +29,10 @@ endif()
 
 option(BM3D_BUILD_TESTS "Build the tests" ${_bm3d_top_level})
 option(BM3D_INSTALL_DEVELOPMENT "Install the library, its header and the CMake package, not only the program" ${_bm3d_top_level})
+# libtiff is the largest of the image libraries and the one few models need (photogrammetry
+# textures are PNG or JPEG). Off, it is neither found nor linked, and a TIFF texture is refused
+# with an error that says so.
+option(BM3D_WITH_TIFF "Read TIFF textures (links libtiff)" ON)
 
 if(_bm3d_top_level)
     # The dependencies come from vcpkg (manifest mode, vcpkg.json). A parent project that adds
@@ -41,7 +45,14 @@ if(_bm3d_top_level)
             message(FATAL_ERROR "Set CMAKE_TOOLCHAIN_FILE to vcpkg's scripts/buildsystems/vcpkg.cmake, or the VCPKG_ROOT environment variable")
         endif()
     endif()
-    # The test framework is a feature of the manifest: it is installed only when the tests are built.
+    # libtiff and the test framework are features of the manifest: libtiff is a default one, so
+    # that it is dropped by turning the defaults off (it is the only default feature), and the
+    # test framework is installed only when the tests are built.
+    if(BM3D_WITH_TIFF)
+        list(APPEND VCPKG_MANIFEST_FEATURES tiff)
+    else()
+        set(VCPKG_MANIFEST_NO_DEFAULT_FEATURES ON)
+    endif()
     if(BM3D_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/tests/CMakeLists.txt")
         list(APPEND VCPKG_MANIFEST_FEATURES tests)
     endif()
@@ -58,7 +69,9 @@ include(GNUInstallDirs)
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(JPEG REQUIRED)
-find_package(TIFF REQUIRED)
+if(BM3D_WITH_TIFF)
+    find_package(TIFF REQUIRED)
+endif()
 find_package(WebP CONFIG REQUIRED)
 find_package(Stb REQUIRED)  # vcpkg's stb: Stb_INCLUDE_DIR, headers only
 
@@ -150,16 +163,19 @@ target_compile_features(bm3d_core PUBLIC cxx_std_17)
 target_compile_options(bm3d_core PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 # The image libraries stay private: a program that links bm3d_core does not need their headers.
 # The stb headers are only included, so they are not part of the link (stb reads the PNG, BMP, GIF
-# and TGA textures; libjpeg-turbo, libwebp and libtiff read the others).
+# and TGA textures; libjpeg-turbo, libwebp and, optionally, libtiff read the others).
 target_include_directories(bm3d_core PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_core
     PRIVATE
         bm3d_corto
         bm3d_vcg
         JPEG::JPEG
-        TIFF::TIFF
         WebP::webp
         Threads::Threads)
+if(BM3D_WITH_TIFF)
+    target_link_libraries(bm3d_core PRIVATE TIFF::TIFF)
+    target_compile_definitions(bm3d_core PRIVATE BM3D_WITH_TIFF)
+endif()
 if(WIN32)
     target_link_libraries(bm3d_core PRIVATE netapi32 wsock32 ws2_32 userenv version winmm)
 endif()

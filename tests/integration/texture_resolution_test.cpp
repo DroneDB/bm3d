@@ -32,12 +32,12 @@ constexpr int kMaxNodeTextureSide = 1024;
 using PixelValue = std::function<double(int band, int x, int y)>;
 
 void writeTexture(const fs::path& file, int side, const PixelValue& value) {
-    writeTiff(file, makeRaster(side, side, 3, value));
+    writeBmp(file, makeRaster(side, side, 3, value));
 }
 
 fs::path buildGrid(const TempDir& dir, int cells, int textureSide, const PixelValue& value) {
-    writeTexture(dir.file("texture.tif"), textureSide, value);
-    writeGridModel(dir.path(), cells, "texture.tif");
+    writeTexture(dir.file("texture.bmp"), textureSide, value);
+    writeGridModel(dir.path(), cells, "texture.bmp");
     const fs::path out = dir.file("grid.nxz");
     EXPECT_NO_THROW(bm3d::build(dir.file("grid.obj"), out));
     return out;
@@ -144,11 +144,11 @@ TEST(TextureResolution, theCoarserLevelsHoldAThirdOfTheTexelsOfTheLeaves) {
 // there and nothing in the upper right half (rows run from v = 1 down).
 TEST(TextureResolution, theTexelsNoTriangleDrawsAreBlank) {
     TempDir dir;
-    writeTexture(dir.file("texture.tif"), 256, detail);
+    writeTexture(dir.file("texture.bmp"), 256, detail);
     writeTextFile(dir.file("half.obj"),
                   "mtllib half.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
                   "vt 0 0\nvt 1 0\nvt 0 1\nusemtl m\nf 1/1 2/2 3/3\n");
-    writeTextFile(dir.file("half.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd texture.tif\n");
+    writeTextFile(dir.file("half.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd texture.bmp\n");
     const fs::path out = dir.file("half.nxz");
     ASSERT_NO_THROW(bm3d::build(dir.file("half.obj"), out));
     const NexusFile n = readNexusFile(out);

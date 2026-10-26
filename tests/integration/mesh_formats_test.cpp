@@ -149,8 +149,8 @@ TEST(MeshFormats, aSurfaceOfManyTrianglesIsBuiltInLevels) {
 TEST(MeshFormats, theTexturesOfAnObjBesideItAreFoundByTheirMaterial) {
     TempDir dir;
     dir.makeDir("model");
-    writeTiff(dir.file("model/texture.tif"), gradientRaster(3));
-    writeTexturedModel(dir.makeDir("model"), "texture.tif");
+    writeBmp(dir.file("model/texture.bmp"), gradientRaster(3));
+    writeTexturedModel(dir.makeDir("model"), "texture.bmp");
     // the texture is named relative to the folder of the model, not to the one of the output
     const NexusFile h = buildFile(dir, "model/model.obj", "out.nxz");
     EXPECT_GE(h.nTextures, 1u);

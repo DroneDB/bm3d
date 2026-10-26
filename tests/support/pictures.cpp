@@ -16,7 +16,9 @@
 
 #include <jpeglib.h>
 #include <png.h>
+#ifdef BM3D_WITH_TIFF
 #include <tiffio.h>
+#endif
 #include <webp/decode.h>
 #include <webp/encode.h>
 
@@ -175,6 +177,7 @@ void writeBmp(const fs::path& file, const Raster& raster) {
     });
 }
 
+#ifdef BM3D_WITH_TIFF
 void writeTiff(const fs::path& file, const Raster& raster) {
     requireChannels(raster, 3, "TIFF");
 #ifdef _WIN32
@@ -205,6 +208,7 @@ void writeTiff(const fs::path& file, const Raster& raster) {
             throw std::runtime_error("cannot write " + pathToUtf8(file));
     }
 }
+#endif
 
 void writeWebp(const fs::path& file, const Raster& raster) {
     requireChannels(raster, 3, "WebP");

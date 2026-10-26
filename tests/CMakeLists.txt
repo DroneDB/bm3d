@@ -15,7 +15,9 @@ find_package(GTest CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(PNG REQUIRED)
-find_package(TIFF REQUIRED)
+if(BM3D_WITH_TIFF)
+    find_package(TIFF REQUIRED)
+endif()
 find_package(WebP CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 include(GoogleTest)
@@ -33,7 +35,12 @@ add_library(bm3d_test_support STATIC
 target_include_directories(bm3d_test_support PUBLIC support PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_test_support
     PUBLIC GTest::gtest bm3d::bm3d
-    PRIVATE bm3d_corto JPEG::JPEG PNG::PNG TIFF::TIFF WebP::webp Threads::Threads)
+    PRIVATE bm3d_corto JPEG::JPEG PNG::PNG WebP::webp Threads::Threads)
+if(BM3D_WITH_TIFF)
+    # The tests write their TIFF textures with libtiff; without it they check the refusal
+    target_link_libraries(bm3d_test_support PRIVATE TIFF::TIFF)
+    target_compile_definitions(bm3d_test_support PUBLIC BM3D_WITH_TIFF)
+endif()
 target_compile_definitions(bm3d_test_support PUBLIC
     "BM3D_TEST_FIXTURES_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
     "BM3D_TEST_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
