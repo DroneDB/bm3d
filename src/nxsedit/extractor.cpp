@@ -30,25 +30,6 @@ for more details.
 using namespace std;
 using namespace nx;
 
-namespace {
-std::string deepzoomFolderFromOutput(const std::string &output) {
-	return absoluteParentPath(output) + "/" + completeBaseName(output) + "_files";
-}
-
-std::string deepzoomFilePath(const std::string &folder, uint32_t index, const std::string &ext) {
-	return folder + "/" + std::to_string(index) + "." + ext;
-}
-
-void ensureDeepzoomFolder(const std::string &folder) {
-	std::error_code ec;
-	if(std::filesystem::is_directory(nativePath(folder), ec))
-		return;
-	std::filesystem::create_directories(nativePath(folder), ec);
-	if(ec)
-		throw Error("could not create deepzoom folder " + folder);
-}
-}
-
 Extractor::Extractor(NexusData *nx):
 	transform(false),
 	max_size(0), current_size(0),
@@ -121,13 +102,6 @@ void Extractor::save(const std::string &output, nx::Signature &signature) {
 	OutputFile file;
 	file.open(output);
 
-	const bool saveAsDeepzoom = signature.isDeepzoom();
-	std::string deepzoomFolder;
-	if(saveAsDeepzoom) {
-		deepzoomFolder = deepzoomFolderFromOutput(output);
-		ensureDeepzoomFolder(deepzoomFolder);
-	}
-	
 	nx::Header header = nexus->header;
 	header.signature = signature;
 	header.nvert = 0;
@@ -222,25 +196,10 @@ void Extractor::save(const std::string &output, nx::Signature &signature) {
 				v = matrix * v;
 			}
 		}
-		if(signature.isCompressed()) {
-			if(saveAsDeepzoom) {
-				OutputFile nodeFile;
-				nodeFile.open(deepzoomFilePath(deepzoomFolder, n, "nxn"));
-				compress(nodeFile, signature, node, nexus->nodedata[i], &*patches.begin());
-				nodeFile.close();
-			} else {
-				compress(file, signature, node, nexus->nodedata[i], &*patches.begin());
-			}
-		} else {
-			if(saveAsDeepzoom) {
-				OutputFile nodeFile;
-				nodeFile.open(deepzoomFilePath(deepzoomFolder, n, "nxn"));
-				nodeFile.write(memory, data_size);
-				nodeFile.close();
-			} else {
-				file.write(memory, data_size);
-			}
-		}
+		if(signature.isCompressed())
+			compress(file, signature, node, nexus->nodedata[i], &*patches.begin());
+		else
+			file.write(memory, data_size);
 		if(transform)
 			delete []memory;
 
@@ -256,30 +215,14 @@ void Extractor::save(const std::string &output, nx::Signature &signature) {
 
 			uint64_t start = in.getBeginOffset();
 			uint64_t size = in.getSize();
-			char *memory = 0;
-			if(nexus->header.signature.isDeepzoom()) {
-				memory = nexus->file->loadDZTex(i);
-			} else {
-				memory = (char *)nexus->file->map(start, size);
-			}
+			char *memory = (char *)nexus->file->map(start, size);
 			if(!memory)
 				throw Error("could not read texture " + std::to_string(i) + " of the nexus file");
 			
 			out.offset = file.pos()/NEXUS_PADDING;
-			if(saveAsDeepzoom) {
-				OutputFile texFile;
-				texFile.open(deepzoomFilePath(deepzoomFolder, i, "jpg"));
-				texFile.write(memory, size);
-				texFile.close();
-			} else {
-				file.write(memory, size);
-			}
+			file.write(memory, size);
 
-			if(nexus->header.signature.isDeepzoom()) {
-				nexus->file->dropDZTex(memory);
-			} else {
-				nexus->file->unmap(memory);
-			}
+			nexus->file->unmap(memory);
 		}
 		textures.back().offset = file.pos()/NEXUS_PADDING;
 	}

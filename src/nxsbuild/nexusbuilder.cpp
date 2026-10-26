@@ -46,25 +46,6 @@ static int64_t pad(int64_t s) {
 
 
 
-unsigned int nextPowerOf2 ( unsigned int n )
-{
-	unsigned count = 0;
-
-	// First n in the below condition
-	// is for the case where n is 0
-	if (n && !(n & (n - 1)))
-		return n;
-
-	while( n != 0)
-	{
-		n >>= 1;
-		count += 1;
-	}
-
-	return 1 << count;
-}
-
-
 NodeBox::NodeBox(KDTree *tree, uint32_t block) {
 	for(int k = 0; k < 3; k++)
 		axes[k] = tree->axes[k];
@@ -103,7 +84,7 @@ static std::string nexusCacheTemplate(const std::string &cacheDir, const char *n
 }
 
 NexusBuilder::NexusBuilder(uint32_t components, const std::string &cacheDir):
-	chunks(nexusCacheTemplate(cacheDir, "cache_chunks")), scaling(0.5), useNodeTex(true),
+	chunks(nexusCacheTemplate(cacheDir, "cache_chunks")), scaling(0.5),
 	tex_quality(92) {
 
 	Signature &signature = header.signature;
@@ -127,12 +108,6 @@ NexusBuilder::NexusBuilder(uint32_t components, const std::string &cacheDir):
 		atlas.storage_prefix = nexusCacheTemplate(cacheDir, "cache_atlas");
 }
 
-NexusBuilder::NexusBuilder(Signature &signature): chunks("cache_chunks"), scaling(0.5) {
-	header.version = 2;
-	header.signature = signature;
-	header.nvert = header.nface = header.n_nodes = header.n_patches = header.n_textures = 0;
-}
-
 void NexusBuilder::initAtlas(std::vector<Image>& textures) {
 	if(textures.size()) {
 		atlas.addTextures(textures);
@@ -148,7 +123,7 @@ bool NexusBuilder::initAtlas(std::vector<LoadTexture> &textures) {
 	return true;
 }
 
-void NexusBuilder::create(KDTree *tree, Stream *stream, unsigned int top_node_size) {
+void NexusBuilder::create(KDTreeSoup *tree, StreamSoup *stream, unsigned int top_node_size) {
 	Node sink;
 	sink.first_patch = 0;
 	nodes.push_back(sink);
@@ -169,12 +144,12 @@ void NexusBuilder::create(KDTree *tree, Stream *stream, unsigned int top_node_si
 		else tree->setAxesOrthogonal();
 
 		tree->load(stream);
-		stream->clear();
+		stream->Stream::clear(); //not the clear of the triangles it holds
 		if(skipSimplifyLevels < 0)
 			skipSimplifyLevels = textureBoundLevels(tree);
 
 		const size_t nodesBefore = nodes.size();
-		createLevel(tree, stream, level, textureScale);
+		createMeshLevel(tree, stream, level, textureScale);
 		levelNodes = nodes.size() - nodesBefore;
 		level++;
 		//a level that keeps the triangles of the level below only makes the texture coarser: it
@@ -248,12 +223,11 @@ static const float MAX_SQUARED_TEXELS_PER_EDGE = 10.0f;
 //levels keep the triangles and only make the texture coarser: simplifying a node cut small to
 //keep its texture within maxNodeTexSide would collapse its inside onto a few vertices, its
 //border being locked.
-int NexusBuilder::textureBoundLevels(KDTree *tree) const {
-	KDTreeSoup *soup = dynamic_cast<KDTreeSoup *>(tree);
-	if(!soup || !hasTextures() || scaling <= 0 || scaling >= 1)
+int NexusBuilder::textureBoundLevels(KDTreeSoup *tree) const {
+	if(!hasTextures() || scaling <= 0 || scaling >= 1)
 		return 0;
 	const double balanced = std::sqrt(3.0) / 4.0 * MAX_SQUARED_TEXELS_PER_EDGE;
-	const double density = soup->medianTexelsPerTriangle();
+	const double density = tree->medianTexelsPerTriangle();
 	if(density <= balanced)
 		return 0;
 	return int(std::ceil(std::log(density / balanced) / std::log(4.0)));
@@ -501,11 +475,6 @@ Image NexusBuilder::extractNodeTex(TMesh &mesh, int level, bool simplified, floa
 		                              "Try to reduce the size of the nodes using -t (default is 4096)");
 	}
 
-	if (createPowTwoTex) {
-		finalSize[ 0 ] = (int) nextPowerOf2( finalSize[ 0 ] );
-		finalSize[ 1 ] = (int) nextPowerOf2( finalSize[ 1 ] );
-	}
-
 	//the size the node texture is stored at: the packed boxes, made smaller to fit in
 	//maxNodeTexSide when it is set
 	vcg::Point2i storedSize = finalSize;
@@ -661,64 +630,8 @@ void NexusBuilder::appendNodeTex(size_t texture, const std::vector<unsigned char
 }
 
 std::vector<unsigned char> NexusBuilder::encodeNodeTex(const Image &image) const {
-	if(texFormat == TextureFormat::Webp)
-		return encodeWebp(image, tex_quality);
-	return encodeJpeg(image, tex_quality, true, true);
+	return encodeWebp(image, tex_quality);
 }
-
-void NexusBuilder::createCloudLevel(KDTreeCloud *input, StreamCloud *output, int level) {
-
-	for(unsigned int block = 0; block < input->nBlocks(); block++) {
-		Cloud cloud = input->get(block);
-		assert(cloud.size() < (1<<16));
-		if(cloud.size() == 0) continue;
-
-		Mesh mesh;
-		mesh.load(cloud);
-
-		int target_points = cloud.size()*scaling;
-		std::vector<AVertex> deleted = mesh.simplifyCloud(target_points);
-
-		//save node in nexus temporary structure
-		uint32_t mesh_size = mesh.serializedSize(header.signature);
-		mesh_size = pad(mesh_size);
-		uint32_t chunk = chunks.addChunk(mesh_size);
-		unsigned char *buffer = chunks.getChunk(chunk);
-		uint32_t patch_offset = patches.size();
-
-		std::vector<Patch> node_patches;
-		mesh.serialize(buffer, header.signature, node_patches);
-
-		//patches will be reverted later, but the local order is important because of triangle_offset
-		std::reverse(node_patches.begin(), node_patches.end());
-		patches.insert(patches.end(), node_patches.begin(), node_patches.end());
-
-		uint32_t current_node = nodes.size();
-		nx::Node node = mesh.getNode();
-		node.offset = chunk; //temporaryle remember which chunk belongs to which node
-		node.error = mesh.averageDistance();
-		node.first_patch = patch_offset;
-		nodes.push_back(node);
-		boxes.push_back(NodeBox(input, block));
-
-		//we pick the deleted vertices from simplification and reprocess them.
-
-		swap(mesh.vert, deleted);
-		mesh.vn = mesh.vert.size();
-
-		Splat *vertices = new Splat[mesh.vn];
-		mesh.getVertices(vertices, current_node);
-
-		for(int i = 0; i < mesh.vn; i++) {
-			Splat &s = vertices[i];
-			output->pushVertex(s);
-		}
-
-		delete []vertices;
-	}
-}
-
-
 
 //the most vertices a node may have: a node indexes its vertices with 16 bits (at most 65535), and
 //Nexus has always stopped a little below that
@@ -788,19 +701,16 @@ void NexusBuilder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned 
 
 	} else {
 
-		if(useNodeTex) {
-			Image nodetex = extractNodeTex(tmp, level, skipSimplifyLevels <= 0, error, pixelXedge);
-			if(nodetex.isNull())
-				throw nx::Error("could not create the texture of a node");
-			tmp.serialize(buffer, header.signature, node_patches);
+		Image nodetex = extractNodeTex(tmp, level, skipSimplifyLevels <= 0, error, pixelXedge);
+		if(nodetex.isNull())
+			throw nx::Error("could not create the texture of a node");
+		tmp.serialize(buffer, header.signature, node_patches);
 
-			output_pixels += nodetex.width()*nodetex.height();
-			textures.push_back(Texture());
-			const size_t texture = textures.size()-1;
-			for(Patch &patch: node_patches)
-				patch.texture = texture;
-			storeNodeTex(texture, nodetex);
-		}
+		textures.push_back(Texture());
+		const size_t texture = textures.size()-1;
+		for(Patch &patch: node_patches)
+			patch.texture = texture;
+		storeNodeTex(texture, nodetex);
 
 		//VICIUOS TRICK: we could save only a texture every 2 geometry levels since the patch is contained also to a parent node.
 		//we could store the texture in the parent nodes i and have it good also for the children node.
@@ -846,9 +756,7 @@ void NexusBuilder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned 
 			else if(nvert < 64) //don't simplify too much!
 				nvert = 64;
 
-			float e = mesh.simplify(nvert, TMesh::QUADRICS);
-			if(!useNodeTex)
-				error = e;
+			mesh.simplify(nvert, TMesh::QUADRICS);
 			nface = mesh.fn;
 		}
 	}
@@ -907,19 +815,6 @@ void NexusBuilder::createMeshLevel(KDTreeSoup *input, StreamSoup *output, int le
 }
 
 
-void NexusBuilder::createLevel(KDTree *in, Stream *out, int level, float textureScale) {
-	KDTreeSoup *isSoup = dynamic_cast<KDTreeSoup *>(in);
-	if(!isSoup) {
-		KDTreeCloud *input = dynamic_cast<KDTreeCloud *>(in);
-		StreamCloud *output = dynamic_cast<StreamCloud *>(out);
-		createCloudLevel(input, output, level);
-	} else {
-		KDTreeSoup *input = dynamic_cast<KDTreeSoup *>(in);
-		StreamSoup *output = dynamic_cast<StreamSoup *>(out);
-		createMeshLevel(input, output, level, textureScale);
-	}
-}
-
 void NexusBuilder::saturate() {
 	//we do not have the 'backlinks' so we make a depth first traversal
 	//TODO! BIG assumption: the nodes are ordered such that child comes always after parent
@@ -973,8 +868,6 @@ void NexusBuilder::reverseDag() {
 
 void NexusBuilder::save(const std::string &filename) {
 
-	//cout << "Input squaresize " << sqrt(input_pixels) <<  " Output size " << sqrt(output_pixels) << "\n";
-
 	file.open(filename);
 
 	if(header.signature.vertex.hasNormals() && header.signature.face.hasIndex())
@@ -1026,27 +919,11 @@ void NexusBuilder::save(const std::string &filename) {
 	nodes.back().offset = size/NEXUS_PADDING;
 
 	if(textures.size()) {
-		if(!useNodeTex) {
-			for(unsigned int i = 0; i < textures.size()-1; i++) {
-				uint32_t s = textures[i].offset;
-				textures[i].offset = size/NEXUS_PADDING;
-				size += s;
-				size = pad(size);
-			}
-			textures.back().offset = size/NEXUS_PADDING;
-
-		} else { //texture.offset keeps the index in the nodeTex temporay file (already padded and in NEXUS_PADDING units
-			if(header.signature.flags & Signature::Flags::DEEPZOOM) {
-				//just fix the last one
-				textures.back().offset = nodeTex.size()/NEXUS_PADDING;
-
-			} else { //texture.offset holds the size of each texture
-				for(unsigned int i = 0; i < textures.size()-1; i++)
-					textures[i].offset += size/NEXUS_PADDING;
-				size += nodeTex.size();
-				textures.back().offset = size/NEXUS_PADDING;
-			}
-		}
+		//texture.offset keeps the index in the nodeTex temporary file (already padded and in NEXUS_PADDING units)
+		for(unsigned int i = 0; i < textures.size()-1; i++)
+			textures[i].offset += size/NEXUS_PADDING;
+		size += nodeTex.size();
+		textures.back().offset = size/NEXUS_PADDING;
 	}
 
 	file.write(&header, sizeof(Header));
@@ -1057,63 +934,20 @@ void NexusBuilder::save(const std::string &filename) {
 	file.padTo(index_size);
 
 	//NODES
-	const std::string basename = (filename.size() > 4 ? filename.substr(0, filename.size() - 4) : filename) + "_files";
-	if(header.signature.flags & Signature::Flags::DEEPZOOM) {
-		std::error_code ec;
-		std::filesystem::create_directory(nx::nativePath(basename), ec);
-	}
 	for(unsigned int i = 0; i < node_chunk.size(); i++) {
 		uint32_t chunk = node_chunk[i];
 		unsigned char *buffer = chunks.getChunk(chunk);
-		if(header.signature.flags & Signature::Flags::DEEPZOOM) {
-			nx::OutputFile nodefile;
-			nodefile.open(basename + "/" + std::to_string(i) + ".nxn");
-			nodefile.write(buffer, chunks.chunkSize(chunk));
-			nodefile.close();
-		} else
-			file.write(buffer, chunks.chunkSize(chunk));
+		file.write(buffer, chunks.chunkSize(chunk));
 	}
 
 	//TEXTURES
-	//compute textures offsetse
-	//Image should store all the mipmaps
 	if(textures.size()) {
-		if(useNodeTex) {
-			//todo split into pieces.
-			if(header.signature.flags & Signature::Flags::DEEPZOOM) {
-				for(unsigned int i = 0; i < textures.size()-1; i++) {
-					uint32_t s = textures[i].offset*NEXUS_PADDING;
-					uint32_t size = textures[i+1].offset*NEXUS_PADDING -s;
-
-					std::vector<char> buffer(size);
-					nodeTex.read(s, buffer.data(), size);
-
-					nx::OutputFile texfile;
-					texfile.open(basename + "/" + std::to_string(i) + ".jpg");
-					texfile.write(buffer.data(), buffer.size());
-					texfile.close();
-				}
-			} else {
-				std::vector<char> buffer(64*1<<20); //64 MB
-				for(uint64_t offset = 0; offset < nodeTex.size(); ) {
-					size_t count = size_t(std::min<uint64_t>(buffer.size(), nodeTex.size() - offset));
-					nodeTex.read(offset, buffer.data(), count);
-					file.write(buffer.data(), count);
-					offset += count;
-				}
-			}
-		} else {
-			if(images.size() + 1 < textures.size())
-				throw nx::Error("the original textures were not given: " + std::to_string(images.size()) +
-				                " names for " + std::to_string(textures.size() - 1) + " textures");
-			for(size_t i = 0; i + 1 < textures.size(); i++) {
-				Texture &tex = textures[i];
-				assert(tex.offset == file.pos()/NEXUS_PADDING);
-				std::vector<char> image = nx::readFile(images[i]);
-				file.write(image.data(), image.size());
-				//we should use texture.offset instead.
-				file.padTo(pad(file.pos()));
-			}
+		std::vector<char> buffer(64*1<<20); //64 MB
+		for(uint64_t offset = 0; offset < nodeTex.size(); ) {
+			size_t count = size_t(std::min<uint64_t>(buffer.size(), nodeTex.size() - offset));
+			nodeTex.read(offset, buffer.data(), count);
+			file.write(buffer.data(), count);
+			offset += count;
 		}
 	}
 	file.close();

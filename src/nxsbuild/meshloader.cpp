@@ -21,11 +21,6 @@ for more details.
 
 #include "../common/pathutil.h"
 
-void MeshLoader::quantize(float &value) {
-	if(!quantization) return;
-	value = quantization*(int)(value/quantization);
-}
-
 void MeshLoader::sanitizeTextureFilepath(std::string &textureFilepath) {
   std::replace( textureFilepath.begin(), textureFilepath.end(), '\\', '/' );
 }

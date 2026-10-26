@@ -35,7 +35,6 @@ public:
 
 	void setMaxMemory(uint64_t max_memory);
 	uint32_t getTriangles(uint32_t size, Triangle *buffer);
-	uint32_t getVertices(uint32_t size, Splat *vertex);
 
 private:
 	//the vertex, texture coordinate and normal of one corner of a face as zero based indices,
@@ -62,9 +61,7 @@ private:
 	uint64_t n_normals = 0;
 	uint64_t n_triangles;
 	uint64_t current_triangle;
-	uint64_t current_vertex;
 	uint64_t current_tri_pos = 0;
-	uint64_t current_vertex_pos = 0;
 	bool cached = false;
 	//how many vertices, texture coordinates and normals the lines read so far define: a
 	//negative index counts back from them

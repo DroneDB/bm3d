@@ -25,7 +25,6 @@ for more details.
 
 class Stream;
 class StreamSoup;
-class StreamCloud;
 class Mesh;
 class TMesh;
 
@@ -115,21 +114,6 @@ protected:
 	void findRealMiddle(KDCell &node);
 	void splitNode(KDCell &node, KDCell &child0, KDCell &child1);
 	static int assign(Triangle &t, uint32_t &mask, vcg::Point3f axis, float middle);
-};
-
-class KDTreeCloud: public VirtualVertexCloud, public KDTree {
-public:
-	KDTreeCloud(const std::string &prefix, float adapt = 0.333): VirtualVertexCloud(prefix), KDTree(adapt) {}
-	void setMaxMemory(uint64_t m) { return VirtualVertexCloud::setMaxMemory(m); }
-	void clear();
-	void pushVertex(Splat &v);
-
-protected:
-	uint64_t addBlock() { return VirtualVertexCloud::addBlock(); }
-	void load(StreamSoup &stream);
-	void loadElements(Stream *stream);
-	void findRealMiddle(KDCell &node);
-	void splitNode(KDCell &node, KDCell &child0, KDCell &child1);
 };
 
 

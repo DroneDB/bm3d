@@ -21,7 +21,6 @@ for more details.
 #include "../common/numeric.h"
 
 #include "tmesh.h"
-#include <vcg/space/index/kdtree/kdtree.h>
 
 #include <iostream>
 
@@ -84,20 +83,6 @@ void TMesh::load(Soup &soup) {
 	vcg::tri::UpdateNormal<TMesh>::PerVertex(*this);
 }
 
-void TMesh::load(Cloud &cloud) {
-	vcg::tri::Allocator<TMesh>::AddVertices(*this, cloud.size());
-
-	for(unsigned int i = 0; i < cloud.size(); i++) {
-		Splat &splat = cloud[i];
-		TVertex &v = vert[i];
-		v.P() = vcg::Point3f(splat.v[0], splat.v[1], splat.v[2]);
-		v.C() = vcg::Color4b(splat.c[0], splat.c[1], splat.c[2], splat.c[3]);
-		v.N() = vcg::Point3f(splat.n[0], splat.n[1], splat.n[2]);
-		v.node = splat.node;
-	}
-}
-
-
 void TMesh::lock(std::vector<bool> &locked) {
 	for(unsigned int i = 0; i < face.size(); i++)
 		if(locked[i])
@@ -151,30 +136,6 @@ void TMesh::getTriangles(Triangle *triangles, uint32_t node) {
 	}
 }
 
-void TMesh::getVertices(Splat *vertices, uint32_t node) {
-	int count = 0;
-	for(unsigned int i = 0; i < vert.size(); i++) {
-		TVertex &v = vert[i];
-		if(v.IsD()) continue;
-
-		Splat &splat = vertices[count++];
-
-		splat.v[0] = v.P()[0];
-		splat.v[1] = v.P()[1];
-		splat.v[2] = v.P()[2];
-		splat.c[0] = v.C()[0];
-		splat.c[1] = v.C()[1];
-		splat.c[2] = v.C()[2];
-		splat.c[3] = v.C()[3];
-		splat.n[0] = v.N()[0];
-		splat.n[1] = v.N()[1];
-		splat.n[2] = v.N()[2];
-
-
-		splat.node = node;
-	}
-}
-
 float TMesh::simplify(uint32_t target_faces, Simplification method) {
 
 	//lock border triangles
@@ -197,64 +158,6 @@ float TMesh::simplify(uint32_t target_faces, Simplification method) {
 		face[i].SetW();
 
 	return error;
-}
-
-std::vector<TVertex> TMesh::simplifyCloud(uint16_t target_faces) {
-	vector<TVertex> vertices;
-	vertices.reserve(vert.size() - target_faces);
-	float step = vert.size()/(float)target_faces;
-	int count = 0;
-	float s = 0;
-	for(unsigned int i = 0; i < vert.size() ;i++) {
-		unsigned int j = (int)floor(s);
-		if(j == i) { //keep point
-			vert[count++] = vert[i];
-			s += step;
-		} else
-			vertices.push_back(vert[i]);
-	}
-	vert.resize(count);
-	vn = count;
-
-	//estimate error somewhere else.
-	return vertices;
-}
-
-float TMesh::averageDistance() {
-	vcg::Box3f box;
-	for(int i = 0; i < VN(); i++)
-		box.Add(vert[i].cP());
-
-	float area = pow(box.Volume(), 2.0/3.0);
-	return 8*pow(area/VN(), 0.5);
-
-	if(VN() <= 5) return 0;
-
-	vcg::VertexConstDataWrapper<TMesh> ww(*this);
-
-	vcg::KdTree<float> tree(ww);
-	int n_of_neighbors = 5;
-
-	vcg::KdTree<float>::PriorityQueue result;
-
-	float avgDist=0;
-	int count = 0;
-	for (int j = 0; j < VN(); j++) {
-		tree.doQueryK(vert[j].cP(), 5, result);
-		int neighbours = result.getNofElements();
-		//int neighbours = tree.getNofFoundNeighbors();
-		//find max distance
-		float m = 0;
-		for (int i = 0; i < neighbours; i++) {
-			int neightId = result.getIndex(i);//tree.getNeighborId(i);
-			float d = Distance(vert[j].cP(), vert[neightId].cP());
-			if(d > m) m = d;
-		}
-		avgDist += m;
-		count++;
-		//vert[j].Q() = avgDist/=neighbours;
-	}
-	return avgDist/count;
 }
 
 nx::Node TMesh::getNode()

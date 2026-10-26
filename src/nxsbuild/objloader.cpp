@@ -60,8 +60,7 @@ ObjLoader::ObjLoader(const std::string &filename, const std::string &_mtl):
 	mtl(_mtl),
 	vertices("cache_plyvertex"),
 	n_vertices(0),
-	n_triangles(0),
-	current_vertex(0) {
+	n_triangles(0) {
 
 	if(!file.open(filename))
 		throw Error("could not open file " + filename);
@@ -247,21 +246,10 @@ void ObjLoader::cacheVertices() {
 		const char *s = line + 2;
 		if(!text::parseDouble(s, p[0]) || !text::parseDouble(s, p[1]) || !text::parseDouble(s, p[2]))
 			throw Error("error parsing vertex line " + excerpt(line) + " while caching");
-		p -= origin;
-		p[0] *= scale[0];
-		p[1] *= scale[1];
-		p[2] *= scale[2];
-		box.Add(p);
 
 		vertex.v[0] = (float)p[0];
 		vertex.v[1] = (float)p[1];
 		vertex.v[2] = (float)p[2];
-
-		if(quantization) {
-			quantize(vertex.v[0]);
-			quantize(vertex.v[1]);
-			quantize(vertex.v[2]);
-		}
 	}
 }
 
@@ -425,52 +413,5 @@ uint32_t ObjLoader::getTriangles(uint32_t size, Triangle *faces) {
 
 	current_tri_pos = cpos;
 
-	return count;
-}
-
-
-/*
- * Seeks all verteces in whole file
- */
-uint32_t ObjLoader::getVertices(uint32_t size, Splat *vertices) {
-	file.seek(current_vertex_pos);
-	const char *line;
-	size_t length;
-
-	uint32_t count = 0;
-	while(count < size) {
-		if(!file.readLine(line, length))                     //end of file
-			break;
-
-		if(line[0] != 'v' || !text::isSpace(line[1]))            //skip comments, faces, other properties, etc
-			continue;
-
-		Splat &vertex = vertices[count];
-		
-		vcg::Point3d p;
-		const char *s = line + 2;
-		if(!text::parseDouble(s, p[0]) || !text::parseDouble(s, p[1]) || !text::parseDouble(s, p[2]))
-			throw Error("error parsing vertex line " + excerpt(line));
-		
-		p -= origin;
-		p[0] *= scale[0];
-		p[1] *= scale[1];
-		p[2] *= scale[2];
-		box.Add(p);
-
-		vertex.v[0] = (float)p[0];
-		vertex.v[1] = (float)p[1];
-		vertex.v[2] = (float)p[2];
-	
-		if(quantization) {
-			quantize(vertex.v[0]);
-			quantize(vertex.v[1]);
-			quantize(vertex.v[2]);
-		}
-		n_vertices++;
-		current_vertex++;
-		count++;
-	}
-	current_vertex_pos = file.pos();
 	return count;
 }

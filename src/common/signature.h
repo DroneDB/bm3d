@@ -90,8 +90,9 @@ public:
 	VertexElement vertex;
 	FaceElement face;
 
-	// 0x2 was MECO, the compression Nexus used before corto: it is no longer read or written, and
-	// a container that has it is not compressed as far as this code can tell.
+	// 0x2 was MECO, the compression Nexus used before corto, and 0x8 marked a container whose nodes and
+	// textures are in files of a folder beside it (deepzoom): neither is read or written any more, and
+	// the values stay as they were in the header of the file.
 	enum Flags { PTEXTURE = 0x1, CORTO = 0x4, DEEPZOOM = 0x8 };
 	uint32_t flags;
 	void setFlag(Flags f) { flags |= f; }
@@ -99,7 +100,6 @@ public:
 
 	bool hasPTextures() { return (bool)(flags | PTEXTURE); }
 	bool isCompressed() { return (bool)(flags & CORTO); }
-	bool isDeepzoom() { return (bool)(flags & (DEEPZOOM)); }
 
 	Signature(): flags(0) {}
 };

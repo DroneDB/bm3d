@@ -15,7 +15,6 @@ namespace nx {
 		InputFile file;
 		MappedFile mapping;   //opened by the first map()
 		std::string name;     //UTF-8
-		char *readDZFile(const std::string &path);
 	public:
 		void setFileName(const char* uri) override;
 		const char *fileName() override;
@@ -26,12 +25,6 @@ namespace nx {
 		void* map(size_t from, size_t size) override;
 		bool unmap(void* mapped) override;
 		bool seek(size_t to) override;
-
-		char *loadDZNode(uint32_t n) override;
-		void dropDZNode(char *data) override;
-		char *loadDZTex(uint32_t n) override;
-		void dropDZTex(char *data) override;
-
 	};
 }
 

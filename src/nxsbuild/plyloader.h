@@ -37,7 +37,6 @@ public:
 
 	void setMaxMemory(uint64_t max_memory);
 	uint32_t getTriangles(uint32_t size, Triangle *buffer);
-	uint32_t getVertices(uint32_t size, Splat *vertex);
 
 	uint32_t nVertices() { return n_vertices; }
 	uint32_t nTriangles() { return n_triangles; }
@@ -53,7 +52,6 @@ private:
 	uint64_t n_vertices;
 	uint64_t n_triangles;
 	uint64_t current_triangle;
-	uint64_t current_vertex;
 
 	//the face being cut into triangles, and the vertex the next of them starts from
 	std::unique_ptr<PlyFace> face;

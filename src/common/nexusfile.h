@@ -22,11 +22,6 @@ namespace nx {
 		virtual void* map(size_t from, size_t size) = 0;
 		virtual bool unmap(void* mapped) = 0;
 		virtual bool seek(size_t to) = 0;
-
-		virtual char *loadDZNode(uint32_t n) = 0;
-		virtual void dropDZNode(char *data) = 0;
-		virtual char *loadDZTex(uint32_t n) = 0;
-		virtual void dropDZTex(char *data) = 0;
 	};
 }
 

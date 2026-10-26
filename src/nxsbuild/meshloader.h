@@ -22,8 +22,6 @@ for more details.
 #include <cstdint>
 #include <vector>
 #include "trianglesoup.h"
-#include <vcg/space/point3.h>
-#include <vcg/space/box3.h>
 
 class LoadTexture {
 public:
@@ -35,21 +33,15 @@ public:
 
 class MeshLoader {
 public:
-	MeshLoader(): has_colors(false), has_normals(false), has_textures(false), quantization(0) {}
+	MeshLoader(): has_colors(false), has_normals(false), has_textures(false) {}
 	virtual ~MeshLoader() {}
-	void setVertexQuantization(float q) { quantization = q; }
 
 	virtual void setMaxMemory(uint64_t max_memory) = 0;
 	//returns actual number of triangles to pointers, memory must be allocated //if null, ignore.
 	virtual uint32_t getTriangles(uint32_t size, Triangle *triangle) = 0;
-	virtual uint32_t getVertices(uint32_t size, Splat *vertex) = 0;
 	virtual bool hasColors() { return has_colors; } //call this
 	virtual bool hasNormals() { return has_normals; } //call this
 	virtual bool hasTextures() { return has_textures; }
-	
-	vcg::Point3d origin = vcg::Point3d(0, 0, 0);
-	vcg::Point3d scale = vcg::Point3d(1, 1, 1);
-	vcg::Box3d box;
 	
 	std::vector<LoadTexture> texture_filenames;
 	int texOffset; //when returning triangles add texOffset to refer to the correct texture in stream.
@@ -59,9 +51,7 @@ protected:
 	bool has_colors;
 	bool has_normals;
 	bool has_textures;
-	float quantization;
 
-	void quantize(float &value);
 	void sanitizeTextureFilepath (std::string &textureFilepath);
 	void resolveTextureFilepath (const std::string &modelFilepath, std::string &textureFilepath);
 };

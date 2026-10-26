@@ -106,16 +106,12 @@ class Mesh: public vcg::tri::TriMesh<std::vector<AVertex>, std::vector<AFace> > 
 public:
 	enum Simplification { QUADRICS, EDGE, CLUSTER, RANDOM };
 	void load(Soup &soup);
-	void load(Cloud &soup);
 	//void lock(std::vector<bool> &locked);
 	void lockVertices();
 	void save(Soup &soup, uint32_t node);
 	void getTriangles(Triangle *triangles, uint32_t node);
-	void getVertices(Splat *vertices, uint32_t node);
 
 	float simplify(uint16_t target_faces, Simplification method);
-	std::vector<AVertex> simplifyCloud(uint16_t target_vertices); //return removed vertices
-	float averageDistance();
 
 	nx::Node getNode();
 	uint32_t serializedSize(const nx::Signature &sig);

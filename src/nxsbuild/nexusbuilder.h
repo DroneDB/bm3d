@@ -36,10 +36,7 @@ for more details.
 
 class KDTree;
 class KDTreeSoup;
-class KDTreeCloud;
-class Stream;
 class StreamSoup;
-class StreamCloud;
 
 class TMesh;
 
@@ -84,7 +81,6 @@ public:
 	// the (possibly multi-GB) scratch on the same volume as the output and lets it
 	// be cleaned up as a unit. When empty, historical defaults are used.
 	NexusBuilder(uint32_t components, const std::string &cacheDir = std::string());
-	NexusBuilder(nx::Signature &sig);
 
 	bool hasNormals() { return header.signature.vertex.hasNormals(); }
 	bool hasColors() { return header.signature.vertex.hasColors(); }
@@ -92,10 +88,8 @@ public:
 
 	void initAtlas(std::vector<nx::Image>& textures);
 	bool initAtlas(std::vector<LoadTexture>& textures);
-	void create(KDTree *input, Stream *output, unsigned int top_node_size);
+	void create(KDTreeSoup *input, StreamSoup *output, unsigned int top_node_size);
 	//textureScale: the side of this level's textures relative to the level below
-	void createLevel(KDTree *input, Stream *output, int level, float textureScale);
-	void createCloudLevel(KDTreeCloud *input, StreamCloud *output, int level);
 	void createMeshLevel(KDTreeSoup *input, StreamSoup *output, int level, float textureScale);
 
 
@@ -120,25 +114,16 @@ public:
 	std::vector<nx::Node> nodes;
 	std::vector<nx::Patch> patches;
 	std::vector<nx::Texture> textures;
-	std::vector<std::string> images; //UTF-8 names of the original textures, for !useNodeTex
 
-	uint64_t input_pixels, output_pixels;
 	nx::TexAtlas atlas;
 	nx::ScratchFile nodeTex; //texure images for each node stored here.
 	uint64_t max_memory;
 
 	float scaling;
-	bool useNodeTex; //use node textures
-	//the format of the node textures; the viewers tell them apart by their content
-	enum class TextureFormat { Jpeg, Webp };
-	TextureFormat texFormat = TextureFormat::Jpeg;
-	int tex_quality;
-	int max_node_triangles = 32000;
-	bool createPowTwoTex;
+	int tex_quality; //the quality of the WebP node textures
 	//the longest side of a node texture, in pixels: a node whose texture would be larger gets it
 	//downscaled to this size. 0 keeps every node texture at the resolution of its source
 	int maxNodeTexSide = 0;
-	bool deepzoom = false; //use deepzoom style where each node is in a different file.
 
 	//the levels, from the finest, that keep the triangles of the level below and only halve its
 	//texture, for a model whose texture is much finer than its triangles. Negative: as many as
@@ -148,7 +133,7 @@ public:
 	void processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int block, int level);
 
 	nx::Image extractNodeTex(TMesh &mesh, int level, bool simplified, float &error, float &pixelXedge);
-	int textureBoundLevels(KDTree *tree) const;
+	int textureBoundLevels(KDTreeSoup *tree) const;
 	std::vector<unsigned char> encodeNodeTex(const nx::Image &image) const;
 	//The threads the build keeps busy: the one that builds the nodes, and textureThreads - 1 more
 	//that encode node textures meanwhile. 1 encodes on the building thread. The textures are

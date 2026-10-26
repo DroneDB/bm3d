@@ -111,17 +111,13 @@ public:
 
 	enum Simplification { QUADRICS, EDGE, CLUSTER, RANDOM };
 	void load(Soup &soup);
-	void load(Cloud &soup);
 	void lock(std::vector<bool> &locked);
 	void save(Soup &soup, uint32_t node);
 	void getTriangles(Triangle *triangles, uint32_t node);
-	void getVertices(Splat *vertices, uint32_t node);
 
 	void splitSeams(nx::Signature &sig);
 
 	float simplify(uint32_t target_faces, Simplification method);
-	std::vector<TVertex> simplifyCloud(uint16_t target_vertices); //return removed vertices
-	float averageDistance();
 
 	nx::Node getNode();
 	uint32_t serializedSize(nx::Signature &sig);

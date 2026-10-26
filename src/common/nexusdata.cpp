@@ -167,24 +167,16 @@ uint64_t NexusData::loadRam(uint32_t n) {
 
 
 	if(!sign.isCompressed()) {
-		if(sign.isDeepzoom())
-			d.memory = file->loadDZNode(n);
-		else
-			d.memory = (char *)file->map(offset, size);
+		d.memory = (char *)file->map(offset, size);
 		if(!d.memory)
 			throw Error("could not read node " + std::to_string(n) + " of the nexus file");
 
 	} else {
 
-		char *buffer = nullptr;
-		if(sign.isDeepzoom()) {
-			buffer = file->loadDZNode(n);
-		} else {
-			buffer = new char[compressed_size];
-			file->seek(offset);
-			int64_t r = file->read(buffer, compressed_size);
-			assert(r == (int64_t)compressed_size);
-		}
+		char *buffer = new char[compressed_size];
+		file->seek(offset);
+		int64_t r = file->read(buffer, compressed_size);
+		assert(r == (int64_t)compressed_size);
 
 		d.memory = new char[size];
 
@@ -201,44 +193,10 @@ uint64_t NexusData::loadRam(uint32_t n) {
 			decoder.setIndex(d.faces(sign, node.nvert));
 
 		decoder.decode();
-		if(sign.isDeepzoom())
-			file->dropDZNode(buffer);
-		else
-			delete []buffer;
-
-		//Shuffle points in compressed point clouds
-		if(!sign.face.hasIndex()) {
-			std::vector<int> order(node.nvert);
-			for(int i = 0; i < node.nvert; i++)
-				order[i] = i;
-
-			unsigned seed = 0;
-			std::shuffle (order.begin(), order.end(), std::default_random_engine(seed));
-			std::vector<vcg::Point3f> coords(node.nvert);
-			for(int i =0; i < node.nvert; i++)
-				coords[i] = d.coords()[order[i]];
-			memcpy(d.coords(), &*coords.begin(), sizeof(Point3f)*node.nvert);
-
-			if(sign.vertex.hasNormals()) {
-				Point3s *n = d.normals(sign, node.nvert);
-				std::vector<Point3s> normals(node.nvert);
-				for(int i =0; i < node.nvert; i++)
-					normals[i] = n[order[i]];
-				memcpy(n, &*normals.begin(), sizeof(Point3s)*node.nvert);
-			}
-
-			if(sign.vertex.hasColors()) {
-				Color4b *c = d.colors(sign, node.nvert);
-				std::vector<Color4b> colors(node.nvert);
-				for(int i =0; i < node.nvert; i++)
-					colors[i] = c[order[i]];
-				memcpy(c, &*colors.begin(), sizeof(Color4b)*node.nvert);
-			}
-		}
+		delete []buffer;
 	}
 
 	assert(d.memory);
-	// If DEEPZOOM mode, textures are stored externally (in _files/) — skip texture loading here.
 	if(header.n_textures) {
 		//be sure to load images
 		for(uint32_t p = node.first_patch; p < node.last_patch(); p++) {
@@ -251,11 +209,7 @@ uint64_t NexusData::loadRam(uint32_t n) {
 				continue;
 
 			Texture &texture = textures[t];
-			if(sign.isDeepzoom()) {
-				data.memory = file->loadDZTex(n);
-			} else {
-				data.memory = (char *)file->map(texture.getBeginOffset(), texture.getSize());
-			}
+			data.memory = (char *)file->map(texture.getBeginOffset(), texture.getSize());
 			if(!data.memory) {
 				cerr << "Failed mapping texture data" << endl;
 				//exit(0);
@@ -273,10 +227,7 @@ uint64_t NexusData::loadRam(uint32_t n) {
 void NexusData::releaseNodeMemory(NodeData &data) {
 	auto &sign = header.signature;
 	if(!sign.isCompressed()) {
-		if(sign.isDeepzoom())
-			file->dropDZNode(data.memory);
-		else
-			file->unmap((unsigned char *)data.memory);
+		file->unmap((unsigned char *)data.memory);
 	} else {
 		delete []data.memory;
 	}
@@ -306,10 +257,7 @@ uint64_t NexusData::dropRam(uint32_t n, bool write) {
 			TextureData &tdata = texturedata[t];
 			tdata.count_ram--;
 			if(tdata.count_ram != 0) continue;
-			if(sign.isDeepzoom())
-				file->dropDZTex(tdata.memory);
-			else
-				file->unmap((unsigned char *)tdata.memory);
+			file->unmap((unsigned char *)tdata.memory);
 
 			tdata.memory = NULL;
 			size += tdata.width*tdata.height*4;

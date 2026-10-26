@@ -17,6 +17,18 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   invalid input, exit code 2, with a message that names `obj`, `ply` and `stl`; it used to be tried
   with a VCGLib importer. The loaders for Nexus' `.ts` and `.tsp` files, its colormap and the
   VCGLib importer loader are removed, and with them `TMesh::loadPly`. Output does not change.
+- Removed the code paths the program never takes, and the options that nothing set:
+  - point clouds: the cloud stream and kd-tree, the loaders' vertex reading, the cloud levels of the
+    builder and the cloud simplification of the meshes;
+  - deepzoom: nodes and textures in the files of a folder beside the container (the flag value 0x8
+    stays unused in the header);
+  - node textures that are the original image files, node textures rounded up to a power of two, and
+    JPEG node textures (the node textures have been WebP). JPEG stays for reading input textures
+    and for the texture tiles the builder spills to disk;
+  - the origin, scale and vertex quantization of the loaders, which stayed at no offset, no scale
+    and no quantization. The ASCII STL loader multiplied the x coordinate by the third scale
+    instead of the z by it, which did nothing at a scale of 1 and is gone with the scale.
+  Output does not change.
 
 ## 0.1.0
 

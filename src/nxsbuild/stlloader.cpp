@@ -73,12 +73,7 @@ uint32_t STLLoader::getTrianglesAscii(uint32_t size, Triangle *buffer) {
 			int n = sscanf(line, "%1023s %lf %lf %lf", dummy, &d[0], &d[1], &d[2]);
 			if(n != 4)
 				throw nx::Error("Invalid STL file");
-			d -= origin;
-			d[0] *= scale[0];
-			d[1] *= scale[1];
-			d[0] *= scale[2];
-			box.Add(d);
-					
+
 			v[0] = (float)(d[0]);
 			v[1] = (float)(d[1]);
 			v[2] = (float)(d[2]);
@@ -112,14 +107,10 @@ uint32_t STLLoader::getTrianglesBinary(uint32_t size, Triangle *buffer) {
 		Triangle &tri = buffer[i];
 		for(int t = 0; t < 3; t++)
 			for(int k = 0; k < 3; k++)
-				tri.vertices[t].v[k] = (pos[t*3 + k] - origin[k])*scale[k];
+				tri.vertices[t].v[k] = pos[t*3 + k];
 		tri.node = 0;
 		current_triangle++;
 		start += 50;
 	}
 	return nread;
-}
-
-uint32_t STLLoader::getVertices(uint32_t /*size*/, Splat */*vertex*/) {
-	throw nx::Error("Unimplemented!");
 }

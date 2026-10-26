@@ -308,7 +308,6 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
 
     StreamSoup stream(cacheBase + "_stream");
     stream.setMaxMemory(maxMemory);
-    stream.origin = vcg::Point3d(0, 0, 0);
     loadInput(stream, input, scratch);
 
     uint32_t components = NexusBuilder::FACES | NexusBuilder::NORMALS;
@@ -345,10 +344,7 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     builder.setMaxMemory(maxMemory);
 
     builder.setScaling(kScaling);
-    builder.useNodeTex = true;
-    builder.createPowTwoTex = false;
 
-    builder.texFormat = NexusBuilder::TextureFormat::Webp;
     builder.tex_quality = kTextureQuality;
     builder.textureThreads = attempt.threads;
     builder.maxNodeTexSide = kMaxNodeTextureSide;

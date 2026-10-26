@@ -62,39 +62,4 @@ namespace nx {
 		return true;
 	}
 
-	//the companion folder "<base>_files" the saver produces, base being the name without its
-	//four-character extension
-	char *StdNexusFile::loadDZNode(uint32_t n) {
-		if(name.size() < 5)
-			return nullptr;
-		const std::string basename = name.substr(0, name.size() - 4) + "_files";
-		return readDZFile(basename + "/" + std::to_string(n) + ".nxn");
-	}
-
-	void StdNexusFile::dropDZNode(char *data) {
-		delete [] data;
-	}
-
-	char *StdNexusFile::loadDZTex(uint32_t n) {
-		if(name.size() < 5)
-			return nullptr;
-		const std::string basename = name.substr(0, name.size() - 4) + "_files";
-		return readDZFile(basename + "/" + std::to_string(n) + ".jpg");
-	}
-
-	void StdNexusFile::dropDZTex(char *data) {
-		delete [] data;
-	}
-
-	char *StdNexusFile::readDZFile(const std::string &path) {
-		std::error_code ec;
-		const auto size = std::filesystem::file_size(nativePath(path), ec);
-		InputFile f;
-		if(ec || !f.open(path))
-			return nullptr;
-		char *buf = new char[size_t(size)];
-		f.read(buf, size_t(size));
-		return buf;
-	}
-
 }

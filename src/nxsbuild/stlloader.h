@@ -16,8 +16,6 @@ public:
 			return getTrianglesBinary(size, buffer);
 	}
 
-	uint32_t getVertices(uint32_t size, Splat *vertex);
-
 	uint32_t nVertices() { return n_vertices; }
 	uint32_t nTriangles() { return n_triangles; }
 private:
@@ -30,7 +28,6 @@ private:
 	uint64_t n_vertices = 0;
 	uint64_t n_triangles = 0;
 	uint64_t current_triangle = 0;
-	uint64_t current_vertex = 0;
 };
 
 #endif // STLLOADER_H

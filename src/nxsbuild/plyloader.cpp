@@ -111,7 +111,6 @@ PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix
 	n_vertices(0),
 	n_triangles(0),
 	current_triangle(0),
-	current_vertex(0),
 	face(new PlyFace()) {
 
 	int val = pf.Open(nx::systemPath(filename).c_str(), PlyFile::MODE_READ);
@@ -251,13 +250,13 @@ void PlyLoader::cacheVertices() {
 		Vertex &v = vertices[i];
 		readElement(&vertex, "vertex", i, n_vertices);
 		if(double_coords) {
-			v.v[0] = (float)(vertex.dv[0] - origin[0])*scale[0];
-			v.v[1] = (float)(vertex.dv[1] - origin[1])*scale[1];
-			v.v[2] = (float)(vertex.dv[2] - origin[2])*scale[2];
+			v.v[0] = (float)vertex.dv[0];
+			v.v[1] = (float)vertex.dv[1];
+			v.v[2] = (float)vertex.dv[2];
 		} else {
-			v.v[0] = (float)(vertex.v[0] - origin[0])*scale[0];
-			v.v[1] = (float)(vertex.v[1] - origin[1])*scale[1];
-			v.v[2] = (float)(vertex.v[2] - origin[2])*scale[2];
+			v.v[0] = vertex.v[0];
+			v.v[1] = vertex.v[1];
+			v.v[2] = vertex.v[2];
 		}
 		if(has_colors) {
 			v.c[0] = vertex.c[0];
@@ -268,12 +267,6 @@ void PlyLoader::cacheVertices() {
 		if(has_textures) {
 			v.t[0] = vertex.t[0];
 			v.t[1] = vertex.t[1];
-		}
-
-		if(quantization) {
-			quantize(v.v[0]);
-			quantize(v.v[1]);
-			quantize(v.v[2]);
 		}
 	}
 
@@ -375,62 +368,6 @@ uint32_t PlyLoader::getTriangles(uint32_t size, Triangle *buffer) {
 			continue;
 
 		count++;
-	}
-	return count;
-}
-
-uint32_t PlyLoader::getVertices(uint32_t size, Splat *splats) {
-	if(current_triangle > n_triangles) return 0;
-
-	PlyVertex vertex;
-
-	Splat v;
-	v.node = 0;
-	v.c[3] = 255;
-	uint32_t count = 0;
-	for(uint32_t i = 0; i < size && current_vertex < n_vertices; i++) {
-
-		readElement(&vertex, "vertex", current_vertex, n_vertices);
-
-		Splat &v = splats[count++];
-		current_vertex++;
-
-		vcg::Point3d p;
-		if(double_coords) {
-			p = vcg::Point3d(vertex.dv);
-		} else {
-			p = vcg::Point3d(vertex.v[0], vertex.v[1], vertex.v[2]);
-		}
-		p -= origin;
-		p[0] *= scale[0];
-		p[1] *= scale[1];
-		p[2] *= scale[2];
-		box.Add(p);
-		v.v[0] = (float)p[0];
-		v.v[1] = (float)p[1];
-		v.v[2] = (float)p[2];
-
-		if(has_colors) {
-			v.c[0] = vertex.c[0];
-			v.c[1] = vertex.c[1];
-			v.c[2] = vertex.c[2];
-			v.c[3] = vertex.c[3];
-		}
-		if(has_textures) {
-			v.t[0] = vertex.t[0];
-			v.t[1] = vertex.t[1];
-		}
-		if(has_normals) {
-			v.n[0] = vertex.n[0];
-			v.n[1] = vertex.n[1];
-			v.n[2] = vertex.n[2];
-		}
-
-		if(quantization) {
-			quantize(v.v[0]);
-			quantize(v.v[1]);
-			quantize(v.v[2]);
-		}
 	}
 	return count;
 }

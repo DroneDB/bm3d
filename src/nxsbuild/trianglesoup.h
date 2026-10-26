@@ -32,11 +32,6 @@ struct Vertex {
 	}
 };
 
-struct Splat: public Vertex {
-	uint32_t node;
-	float n[3];
-};
-
 //52 bytes.
 struct Triangle {
 	Vertex vertices[3];
@@ -75,7 +70,6 @@ public:
 };
 
 typedef Bin<Triangle> Soup;
-typedef Bin<Splat> Cloud;
 
 template <class T> class VirtualBin: protected VirtualMemory {
 public:
@@ -157,7 +151,6 @@ protected:
 };
 
 typedef VirtualBin<Triangle> VirtualTriangleSoup;
-typedef VirtualBin<Splat> VirtualVertexCloud;
 
 
 #endif // NX_TRIANGLESOUP_H

@@ -95,6 +95,30 @@ used.
   unknown one is an error that names the formats read; the colormap of the stream goes.
 - `src/nxsbuild/tmesh.{h,cpp}`: `loadPly` (uncalled) and the include of VCGLib's `import.h` that
   served it are removed.
+- Paths the program never takes, and options that nothing set, are removed from `src/nxsbuild/`
+  `kdtree.{h,cpp}`, `mesh.{h,cpp}`, `tmesh.{h,cpp}`, `meshloader.{h,cpp}`, `meshstream.{h,cpp}`,
+  `nexusbuilder.{h,cpp}`, `objloader.{h,cpp}`, `plyloader.{h,cpp}`, `stlloader.{h,cpp}`,
+  `trianglesoup.h`, from `src/nxsedit/extractor.cpp` and from `src/common/` `nexusdata.{h,cpp}`,
+  `nexusfile.h`, `stdnexusfile.{h,cpp}`, `signature.h`:
+  - point clouds: `KDTreeCloud`, `StreamCloud`, `Stream::getBox`, `MeshLoader::getVertices` and its
+    implementations, `createCloudLevel` and the cloud branch of `createLevel` (which was a choice
+    between the two and is gone; `NexusBuilder::create` takes the triangle kd-tree and stream),
+    `Mesh::load(Cloud)`, `getVertices`, `simplifyCloud` and `averageDistance` (and `TMesh`'s), the
+    `Splat` and `Cloud` types, and the shuffle of the points of a compressed cloud in
+    `NexusData::loadRam`;
+  - deepzoom: the folder of files in `NexusBuilder::save` and `Extractor::save`, `loadDZNode`,
+    `dropDZNode`, `loadDZTex`, `dropDZTex` and `readDZFile` of `NexusFile` and `StdNexusFile`, and
+    `Signature::isDeepzoom`. The flag value stays as the enum entry `DEEPZOOM`;
+  - `NexusBuilder` options that nothing set: `useNodeTex` (false made the container hold the
+    original texture files, named in `images`), `createPowTwoTex` (and `nextPowerOf2`),
+    `deepzoom`, `max_node_triangles`, the unused pixel counters, and `texFormat` with its enum
+    (the JPEG node textures; `encodeJpeg` stays, the texture tiles that spill to disk use it) and
+    the constructor taking a `Signature`, which nothing called;
+  - `origin`, `scale`, `box` and the vertex quantization of `MeshLoader` and `Stream`, used by the
+    loaders and `Stream::getBox`. They kept their defaults (no offset, scale 1, no quantization),
+    for which the arithmetic was exact, so the vertices are unchanged. With the scale the ASCII STL
+    loader loses a line that multiplied x by the z scale instead of z by it (`stlloader.cpp`).
+  Output does not change.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

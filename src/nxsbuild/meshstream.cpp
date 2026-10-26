@@ -35,13 +35,8 @@ Stream::Stream(const std::string &cachePrefix):
 	has_normals(false),
 	has_textures(false),
 	cache_prefix(cachePrefix),
-	vertex_quantization(0),
 	current_triangle(0),
 	current_block(0) {
-}
-
-void Stream::setVertexQuantization(double q) {
-	vertex_quantization = q;
 }
 
 //The loader for the format of a file, told by the extension of its name (any case). The formats are
@@ -57,30 +52,7 @@ std::unique_ptr<MeshLoader> Stream::getLoader(const std::string &file, const std
 	                "extension of the name");
 }
 
-vcg::Box3d Stream::getBox(const std::vector<std::string> &paths) {
-
-	vcg::Box3d box;
-
-	uint32_t length = (1<<20); //times 52 bytes. (128Mb of data)
-	std::unique_ptr<Splat[]> vertices(new Splat[length]);
-	
-	
-	for(const std::string &file: paths) {
-		std::unique_ptr<MeshLoader> loader = getLoader(file, std::string());
-		loader->setMaxMemory(512*(1<<20)); //read only once... does'nt really matter.
-		while(true) {
-			int count = loader->getVertices(length, vertices.get());
-			if(count == 0) break;
-		}
-		box.Add(loader->box);
-	}
-	return box;
-}
-
 void Stream::load(MeshLoader *loader) {
-	loader->setVertexQuantization(vertex_quantization);
-	loader->origin = origin;
-	loader->scale = scale;
 	loadMesh(loader);
 	has_colors &= loader->hasColors();
 	has_normals &= loader->hasNormals();
@@ -267,79 +239,3 @@ uint64_t StreamSoup::addBlock(uint64_t level) {
 	levels[level].push_back(block);
 	return block;
 }
-
-
-
-//Cloud
-
-StreamCloud::StreamCloud(const std::string &prefix):
-	Stream(prefix),
-	VirtualVertexCloud(prefix) {
-}
-
-void StreamCloud::loadMesh(MeshLoader *loader) {
-	loader->setMaxMemory(maxMemory());
-	//get 128Mb of data
-	uint32_t length = (1<<20); //times 52 bytes.
-	std::unique_ptr<Splat[]> vertices(new Splat[length]);
-	while(true) {
-		int count = loader->getVertices(length, vertices.get());
-
-		if(count == 0) break;
-		for(int i = 0; i < count; i++) {
-			assert(vertices[i].node == 0);
-			pushVertex(vertices[i]);
-		}
-	}
-}
-
-void StreamCloud::pushVertex(Splat &vertex) {
-
-	//ignore degenerate faces
-	vcg::Point3f p(vertex.v);
-	box.Add(p);
-
-	uint64_t level = getLevel(current_triangle);
-	assert(levels.size() >= level);
-
-	uint64_t block = 0;
-	if(levels.size() == level) {  //need to add a level
-		levels.push_back(std::vector<uint64_t>());
-		block = addBlock(level);
-
-	} else {
-		block = levels[level].back();
-		if(isBlockFull(block))
-			block = addBlock(level);
-	}
-
-	Cloud cloud = get(block);
-	cloud.push_back(vertex);
-
-	current_triangle++;
-}
-
-Cloud StreamCloud::streamVertices() {
-	if(current_block == 0)
-		computeOrder();
-
-	if(current_block == order.size())
-		return Cloud(NULL, NULL, 0);
-
-	flush(); //save memory
-	uint64_t block = order[current_block];
-	current_block++;
-
-	return get(block);
-}
-
-void StreamCloud::clearVirtual() {
-	VirtualVertexCloud::clear();
-}
-
-uint64_t StreamCloud::addBlock(uint64_t level) {
-	uint64_t block = VirtualVertexCloud::addBlock();
-	levels[level].push_back(block);
-	return block;
-}
-
