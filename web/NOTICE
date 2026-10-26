@@ -1,0 +1,33 @@
+bm3d-viewer
+Copyright (c) 2026 Digipa. MIT licence (LICENSE).
+
+The viewer contains and ships the work of others, under the same licence; each part keeps its
+copyright notice.
+
+Nexus (https://github.com/cnr-isti-vclab/nexus)
+  Copyright (c) 2012-2020, Visual Computing Lab, ISTI - CNR. MIT licence ("All Javascript Nexus
+  software is free and release under the MIT license").
+  The traversal, the cache rule, the drawing of the nodes and the three.js object derive from
+  html/js/nexus.js and html/js/nexus_three.js at commit d805432:
+    src/math.js, src/priority-queue.js, src/instance.js, src/mesh.js, src/context.js,
+    src/gl-upload.js, src/bm3d-object.js.
+  What was changed: ES modules in place of globals, and three.js as an import; the new header,
+  index and metadata of the bm3d format (src/format.js, written from docs/FORMAT.md, replaces the
+  Nexus parser); HTTP Range requests with fetch and an optional cache (IndexedDB); the corto decoder
+  as a module worker that loads corto.wasm from a path the host gives; no meco, deep zoom or point
+  rendering; no RGBFormat or VertexColors; vertex colours are unsigned bytes; nodes that are dropped
+  while loading are not uploaded; a corrupt node or texture is reported and not asked for again.
+  Two fixes were made first to the copy of Nexus that the DroneDB Hub shipped, and are carried
+  here: the error of a node is measured in the pixels of the drawing buffer (getDrawingBufferSize),
+  not in CSS pixels, and textures are minified with LINEAR_MIPMAP_LINEAR and up to 8x anisotropic
+  filtering.
+
+corto (https://github.com/cnr-isti-vclab/corto)
+  Copyright (c) 2015-2022, Visual Computing Lab, ISTI - CNR. MIT licence.
+  corto.wasm is the decoder of corto, at commit d240e69306a39417c098475d7002eb16b7264248 with the
+  patches of third_party/corto-patches/ of the bm3d repository, built with emscripten from
+  corto-wasm/emcorto.cpp (derived from html/js/emscripten/emcorto.cpp) and corto-wasm/build.sh
+  (derived from html/js/emscripten/build.sh). src/corto-worker.js derives from the decoding
+  function of html/js/emscripten/corto.em.proto.js.
+
+three.js is a peer dependency and is not part of this package.

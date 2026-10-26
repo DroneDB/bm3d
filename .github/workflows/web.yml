@@ -1,0 +1,91 @@
+# Copyright (C) 2026 Digipa
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Builds and tests the viewer (web/): corto.wasm from third_party/corto with the pinned emsdk, the
+# bundles with rollup, the tests of the reader and of the decoder in node (vitest), and a render of
+# the fixtures in a headless Chromium (Playwright). It runs when the viewer, the format document or
+# the corto sources change.
+#
+# The tests also read every .bm3d file in tests/golden/ when the repository has that folder (the
+# golden files of the command line); BM3D_GOLDEN_DIR names another one.
+name: Web
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - "docs/FORMAT.md"
+      - "third_party/corto/**"
+      - "third_party/corto-patches/**"
+      - "tests/golden/**"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "docs/FORMAT.md"
+      - "third_party/corto/**"
+      - "third_party/corto-patches/**"
+      - "tests/golden/**"
+      - ".github/workflows/web.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      # The emsdk scripts and the compiler are both taken at the tag in corto-wasm/EMSDK_VERSION
+      - name: The emsdk version
+        id: emsdk
+        run: echo "version=$(tr -d '[:space:]' < corto-wasm/EMSDK_VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ runner.os }}-${{ steps.emsdk.outputs.version }}
+      - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "${{ steps.emsdk.outputs.version }}" https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "${{ steps.emsdk.outputs.version }}"
+      - name: corto.wasm
+        run: |
+          ~/emsdk/emsdk activate "${{ steps.emsdk.outputs.version }}"
+          source ~/emsdk/emsdk_env.sh
+          emcc --version | head -1
+          corto-wasm/build.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Bundles
+        run: npm run build
+      - name: The package holds the bundles, the worker, the wasm file and the licences
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP" > /dev/null
+          listing="$(tar tzf "$RUNNER_TEMP"/bm3d-viewer-*.tgz)"
+          for file in dist/bm3d-viewer.js dist/bm3d-viewer.min.js dist/corto-worker.js dist/corto.wasm LICENSE NOTICE README.md; do
+            echo "$listing" | grep -qx "package/$file" || { echo "missing from the package: $file"; exit 1; }
+          done
+      - name: Tests in node
+        run: npx vitest run
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Render the fixtures in Chromium
+        run: npm run test:browser

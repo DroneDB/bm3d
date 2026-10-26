@@ -1,0 +1,5 @@
+node_modules/
+dist/
+corto-wasm/out/
+test-results/
+playwright-report/
