@@ -4,6 +4,10 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- The Web workflow builds the command line and writes the golden files; the Python reader, the
+  tests in node and the render in Chromium read and draw them. The CI workflows share the set-up of
+  vcpkg and its binary cache (`.github/actions/vcpkg` and `vcpkg-save`).
+
 - **The output is the `.bm3d` format, version 1** (`docs/FORMAT.md`), and `formatVersion()` and
   `bm3d --version` say 1. The Nexus container (format 0) is no longer written, and `bm3d` reads
   neither: its magic number is `Nxs ` and this one is `BM3D`. The differences that matter: offsets

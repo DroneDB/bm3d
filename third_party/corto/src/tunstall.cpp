@@ -107,8 +107,14 @@ void Tunstall::getProbabilities(unsigned char *data, int size) {
 		}
 	}
 
+	//symbols of the same probability by symbol: the sort is not stable, and the order the
+	//standard libraries leave equal elements in differs, which would give each a different table
 	std::sort(probabilities.begin(), probabilities.end(),
-			  [](const Symbol &a, const Symbol &b)->bool { return a.probability > b.probability; });
+			  [](const Symbol &a, const Symbol &b)->bool {
+				  if(a.probability != b.probability)
+					  return a.probability > b.probability;
+				  return a.symbol < b.symbol;
+			  });
 #ifdef DEBUG_ENTROPY
 	cout << "Entropy: " << e << " theorical compression: " << e*size/8 << endl;
 #endif

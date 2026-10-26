@@ -62,10 +62,16 @@ public:
 	vcg::Point3f point;
 	vcg::Point3s *normal;
 
+	//A total order: by point, then the highest node first (the leafest node), then by index, so that
+	//no two vertices compare equal. With equal points and nodes left equal, the order the sort gave
+	//them was the library's own (libstdc++ and MSVC differ), and it decides which normal is copied
+	//and in what order the normals of a point are added up.
 	bool operator<(const NVertex &v) const {
-		if(point == v.point)
-			return node > v.node;  //ascending orde: the first will be the highest node order (the leafest node)
-		return point < v.point;
+		if(point != v.point)
+			return point < v.point;
+		if(node != v.node)
+			return node > v.node;
+		return index < v.index;
 	}
 };
 

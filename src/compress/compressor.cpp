@@ -41,6 +41,14 @@ float coordinateStep(float errorQ, float rootError, const std::vector<float> &le
 	return step;
 }
 
+int coordinateExponent(float step) {
+	int exponent = std::ilogb(step);   //floor(log2(step)), exact
+	//log2 of a negative exponent that is not a power of two is rounded up toward zero
+	if(exponent < 0 && std::ldexp(1.0f, exponent) != step)
+		exponent++;
+	return exponent;
+}
+
 NodeCompressor::NodeCompressor(const VertexLayout &layout, const CompressionSettings &settings, int coordinateExponent):
 	layout_(layout), settings_(settings), coordinateExponent_(coordinateExponent) {
 }
@@ -74,7 +82,7 @@ EncodedNode NodeCompressor::compress(const unsigned char *memory, uint32_t nvert
 	for(uint32_t end: patchEnds)
 		encoder.addGroup(end);
 
-	encoder.addPositions(coords, faces, static_cast<float>(std::pow(2, coordinateExponent_)));
+	encoder.addPositions(coords, faces, static_cast<float>(std::ldexp(1.0, coordinateExponent_)));
 	if(normals)
 		encoder.addNormals(normals, settings_.normalBits, crt::NormalAttr::ESTIMATED);
 	if(colors)

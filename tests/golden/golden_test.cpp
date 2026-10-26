@@ -9,12 +9,18 @@
 //
 // A hash that has to change on purpose is replaced in hashes.txt by the one the failure prints.
 // The inputs are written by the tests with coordinates that are exact in a float and no call of the
-// mathematical library, so that nothing in them depends on the machine.
+// mathematical library, so that nothing in them depends on the machine. The files are the same
+// bytes with every compiler and standard library: hashes.txt has one hash for each model, and the
+// CI checks it on Linux (libstdc++) and on Windows (MSVC). The models with many triangles in a node
+// are the ones where an order left to the library would show: equal keys in the sorts of the
+// builder and of the encoder, equal costs in the simplification, equal sizes in the texture packing.
 
 #include <array>
 #include <cstdlib>
 #include <fstream>
+#include <cmath>
 #include <functional>
+#include <iomanip>
 #include <map>
 #include <sstream>
 #include <string>
@@ -40,25 +46,7 @@ fs::path fixtureFolder() {
     return pathFromUtf8(folder && *folder ? folder : BM3D_GOLDEN_DEFAULT_DIR);
 }
 
-// The standard library the program was built with. The builder sorts the triangles of a node by the
-// node they belong to with std::sort, and the order the libraries give triangles with equal keys
-// differs (a library sorts a short range by insertion, which keeps their order, and a longer one by
-// partitions, which does not), so the file of a model with more than a few triangles in a node is
-// not the same bytes with every library. Builds with one library are repeatable, and hashes.txt has
-// a line for each library where the file differs: "name@library hash".
-const char* standardLibrary() {
-#if defined(_MSC_VER)
-    return "msvc";
-#elif defined(_LIBCPP_VERSION)
-    return "libc++";
-#elif defined(__GLIBCXX__)
-    return "libstdc++";
-#else
-    return "unknown";
-#endif
-}
-
-// name (or name@library) -> content hash, from hashes.txt
+// name -> content hash, from hashes.txt
 std::map<std::string, std::string> expectedHashes() {
     std::map<std::string, std::string> hashes;
     std::ifstream in(BM3D_GOLDEN_HASHES);
@@ -98,19 +86,12 @@ fs::path buildGolden(const TempDir& dir, const std::string& name, const fs::path
 
     const std::string hash = reader.contentHash();
     const auto expected = expectedHashes();
-    const std::string perLibrary = name + "@" + standardLibrary();
-    auto found = expected.find(perLibrary);
-    std::string key = perLibrary;
-    if (found == expected.end()) {
-        found = expected.find(name);
-        key = name;
-    }
+    const auto found = expected.find(name);
     if (found == expected.end())
-        ADD_FAILURE() << "hashes.txt has no hash for " << name << "; add the line\n" << name << " " << hash
-                      << "\n(or " << perLibrary << " if the file depends on the standard library)";
+        ADD_FAILURE() << "hashes.txt has no hash for " << name << "; add the line\n" << name << " " << hash;
     else
         EXPECT_EQ(hash, found->second) << name << ": the content of the file changed; if it was meant to, hashes.txt gets\n"
-                                       << key << " " << hash;
+                                       << name << " " << hash;
 
     const fs::path folder = fixtureFolder();
     std::error_code ec;
@@ -163,6 +144,156 @@ std::vector<Triangle> degenerateTriangles() {
         {{{0, 0, 0}, {4, 4, 0}, {0, 4, 0}}},
         {{{4, 4, 0}, {4, 4, 0}, {9, 9, 9}}},
     };
+}
+
+// An n x n grid over the height field with a texture, each square its own piece of texture: a
+// tile of 6 x 6 texels of the 64 x 64 picture (tiles of 8 x 8 texels, 64 of them, used in turn). A
+// node holds many pieces of the same size, which the texture of the node packs.
+std::string tiledObj(int n) {
+    std::ostringstream obj;
+    obj << "mtllib tiles.mtl\n";
+    for (int y = 0; y <= n; y++)
+        for (int x = 0; x <= n; x++) {
+            const int height = (7 * x + 3 * y + (x * y) % 5 + (x / 3) * (y / 2)) % 9;
+            obj << "v " << float(x) * 0.25f << " " << float(y) * 0.25f << " " << float(height) * 0.125f << "\n";
+        }
+    // multiples of 1/64, exact in a float and in their decimal form
+    const auto texel = [](int t) { return double(t) / 64.0; };
+    obj << "usemtl m\n";
+    int vt = 1;
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++) {
+            const int tile = (x + y * n) % 64;
+            const int u = (tile % 8) * 8 + 1, v = (tile / 8) * 8 + 1;
+            obj << "vt " << texel(u) << " " << texel(v) << "\nvt " << texel(u + 6) << " " << texel(v) << "\n"
+                << "vt " << texel(u + 6) << " " << texel(v + 6) << "\nvt " << texel(u) << " " << texel(v + 6) << "\n";
+            const int a = y * (n + 1) + x + 1, b = a + 1, c = a + n + 2, d = a + n + 1;
+            obj << "f " << a << "/" << vt << " " << b << "/" << vt + 1 << " " << c << "/" << vt + 2 << "\n"
+                << "f " << a << "/" << vt << " " << c << "/" << vt + 2 << " " << d << "/" << vt + 3 << "\n";
+            vt += 4;
+        }
+    return obj.str();
+}
+
+// 40 triangles that share one edge, the pages of a book, the next page facing the other way: an
+// edge of more than two faces, which the encoder has to pair
+std::string bookObj() {
+    std::vector<std::array<int, 3>> ring;  // points on the sides of a square around the spine
+    for (int x = -5; x < 5; x++) ring.push_back({x, -5, 2});
+    for (int y = -5; y < 5; y++) ring.push_back({5, y, 2});
+    for (int x = 5; x > -5; x--) ring.push_back({x, 5, 2});
+    for (int y = 5; y > -5; y--) ring.push_back({-5, y, 2});
+    std::ostringstream obj;
+    obj << "v 0 0 0\nv 0 0 4\n";
+    for (const auto& p : ring)
+        obj << "v " << p[0] << " " << p[1] << " " << p[2] << "\n";
+    for (size_t k = 0; k < ring.size(); k++)
+        obj << (k % 2 == 0 ? "f 1 2 " : "f 2 1 ") << k + 3 << "\n";
+    return obj.str();
+}
+
+// A 129 x 129 grid of squares over a hill, with a texture over it all: the textured model of the
+// viewer's tests. The coordinates are multiples of 1/128, the heights integers over 2^16.
+std::string terrainObj() {
+    const int n = 129;
+    std::ostringstream obj;
+    obj << std::setprecision(9) << "mtllib terrain.mtl\n";
+    for (int y = 0; y <= n; y++)
+        for (int x = 0; x <= n; x++) {
+            const int dx = x - 64, dy = y - 48;
+            const int height = 9000 - (dx * dx + dy * dy) / 2 + ((x * 7 + y * 3) % 13) * 20;
+            obj << "v " << double(x) / 128 << " " << double(y) / 128 << " " << double(height) / 65536 << "\n";
+        }
+    for (int y = 0; y <= n; y++)
+        for (int x = 0; x <= n; x++)
+            obj << "vt " << double(x) / n << " " << double(y) / n << "\n";
+    obj << "usemtl m\n";
+    const auto index = [n](int x, int y) { return y * (n + 1) + x + 1; };
+    for (int y = 0; y < n; y++)
+        for (int x = 0; x < n; x++) {
+            const int a = index(x, y), b = index(x + 1, y), c = index(x + 1, y + 1), d = index(x, y + 1);
+            obj << "f " << a << "/" << a << " " << b << "/" << b << " " << c << "/" << c << "\n"
+                << "f " << a << "/" << a << " " << c << "/" << c << " " << d << "/" << d << "\n";
+        }
+    return obj.str();
+}
+
+// A sphere of radius 1 with a colour at each vertex, made from a cube whose faces are cut into
+// 22 x 22 squares and whose points are pushed onto the sphere (a division by a square root, which
+// is exact to the last bit everywhere, unlike sin and cos). The colour follows the position (red
+// = 127.5 + 127 x, and so on). At each corner of the cube a triangle has two equal corners and a
+// third point inside the sphere: the encoder drops the triangle and that point, so the file holds
+// fewer vertices and triangles than the input (docs/FORMAT.md, section 12).
+std::string spherePly() {
+    const int k = 11;  // half the squares of a side
+    std::vector<std::array<int, 3>> points;
+    std::map<std::array<int, 3>, int> numbers;
+    const auto point = [&](int x, int y, int z) {
+        const std::array<int, 3> p{x, y, z};
+        const auto found = numbers.find(p);
+        if (found != numbers.end())
+            return found->second;
+        numbers[p] = int(points.size());
+        points.push_back(p);
+        return int(points.size()) - 1;
+    };
+    std::vector<std::array<int, 3>> faces;
+    // the six faces: the axis that is +-k, and the two that run over the face, in an order that
+    // makes the triangles face outwards
+    for (int axis = 0; axis < 3; axis++)
+        for (int sign : {-1, 1}) {
+            const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+            for (int i = -k; i < k; i++)
+                for (int j = -k; j < k; j++) {
+                    const auto at = [&](int a, int b) {
+                        std::array<int, 3> c{};
+                        c[axis] = sign * k;
+                        c[u] = a;
+                        c[v] = b;
+                        return point(c[0], c[1], c[2]);
+                    };
+                    const int p00 = at(i, j), p10 = at(i + 1, j), p11 = at(i + 1, j + 1), p01 = at(i, j + 1);
+                    if (sign > 0) {
+                        faces.push_back({p00, p10, p11});
+                        faces.push_back({p00, p11, p01});
+                    } else {
+                        faces.push_back({p00, p11, p10});
+                        faces.push_back({p00, p01, p11});
+                    }
+                }
+        }
+    const size_t surface = points.size();
+    std::vector<std::array<double, 3>> position(surface);
+    for (size_t i = 0; i < surface; i++) {
+        const auto& p = points[i];
+        const double length = std::sqrt(double(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]));
+        position[i] = {p[0] / length, p[1] / length, p[2] / length};
+    }
+    for (int x : {-k, k})
+        for (int y : {-k, k})
+            for (int z : {-k, k}) {
+                const int corner = numbers[{x, y, z}];
+                position.push_back({position[corner][0] / 2, position[corner][1] / 2, position[corner][2] / 2});
+                faces.push_back({corner, corner, int(position.size()) - 1});
+            }
+
+    std::ostringstream ply;
+    ply << "ply\nformat ascii 1.0\nelement vertex " << position.size()
+        << "\nproperty float x\nproperty float y\nproperty float z\n"
+           "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha\n"
+           "element face "
+        << faces.size() << "\nproperty list uchar int vertex_indices\nend_header\n";
+    ply << std::setprecision(9);
+    for (const auto& p : position) {
+        const float f[3] = {float(p[0]), float(p[1]), float(p[2])};
+        ply << f[0] << " " << f[1] << " " << f[2];
+        for (float c : f)
+            ply << " " << int(std::floor(127.5 + 127.0 * c + 0.5));
+        ply << " 255\n";
+    }
+    for (const auto& f : faces)
+        ply << "3 " << f[0] << " " << f[1] << " " << f[2] << "\n";
+    return ply.str();
 }
 
 TEST(GoldenFixtures, aCubeOfSquareFacesFromAnObj) {
@@ -241,6 +372,58 @@ TEST(GoldenFixtures, aSurfaceOfSeveralNodesFromABinaryStl) {
     bm3d::detail::Bm3dReader reader = bm3d::detail::Bm3dReader::open(pathToUtf8(file));
     EXPECT_EQ(reader.rootCount(), 1u);
     EXPECT_FALSE(reader.isLeaf(0));
+}
+
+// A textured surface whose node holds thousands of pieces of texture of the same size
+TEST(GoldenFixtures, aSurfaceOfManyPiecesOfTextureFromAnObj) {
+    TempDir dir;
+    writePng(dir.file("tiles.png"), makeRaster(64, 64, 3, [](int band, int x, int y) {
+                 return double((x * (11 * band) + y * (5 + 13 * band) + (x / 8) * (y / 8) * 7) % 256);
+             }));
+    writeTextFile(dir.file("tiles.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd tiles.png\n");
+    writeTextFile(dir.file("tiles.obj"), tiledObj(60));
+    const fs::path file = buildGolden(dir, "tiles", dir.file("tiles.obj"));
+    const Bm3dFile f = readBm3dFile(file);
+    EXPECT_GT(f.nNodes, 2u);
+    EXPECT_GT(f.nTextures, 0u);
+}
+
+// An edge shared by 40 triangles
+TEST(GoldenFixtures, theTrianglesOfOneEdgeFromAnObj) {
+    TempDir dir;
+    writeTextFile(dir.file("book.obj"), bookObj());
+    const fs::path file = buildGolden(dir, "book", dir.file("book.obj"));
+    const Bm3dFile f = readBm3dFile(file);
+    EXPECT_EQ(f.nNodes, 2u);
+    EXPECT_EQ(f.nface, 40u);
+}
+
+// The textured model of the viewer's tests: several nodes and textures, normals
+TEST(GoldenFixtures, aTexturedTerrainFromAnObj) {
+    TempDir dir;
+    writePng(dir.file("terrain.png"), makeRaster(512, 512, 3, [](int band, int x, int y) {
+                 const int check = ((x / 32) + (y / 32)) % 2;
+                 if (band == 1) return double(80 + check * 100 + (x % 32));
+                 if (band == 2) return double(60 + (y / 2) % 120 + check * 40);
+                 return double(40 + ((x + y) / 4) % 100);
+             }));
+    writeTextFile(dir.file("terrain.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd terrain.png\n");
+    writeTextFile(dir.file("terrain.obj"), terrainObj());
+    const fs::path file = buildGolden(dir, "terrain", dir.file("terrain.obj"));
+    const Bm3dFile f = readBm3dFile(file);
+    EXPECT_GT(f.nNodes, 5u);
+    EXPECT_GT(f.nTextures, 3u);
+}
+
+// The coloured model of the viewer's tests: one node, vertex colours, no texture
+TEST(GoldenFixtures, aSphereWithColoursFromAPly) {
+    TempDir dir;
+    writeTextFile(dir.file("sphere.ply"), spherePly());
+    const fs::path file = buildGolden(dir, "sphere", dir.file("sphere.ply"));
+    const Bm3dFile f = readBm3dFile(file);
+    EXPECT_EQ(f.nNodes, 2u);
+    EXPECT_TRUE(f.hasColors);
+    EXPECT_EQ(f.nface, 6u * 2 * 22 * 22);  // the 8 triangles with two equal corners are dropped
 }
 
 }  // namespace

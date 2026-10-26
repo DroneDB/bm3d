@@ -98,9 +98,6 @@ class AFace: public vcg::Face<
 		vcg::face::BitFlags> {
 public:
 	uint32_t node;
-	bool operator<(const AFace &t) const {
-		return node < t.node;
-	}
 };
 
 class Mesh: public vcg::tri::TriMesh<std::vector<AVertex>, std::vector<AFace> > {

@@ -31,7 +31,9 @@ commits.
   content hash that ignores the metadata, so that two builds of the same input have the same hash.
 - Full-resolution WebP textures, sized by texels instead of capped at 1024 pixels.
 - Hardened loaders for OBJ, PLY and STL.
-- Deterministic output: the same input gives the same bytes.
+- Deterministic output: the same input and options give the same bytes on every platform (GCC,
+  Clang and MSVC builds write the same file; the golden tests check it), and the same content hash
+  (docs/FORMAT.md, section 9) with any number of threads.
 - UTF-8 paths on every platform, and atomic output: the file is written under a temporary name
   and renamed only when the build succeeds.
 

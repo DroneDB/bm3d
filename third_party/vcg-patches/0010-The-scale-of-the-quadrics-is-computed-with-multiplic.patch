@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 23:48:52 +0100
+Subject: [PATCH] The scale of the quadrics is computed with multiplications,
+ not pow
+
+With ScaleIndependent the costs of the collapses are multiplied by 1e8 / diag^6, which was
+computed with pow. The last bit of pow is not the same in every mathematical library, and the
+factor scales the cost of every collapse: the order of two collapses of almost the same cost, and
+the comparisons with QuadricEpsilon, could differ between platforms. The power is now the product
+of two cubes, whose bits IEEE arithmetic fixes.
+---
+ .../local_optimization/tri_edge_collapse_quadric.h         | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+index bf5d0d0..4e76be2 100644
+--- a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
++++ b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+@@ -601,7 +601,12 @@ public:
+     {
+       vcg::tri::UpdateBounding<TriMeshType>::Box(m);
+       //Make all quadric independent from mesh size
+-      pp->ScaleFactor = 1e8*pow(1.0/m.bbox.Diag(),6); // scaling factor
++      // scaling factor: 1e8 / diag^6, by multiplications, which give the same bits everywhere
++      // (pow does not: the last bit of its result is not the same in every mathematical library,
++      // and the factor scales the cost of every collapse)
++      const double inverse = 1.0/m.bbox.Diag();
++      const double cube = inverse*inverse*inverse;
++      pp->ScaleFactor = 1e8*(cube*cube);
+     }
+ 
+     if(pp->QualityWeight) // we map quality range into a squared 01 and than this into the 1..QualityWeightFactor range
+-- 
+2.53.0
+

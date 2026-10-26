@@ -21,6 +21,7 @@ for more details.
 #include "../common/numeric.h"
 
 #include "mesh.h"
+#include "nodepatches.h"
 #include <iostream>
 
 using namespace std;
@@ -177,29 +178,7 @@ uint32_t Mesh::serializedSize(const bm3d::detail::VertexLayout &layout) {
 
 void Mesh:: serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches) {
 
-	//find patches and triangle (splat) offsets
-	//sort face by node.
-	std::sort(face.begin(), face.end());
-
-	//remember triangleOffset is the END of the triangles in the patch
-	uint32_t current_node = face[0].node;
-	for(unsigned int i = 0; i < face.size(); i++) {
-		AFace &f = face[i];
-		if(f.node != current_node) {
-			bm3d::detail::PatchRecord patch;
-			patch.node = current_node;
-			patch.triangleOffset  = i;
-			patch.texture = 0xffffffff;
-			patches.push_back(patch);
-			current_node  = f.node;
-		}
-	}
-
-	bm3d::detail::PatchRecord patch;
-	patch.node = current_node;
-	patch.triangleOffset  = face.size();
-	patch.texture = 0xffffffff;
-	patches.push_back(patch);
+	sortFacesIntoPatches(face, patches);
 
 	if(layout.normals)
 		vcg::tri::UpdateNormal<Mesh>::PerVertexNormalized(*this);

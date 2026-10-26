@@ -39,6 +39,12 @@ struct CompressionSettings {
 //and the leaves
 float coordinateStep(float errorQ, float rootError, const std::vector<float> &leafErrors);
 
+//The exponent of the coordinate step: log2(step) rounded toward zero (a step of 0.3 gives -1, one of
+//3 gives 1, a power of two its own exponent). Read from the bits of the float, not computed with
+//log2, whose last bit is not the same in every mathematical library: one bit off at a power of two
+//would halve or double the step of every coordinate of the file.
+int coordinateExponent(float step);
+
 //One node as corto wrote it. The encoder drops the triangles whose corners are not three
 //different vertices, and then the vertices no triangle uses, and moves the end of each group to
 //match: the counts and the ends of the groups are the ones to write in the file, not the ones

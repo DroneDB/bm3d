@@ -601,7 +601,12 @@ public:
     {
       vcg::tri::UpdateBounding<TriMeshType>::Box(m);
       //Make all quadric independent from mesh size
-      pp->ScaleFactor = 1e8*pow(1.0/m.bbox.Diag(),6); // scaling factor
+      // scaling factor: 1e8 / diag^6, by multiplications, which give the same bits everywhere
+      // (pow does not: the last bit of its result is not the same in every mathematical library,
+      // and the factor scales the cost of every collapse)
+      const double inverse = 1.0/m.bbox.Diag();
+      const double cube = inverse*inverse*inverse;
+      pp->ScaleFactor = 1e8*(cube*cube);
     }
 
     if(pp->QualityWeight) // we map quality range into a squared 01 and than this into the 1..QualityWeightFactor range

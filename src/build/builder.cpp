@@ -212,10 +212,15 @@ int Builder::textureBoundLevels(KDTreeSoup *tree) const {
 	if(density <= balanced)
 		return 0;
 	//a texture cannot be halved more than 64 times (2^64 texels along a side), and the density of a
-	//model whose texture coordinates are huge is an infinity, or too large to count the levels of
-	const double kMaxLevels = 64;
-	const double levels = std::ceil(std::log(density / balanced) / std::log(4.0));
-	return levels < kMaxLevels ? int(levels) : int(kMaxLevels);
+	//model whose texture coordinates are huge is an infinity, or too large to count the levels of.
+	//The levels are counted by multiplying by 4, which is exact, and not with log(density)/log(4):
+	//the logarithm of the mathematical library is not the same in the last bit on every platform,
+	//and a density that is a power of 4 times the balanced one would round up on some.
+	const int kMaxLevels = 64;
+	int levels = 0;
+	for(double reached = balanced; reached < density && levels < kMaxLevels; reached *= 4)
+		levels++;
+	return levels;
 }
 
 //The texels around the triangles that are kept as they are: bilinear filtering and the first
@@ -873,7 +878,7 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 		if(patches[nodes[i].first_patch].node == sink)
 			leafErrors.push_back(nodes[i].error);
 	const float step = coordinateStep(compression.errorQ, nodes[0].error, leafErrors);
-	const NodeCompressor compressor(layout, compression, static_cast<int>(std::log2(step)));
+	const NodeCompressor compressor(layout, compression, coordinateExponent(step));
 
 	Bm3dWriter writer(filename, layout, {sink, static_cast<uint32_t>(patches.size()), static_cast<uint32_t>(textures.size())});
 

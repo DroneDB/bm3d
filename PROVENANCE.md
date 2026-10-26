@@ -8,8 +8,8 @@ named by their commit names.
 | Part | Upstream | Fork or pin used here |
 |---|---|---|
 | Nexus builder | https://github.com/cnr-isti-vclab/nexus, `master` at `f29e8fd1182b2a1c0c512add99c7edfc8e146680` | https://github.com/DroneDB/nexus at `847f024bf7cc0beb078868749bc7669748c0aa3d` |
-| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 7 patches (`third_party/vcg-patches/`) |
-| corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 5 patches (`third_party/corto-patches/`) |
+| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 10 patches (`third_party/vcg-patches/`) |
+| corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 6 patches (`third_party/corto-patches/`) |
 | API and command line wrapper | none | https://github.com/DroneDB/libnexus at `18acb8c161fd85d1eb614d8be0f8b4dae5fe16f1` (`nxs.cpp`, `nxs.h`, `ddb_nexus_main.cpp`) |
 | Web viewer (added with the release that ships `web/`) | the JavaScript in `html/js` of Nexus, commit `d805432` | the same, with fixes recorded in `web/` |
 
@@ -26,8 +26,8 @@ GPL-3.0 (version 3 only) in October 2026, before it was used here.
 
 ### The corto patches
 
-The 5 patches in `third_party/corto-patches/` are ours (HeDo, `git format-patch d240e69..`), made
-to fix what AddressSanitizer and UndefinedBehaviorSanitizer reported in the encoder when the
+The 6 patches in `third_party/corto-patches/` are ours (HeDo, `git format-patch d240e69..`). The
+first 5 were made to fix what AddressSanitizer and UndefinedBehaviorSanitizer reported in the encoder when the
 tests and the mutation loop of `tests/robustness` ran with no suppression. They touch
 `include/corto/normal_attribute.h` (`toOcta` of a float vector returns (0, 0) for a vector of
 length zero, as the integer form does), `include/corto/cstream.h` (`push` of an empty array copies
@@ -37,7 +37,11 @@ for zero words, which was a leak of one allocation per node of fewer than 4 vert
 first can change the bytes written, and only in the nodes with a vertex whose normals sum to zero
 (a vertex of degenerate triangles only): the encoder predicted that vertex's normal from
 `INT_MIN` instead of from (0, 0), so its stored difference was larger; the normals read back are
-the same.
+the same. The sixth (`0006`) gives two sorts of the encoder an order for equal keys, which they
+left to the standard library (libstdc++ and MSVC order them differently, so the streams differed
+between platforms): `src/tunstall.cpp` orders the symbols of equal probability by symbol, and
+`src/encoder.cpp` the topology edges of the same two vertices by face and side. The decoder reads
+the Tunstall table from the stream, so it is not touched.
 
 ### The VCGLib patches
 
@@ -64,6 +68,15 @@ a plain expansion), the `Allocator` functions that take an Eigen matrix, the pol
 fit a plane, take the principal components or align a template, `Stat::ComputeMeshVolume` and
 `Clean::SelectFoldedFaceFromOneRingFaces`. `fitting3.h`, `point_matching.h` and `inertia.h` are not
 read any more and are no longer taken (93 files of VCGLib instead of 96).
+
+Three more (HeDo, `0008` to `0010`) make the output the same with every standard library and
+mathematical library: `complex/algorithms/local_optimization.h` numbers each element of the heap
+of the local optimization when it is made and does the operations of equal priority in that order
+(the heap functions of the libraries leave equal elements in orders of their own);
+`space/rect_packer.h` orders rectangles of the same size by their index; and
+`complex/algorithms/local_optimization/tri_edge_collapse_quadric.h` computes the scale of the
+quadrics, `1e8 / diag^6`, with multiplications instead of `pow`, whose last bit differs between
+libraries.
 
 ## Files taken and how to repeat it
 
@@ -148,9 +161,25 @@ describe what was done to them before.
   upstream, and corto reorders the faces while compressing anyway. The include of
   `vertex_cache_optimizer.h` and the dead call go with it. Output does not change.
 - `third_party/vcg/wrap/ply/plylib.{cpp,h}`: the patches `0001` to `0006` above; and `third_party/vcg/vcg/` `math/quadric.h`, `math/matrix33.h`, `math/matrix44.h`, `space/polygon3.h`,
-  `complex/allocate.h`, `complex/algorithms/` `stat.h`, `clean.h` and `local_optimization/tri_edge_collapse_quadric.h`: the patch `0007`.
+  `complex/allocate.h`, `complex/algorithms/` `stat.h`, `clean.h` and `local_optimization/tri_edge_collapse_quadric.h`: the patch `0007`;
+  `complex/algorithms/local_optimization.h`, `space/rect_packer.h` and
+  `complex/algorithms/local_optimization/tri_edge_collapse_quadric.h`: the patches `0008` to `0010`.
 - `third_party/corto/` `include/corto/normal_attribute.h`, `include/corto/cstream.h`,
-  `src/bitstream.cpp`: the 5 corto patches above.
+  `src/bitstream.cpp`: the first 5 corto patches above; `src/tunstall.cpp`, `src/encoder.cpp`: the
+  sixth.
+- `src/build/mesh.{h,cpp}`, `src/build/tmesh.{h,cpp}`, `src/build/nodepatches.h`,
+  `src/build/builder.h`: the triangles of a node are sorted into patches by `sortFacesIntoPatches`
+  (one copy of what both meshes did), with a stable sort instead of `std::sort` on the node alone,
+  and the faces lose the `operator<` that sort used; the border vertices (`NVertex`) are ordered by
+  point, node and index. Equal keys were left in the order of the standard library, which is not
+  the same with libstdc++ and MSVC.
+- `src/common/cone.{h,cpp}`: the ring of a normal (`coneRing`) is found by comparing its cosine with
+  constant cosines, and the axis is scaled by a constant sine, where `acos` and `cos` were called;
+  both `AddNormals` share it. `src/compress/compressor.{h,cpp}` and `src/build/builder.cpp`: the
+  exponent of the coordinate step is read from the bits of the float (`coordinateExponent`) instead
+  of `log2`, the quantisation step is `ldexp` instead of `pow`, and the levels a texture needs are
+  counted by multiplying by 4 instead of with `log`. The last bit of those functions is not the
+  same in every mathematical library.
 - `src/build/node.h` (`dag.h` of Nexus): every field of `Node` has a value from the start, and the
   empty sphere has its centre at the origin (`emptySphere()`). The sink node that ended the node
   table set only `first_patch`, so the file got the rest of it as it lay on the stack, and two

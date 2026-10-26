@@ -8,6 +8,7 @@ patch: f048ab468b2c8315014e80d3842d55fd15f919253fd629db88130b5e8b40439b  0002-Ou
 patch: e4bc109df54915cb7fc8470a57dcf95d21b96a9f13357903e24ca6bcfa3d248f  0003-OutStream-write-T-stores-a-value-with-memcpy.patch
 patch: 3617f16270d1312f1485b5406513035759f3b007c0c9dd516b5b378d752b6d27  0004-BitStream-read-masks-with-an-unsigned-word.patch
 patch: aab3301b6ba04b3bdff8901d9a2d8a5a079d6350b84b0e914b024cf8c24ea984  0005-BitStream-reserve-frees-the-buffer-it-replaces-and-a.patch
+patch: d123deff8edc8cfeb93b9e3b6c649332e12849b39438be5623648bd66e123f79  0006-The-encoder-orders-symbols-and-edges-of-equal-keys-t.patch
 files:
 d44ebc5edaa5e7ce46f091777d19d680f8c4dfa99b39e852f6191ad064a54435  include/corto/bitstream.h
 3eb6b17449b6376eed559a6252ba8b850d76731d088402aa7836f97ee14f9249  include/corto/color_attribute.h
@@ -27,6 +28,6 @@ c05d44e7a02b2c050da368b6ba48532f0ce58928b9ad2e6ab5266ff858a9c054  src/color_attr
 04ddb33932ca419f8e8a23edaec0a65ae5981f4bb2a3ca6305ef4a74e26e0cbc  src/corto_codec.h
 fffae73f3dee7c9e3bea89da1fca17daae7a8c6f89aed163cde03b77afb1f4ff  src/cstream.cpp
 414a265ce45120566699f66cdade3c160857c8b12d917071c2d03aa4209e2d4c  src/decoder.cpp
-8dae873bcaa37ef6e43e8f25c92f7a54368da2cb50cf62bdb982317f22806f4e  src/encoder.cpp
+966f7209865465f7d55bfad774adbab9f80e8dc6ca745bfc77e29e3c56258138  src/encoder.cpp
 c841368f3156a291adfec1c20f7af98fa0856e3a79a2d2331844821cd28ef163  src/normal_attribute.cpp
-db150d6bcb0e61867a597a66eba2c058c6895253781116f41b1db957b5802d50  src/tunstall.cpp
+e7ae159b9ab9ad93922563df477cab42700f598fe00fcfcfcd235236a52953fe  src/tunstall.cpp

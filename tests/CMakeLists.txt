@@ -3,7 +3,8 @@
 #
 # The tests, one program per label:
 #   unit         the pieces that need no model: argument checks, the JSON checker, versions, the format
-#                library (records, writer, reader, hash, metadata) and the corto compressor
+#                library (records, writer, reader, hash, metadata), the corto compressor and the
+#                orders the builder gives equal keys
 #   integration  models built through the library and read back from the file
 #   cli          the program run as a process: arguments, exit codes, output, paths
 #   determinism  the same input built again, and with another thread count, gives the same file
@@ -77,14 +78,16 @@ endfunction()
 bm3d_add_tests(bm3d_unit_tests unit
     unit/build_options_test.cpp
     unit/compressor_test.cpp
+    unit/equal_keys_test.cpp
     unit/format_records_test.cpp
     unit/format_writer_reader_test.cpp
     unit/json_object_test.cpp
     unit/metadata_test.cpp
     unit/sha256_test.cpp
     unit/version_test.cpp)
-# The JSON checker is internal to the program: its header is not part of the library's interface
-target_include_directories(bm3d_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/format)
+# The JSON checker is internal to the program: its header is not part of the library's interface.
+# The headers of the builder include each other by their bare names.
+target_include_directories(bm3d_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/format ${PROJECT_SOURCE_DIR}/src/build)
 target_link_libraries(bm3d_unit_tests PRIVATE bm3d_corto bm3d_vcg)
 
 bm3d_add_tests(bm3d_integration_tests integration

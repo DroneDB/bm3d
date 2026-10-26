@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Mon, 26 Oct 2026 23:48:52 +0100
+Subject: [PATCH] The encoder orders symbols and edges of equal keys the same
+ with every standard library
+
+Two sorts of the encoder left elements with equal keys in the order std::sort gives them, which
+differs between libstdc++ and the library of MSVC: the symbols of the Tunstall table with the same
+probability, and the topology edges of the same two vertices. The first changes the table written
+in the stream, the second which faces are made neighbours across an edge that more than two faces
+share. Symbols of equal probability are now ordered by symbol, and edges of the same vertices by
+face and side. The decoder reads the table from the stream, so streams written before decode as
+they did.
+---
+ src/encoder.cpp  | 10 +++++++---
+ src/tunstall.cpp |  8 +++++++-
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/src/encoder.cpp b/src/encoder.cpp
+index 6505a62..b979803 100644
+--- a/src/encoder.cpp
++++ b/src/encoder.cpp
+@@ -435,10 +435,14 @@ public:
+ 		return face == e.face && v0 == e.v0 && v1 == e.v1;
+ 	}
+ 
++	//the edges of the same two vertices by face and side: more than two faces can share an edge,
++	//and which two are made neighbours depends on their order, which the sort (not a stable one)
++	//would leave to the standard library
+ 	bool operator<(const McEdge &edge) const {
+-		if(v0 < edge.v0) return true;
+-		if(v0 > edge.v0) return false;
+-		return v1 < edge.v1;
++		if(v0 != edge.v0) return v0 < edge.v0;
++		if(v1 != edge.v1) return v1 < edge.v1;
++		if(face != edge.face) return face < edge.face;
++		return side < edge.side;
+ 	}
+ 	bool match(const McEdge &edge) const {
+ 		if(inverted && edge.inverted) return false;
+diff --git a/src/tunstall.cpp b/src/tunstall.cpp
+index 888f317..8ec5132 100644
+--- a/src/tunstall.cpp
++++ b/src/tunstall.cpp
+@@ -107,8 +107,14 @@ void Tunstall::getProbabilities(unsigned char *data, int size) {
+ 		}
+ 	}
+ 
++	//symbols of the same probability by symbol: the sort is not stable, and the order the
++	//standard libraries leave equal elements in differs, which would give each a different table
+ 	std::sort(probabilities.begin(), probabilities.end(),
+-			  [](const Symbol &a, const Symbol &b)->bool { return a.probability > b.probability; });
++			  [](const Symbol &a, const Symbol &b)->bool {
++				  if(a.probability != b.probability)
++					  return a.probability > b.probability;
++				  return a.symbol < b.symbol;
++			  });
+ #ifdef DEBUG_ENTROPY
+ 	cout << "Entropy: " << e << " theorical compression: " << e*size/8 << endl;
+ #endif
+-- 
+2.53.0
+

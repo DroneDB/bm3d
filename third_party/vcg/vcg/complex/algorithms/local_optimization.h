@@ -24,6 +24,7 @@
 #ifndef __VCGLIB_LOCALOPTIMIZATION
 #define __VCGLIB_LOCALOPTIMIZATION
 #include <vcg/complex/complex.h>
+#include <atomic>
 #include <time.h>
 namespace vcg{
 // Base class for Parameters
@@ -167,19 +168,34 @@ public:
     ///pointer to instance of local modifier
     LocModType *locModPtr;
     float pri;
+    /// When the element was made: of two operations with the same priority, the one made first
+    /// is done first. Without it the order of equal priorities is the one the heap functions of
+    /// the standard library leave, which is not the same in every library (a flat region, where
+    /// every collapse costs 0, would be simplified differently by each).
+    unsigned long long serial;
    
     inline HeapElem( LocModType *_locModPtr)
     {
       locModPtr = _locModPtr;
       pri=float(locModPtr->Priority());
+      serial=NextSerial();
+    }
+
+    /// Increasing over the whole program, so that it is increasing in each heap whichever
+    /// thread fills it; only the order of the numbers of one heap matters.
+    static unsigned long long NextSerial()
+    {
+      static std::atomic<unsigned long long> next(0);
+      return next.fetch_add(1, std::memory_order_relaxed);
     }
 
     /// STL heap has the largest element as the first one.
     /// usually we mean priority as an error so we should invert the comparison
     inline bool operator <(const HeapElem & h) const
     { 
-		  return (pri > h.pri);
-		  //return (locModPtr->Priority() < h.locModPtr->Priority());
+		  if (pri != h.pri)
+		    return (pri > h.pri);
+		  return (serial > h.serial);
 	  }
 
     bool IsUpToDate() const

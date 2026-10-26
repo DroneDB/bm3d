@@ -44,6 +44,65 @@ bool AnchoredCone3f::Backface(const Point3f &viewPoint) {
 	return true;
 }
 
+//The cone of a node is found by putting the normals into kConeRings rings of equal angle around
+//their mean, ring k holding the angles in [k, k+1) * pi / 49 (ring 49 only the opposite direction),
+//and taking the smallest number of rings that holds the share `threshold` of them. The angles are
+//compared through their cosines, and the half angle of the cone through its sine, with constants:
+//acos and cos of the mathematical library differ in the last bit between platforms, and a normal
+//moved to the next ring, or a sine one bit apart, would change the cone in the file.
+static const int kConeRings = 50;
+
+//kRingCosine[k-1] = cos(k * pi / 49), k = 1..49, each the double nearest to the exact value
+static const double kRingCosine[kConeRings - 1] = {
+	0.9979453927503363, 0.9917900138232462, 0.9815591569910653, 0.9672948630390295,
+	0.9490557470106686, 0.9269167573460217, 0.9009688679024191, 0.8713187041233893,
+	0.8380881048918407, 0.8014136218679566, 0.7614459583691344, 0.7183493500977276,
+	0.6723008902613168, 0.6234898018587335, 0.5721166601221697, 0.518392568310525,
+	0.46253829024083526, 0.40478334312239383, 0.3453650544213076, 0.28452758663103245,
+	0.2225209339563144, 0.15959989503337924, 0.09602302590768176, 0.03205157757165517,
+	-0.03205157757165517, -0.09602302590768176, -0.15959989503337924, -0.2225209339563144,
+	-0.28452758663103245, -0.3453650544213076, -0.40478334312239383, -0.46253829024083526,
+	-0.518392568310525, -0.5721166601221697, -0.6234898018587335, -0.6723008902613168,
+	-0.7183493500977276, -0.7614459583691344, -0.8014136218679566, -0.8380881048918407,
+	-0.8713187041233893, -0.9009688679024191, -0.9269167573460217, -0.9490557470106686,
+	-0.9672948630390295, -0.9815591569910653, -0.9917900138232462, -0.9979453927503363,
+	-1.0,
+};
+
+//The cones up to the ring kConeWidestRing; a wider one culls nothing and is stored as no cone
+static const int kConeWidestRing = 22;
+//kRingSine[k] = sin(pi * (k + 1) / 50), k = 0..kConeWidestRing: the sine of the half angle of a
+//cone of k + 1 rings, each the double nearest to the exact value
+static const double kRingSine[kConeWidestRing + 1] = {
+	0.06279051952931337, 0.12533323356430426, 0.18738131458572463, 0.2486898871648548,
+	0.30901699437494745, 0.368124552684678, 0.42577929156507266, 0.48175367410171527,
+	0.5358267949789967, 0.5877852522924731, 0.6374239897486897, 0.6845471059286887,
+	0.7289686274214116, 0.7705132427757893, 0.8090169943749475, 0.8443279255020151,
+	0.8763066800438636, 0.9048270524660196, 0.9297764858882515, 0.9510565162951535,
+	0.9685831611286311, 0.9822872507286887, 0.9921147013144779,
+};
+
+//The ring of the direction n around the unit axis, or -1 for a direction of no length: the number
+//of ring boundaries the angle between them reaches
+int bm3d::detail::coneRing(const Point3f &axis, const Point3f &n) {
+	const float w = axis.Norm()*n.Norm();
+	if(w == 0)
+		return -1;
+	const float t = (axis*n)/w;
+	int ring = 0;
+	while(ring < kConeRings - 1 && t <= kRingCosine[ring])
+		ring++;
+	return ring;
+}
+
+//The axis of a cone of the rings 0..widest: the unit mean scaled by 1/sin of the half angle (the
+//file stores that length), or no axis when the cone is too wide to cull anything
+static Point3f coneAxis(const Point3f &unitMean, int widest) {
+	if(widest > kConeWidestRing)
+		return Point3f(0, 0, 0);
+	return unitMean / float(kRingSine[widest]);
+}
+
 void AnchoredCone3f::AddNormals(vector<Point3f> &normal, vector<float> &area, float threshold) {
 	assert(normal.size() == area.size());
 	//compute average normal
@@ -52,34 +111,26 @@ void AnchoredCone3f::AddNormals(vector<Point3f> &normal, vector<float> &area, fl
 		scaledNormal += n;
 	scaledNormal.Normalize();
 
-	//create 50 concentric rings around the average normal (scaledNormal)
-	double distr[50];
-	for(int k = 0; k < 50; k++)
+	double distr[kConeRings];
+	for(int k = 0; k < kConeRings; k++)
 		distr[k] = 0;
-	double tot_area = 0;
 
-	vector<float>::iterator j;
-	vector<Point3f>::iterator i;
-	for(i = normal.begin(), j = area.begin(); i != normal.end(); i++, j++) {
-		int pos = (int)(49.0 * Angle(scaledNormal, *i)/M_PI);
-		if(pos < 0) continue;
-		assert(pos >=0 && pos < 50);
-		distr[pos] += *j;
-		tot_area += *j;
+	double tot_area = 0;
+	for(size_t i = 0; i < normal.size(); i++) {
+		const int ring = coneRing(scaledNormal, normal[i]);
+		if(ring < 0) continue;
+		distr[ring] += area[i];
+		tot_area += area[i];
 	}
 
 	float tot = 0;
 	int best;
-	for(best = 0; best < 50; best++) {
+	for(best = 0; best < kConeRings; best++) {
 		tot += (float)distr[best];
 		if(tot > threshold * tot_area)
 			break;
 	}
-	double alpha = M_PI * (best + 1) / 50;
-	if(alpha >= M_PI/ 2 - 0.1)
-		scaledNormal = Point3f(0,0,0);
-	else
-		scaledNormal /= cos(M_PI/2.0f - alpha);
+	scaledNormal = coneAxis(scaledNormal, best);
 }
 
 void AnchoredCone3f::AddNormals(vector<Point3f> &normal, float threshold) {
@@ -97,27 +148,23 @@ void AnchoredCone3f::AddNormals(vector<Point3f> &normal, float threshold) {
 	if(len == 0) return;
 	scaledNormal /= len;
 
-	int distr[50];
-	for(int k = 0; k < 50; k++)
+	int distr[kConeRings];
+	for(int k = 0; k < kConeRings; k++)
 		distr[k] =0;
 
 	for(auto &n: normal) {
-		int pos = (int)(49.0 * Angle(scaledNormal, n)/M_PI);
-		distr[pos]++;
+		const int ring = coneRing(scaledNormal, n);
+		if(ring < 0) continue;
+		distr[ring]++;
 	}
 	int tot = 0;
 	int best;
-	for(best = 0; best < 50; best++) {
+	for(best = 0; best < kConeRings; best++) {
 		tot += distr[best];
 		if(tot >= threshold * normal.size())
 			break;
 	}
-	double alpha = M_PI * (best +1) / 50;
-	if(alpha >= M_PI/ 2 - 0.1) {
-		scaledNormal = Point3f(0,0,0);
-	} else {
-		scaledNormal /= cos(M_PI/2.0f - alpha);
-	}
+	scaledNormal = coneAxis(scaledNormal, best);
 }
 
 void AnchoredCone3f::AddAnchors(vector<Point3f> &anchors) {

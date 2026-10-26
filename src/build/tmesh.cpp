@@ -21,6 +21,7 @@ for more details.
 #include "../common/numeric.h"
 
 #include "tmesh.h"
+#include "nodepatches.h"
 
 #include <iostream>
 
@@ -250,29 +251,7 @@ void TMesh::serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &l
 	assert(vn == (int)vert.size());
 	assert(fn == (int)face.size());
 
-	//find patches and triangle (splat) offsets
-	//sort face by node.
-	std::sort(face.begin(), face.end());
-
-	//remember triangleOffset is the END of the triangles in the patch
-	uint32_t current_node = face[0].node;
-	for(int i = 0; i < fn; i++) {
-		TFace &f = face[i];
-		if(f.node != current_node) {
-			bm3d::detail::PatchRecord patch;
-			patch.node = current_node;
-			patch.triangleOffset  = i;
-			patch.texture = 0xffffffff;
-			patches.push_back(patch);
-			current_node  = f.node;
-		}
-	}
-
-	bm3d::detail::PatchRecord patch;
-	patch.node = current_node;
-	patch.triangleOffset  = face.size();
-	patch.texture = 0xffffffff;
-	patches.push_back(patch);
+	sortFacesIntoPatches(face, patches);
 
 	vcg::Point3f *c = (vcg::Point3f *)buffer;
 	for(int i = 0; i < vn; i++)

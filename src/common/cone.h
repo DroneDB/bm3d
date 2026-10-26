@@ -27,6 +27,10 @@ for more details.
 namespace bm3d::detail {
 
 
+//The ring, 0 to 49, of the direction n around the axis of a cone: the angle between them in units
+//of pi / 49, rounded down. -1 when one of the two has no length.
+int coneRing(const vcg::Point3f &axis, const vcg::Point3f &n);
+
 //anchored normal cone.
 class AnchoredCone3f {
 public:

@@ -221,7 +221,47 @@ TEST(CoordinateStep, aLeafWithoutErrorIsLeftOutAndAStepThatIsNotPositiveBecomesO
     EXPECT_EQ(coordinateStep(0.1f, -1.0f, {}), 1.0f);
 }
 
+// The exponent is log2 of the step rounded toward zero, read from the bits of the float
+TEST(CoordinateStep, theExponentIsTheLogarithmRoundedTowardZero) {
+    for (int e = -40; e <= 40; e++) {
+        const float power = std::ldexp(1.0f, e);
+        EXPECT_EQ(coordinateExponent(power), e) << power;
+        // just above and below a power of two
+        const float above = std::nextafter(power, 2 * power), below = std::nextafter(power, 0.0f);
+        EXPECT_EQ(coordinateExponent(above), e < 0 ? e + 1 : e) << above;
+        EXPECT_EQ(coordinateExponent(below), e <= 0 ? e : e - 1) << below;
+    }
+    EXPECT_EQ(coordinateExponent(0.3f), -1);
+    EXPECT_EQ(coordinateExponent(3.0f), 1);
+    EXPECT_EQ(coordinateExponent(0.75f), 0);
+    EXPECT_EQ(coordinateExponent(1e-42f), -139);  // a subnormal step
+}
+
 // --- the cone -----------------------------------------------------------------------------------
+
+// The ring of a direction is its angle with the axis in units of pi/49, rounded down: what
+// int(49 * acos(t) / pi) gives wherever the angle is not within a hair of a boundary
+TEST(Cone, theRingIsTheAngleInFortyNinthsOfPiRoundedDown) {
+    const double pi = 3.14159265358979323846;
+    const vcg::Point3f axis(0, 0, 1);
+    int checked = 0;
+    for (int i = 0; i <= 20000; i++) {
+        const double angle = pi * i / 20000;
+        const vcg::Point3f n(float(std::sin(angle)), 0.0f, float(std::cos(angle)));
+        // the angle the float direction makes: the cosine is a float as in coneRing
+        const float t = (axis * n) / (axis.Norm() * n.Norm());
+        const double rings = 49 * std::acos(std::max(-1.0, std::min(1.0, double(t)))) / pi;
+        if (std::fabs(rings - std::round(rings)) < 1e-6 && rings > 0 && rings < 49)
+            continue;  // at a boundary, where the last bit of acos decides
+        ASSERT_EQ(coneRing(axis, n), int(rings)) << angle;
+        checked++;
+    }
+    EXPECT_GT(checked, 19000);
+    EXPECT_EQ(coneRing(axis, vcg::Point3f(0, 0, 0)), -1);   // a direction of no length
+    EXPECT_EQ(coneRing(axis, vcg::Point3f(0, 0, -5)), 49);  // the opposite direction
+    EXPECT_EQ(coneRing(axis, vcg::Point3f(0, 0, 2)), 0);
+}
+
 
 std::array<short, 4> coneOf(const std::vector<vcg::Point3f>& normals) {
     std::vector<vcg::Point3f> copy = normals;

@@ -435,10 +435,14 @@ public:
 		return face == e.face && v0 == e.v0 && v1 == e.v1;
 	}
 
+	//the edges of the same two vertices by face and side: more than two faces can share an edge,
+	//and which two are made neighbours depends on their order, which the sort (not a stable one)
+	//would leave to the standard library
 	bool operator<(const McEdge &edge) const {
-		if(v0 < edge.v0) return true;
-		if(v0 > edge.v0) return false;
-		return v1 < edge.v1;
+		if(v0 != edge.v0) return v0 < edge.v0;
+		if(v1 != edge.v1) return v1 < edge.v1;
+		if(face != edge.face) return face < edge.face;
+		return side < edge.side;
 	}
 	bool match(const McEdge &edge) const {
 		if(inverted && edge.inverted) return false;

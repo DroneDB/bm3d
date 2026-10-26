@@ -397,8 +397,12 @@ public:
     const Point2i &va=v[a];
     const Point2i &vb=v[b];
 
-    return	 (va[1]!=vb[1])?(va[1]>vb[1]):
-                (va[0]>vb[0]);
+    // Rectangles of the same size keep the order they are given in: the sort that uses
+    // this order is not stable, and the standard libraries leave equal elements in different
+    // orders, which would place them at different positions on each platform.
+    if (va[1]!=vb[1]) return va[1]>vb[1];
+    if (va[0]!=vb[0]) return va[0]>vb[0];
+    return a<b;
   }
 };
 

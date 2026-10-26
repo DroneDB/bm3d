@@ -102,9 +102,6 @@ class TFace: public vcg::Face<
 public:
 	uint32_t node;
 	uint32_t tex; //texture number where the wedge tex coords refer to.
-	bool operator<(const TFace &t) const {
-		return node < t.node;
-	}
 };
 
 class TMesh: public vcg::tri::TriMesh<std::vector<TVertex>, std::vector<TFace> > {
