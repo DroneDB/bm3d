@@ -4,6 +4,28 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **The same bytes on every platform.** Programs built with libstdc++ and with the library of MSVC
+  wrote different files for the same input, because several orders were left to the standard
+  library where keys are equal. Each now has an order of its own: the triangles of a node are sorted
+  by the node of their patch with a stable sort (they keep their order, which the simplification of
+  a mesh without texture then reads); the border vertices whose normals are made the same are
+  ordered by point, node and index; the edge collapses of equal cost are done in the order they were
+  made (VCGLib patch `0008`); pieces of texture of the same size are packed in their order (`0009`);
+  corto orders symbols of equal probability by symbol and the edges of the same vertices by face and
+  side (corto patch `0006`). And nothing the builder writes comes any more from a function of the
+  mathematical library that is not exactly rounded: the rings of the normal cone are found with
+  constant cosines and sines (not `acos` and `cos`), the exponent of the coordinate step is read from
+  the bits of the float (not `log2`), the levels a texture needs are counted by multiplying by 4
+  (not with `log`), the quadric scale is `1e8 / diag^6` by multiplications (not `pow`; `0010`).
+  `tests/golden/hashes.txt` has one hash for each model, checked on Linux and on Windows, and four
+  more golden models: a textured surface of thousands of pieces of texture of the same size, 40
+  triangles on one edge, a textured terrain and a sphere with vertex colours (the last two are the
+  fixtures of the viewer). Unit tests give each order many equal keys and fail with the order of
+  the library. Built with the input of every one of these sorts and heaps reversed (another library's
+  order of equal keys), four of the reference models and three of the golden inputs give the same
+  bytes; all seven differed before. The output changes: the meshes
+  without texture are simplified in another order, and the pieces of the node textures sit at other
+  places (the same pieces: the textures of a node have the same size and, sorted, the same pixels).
 - **Viewer.** The default `decoderPath` is found from `import.meta.url` when a decoder starts, not
   with `new URL('.', import.meta.url)`, which webpack takes for a file to bundle and stops on
   ("Can't resolve '.'"); a test bundles the package with rollup and the rule of those bundlers.

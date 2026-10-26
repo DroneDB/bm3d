@@ -48,7 +48,11 @@ jobs:
         run: |
           grep -q "\"builtin-baseline\": \"$VCPKG_COMMIT\"" vcpkg.json
       - name: The scripts compile
-        run: python -m py_compile scripts/*.py
+        run: python -m py_compile scripts/*.py scripts/tests/*.py
+      - name: The Python reader of the format (scripts/dump.py) on the fixtures of the command line
+        run: |
+          pip install -r scripts/requirements-tools.txt
+          python -m unittest discover -s scripts/tests -v
 
   build:
     name: ${{ matrix.name }}

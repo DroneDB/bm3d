@@ -40,6 +40,7 @@ export const ErrorCode = Object.freeze({
 	UNKNOWN_FLAGS: 'unknown flags',
 	UNSUPPORTED_LAYOUT: 'unsupported layout',
 	BAD_COUNTS: 'bad counts',
+	BAD_SPHERE: 'bad sphere',
 	OUT_OF_RANGE: 'out of range',
 	OVERLAPPING_SECTIONS: 'overlapping sections',
 	BAD_INDEX: 'bad index',
@@ -176,6 +177,13 @@ export function parseHeader(bytes, fileSize) {
 	if (nodeCount < 2) {
 		fail(ErrorCode.BAD_COUNTS, `nodeCount is ${nodeCount}: it is at least 2 (a node and the sink)`);
 	}
+	const sphere = {
+		center: [view.getFloat32(108, true), view.getFloat32(112, true), view.getFloat32(116, true)],
+		radius: view.getFloat32(120, true),
+	};
+	if (![...sphere.center, sphere.radius].every(Number.isFinite)) {
+		fail(ErrorCode.BAD_SPHERE, `the sphere of the header, centre (${sphere.center.join(', ')}) radius ${sphere.radius}, is not finite`);
+	}
 
 	const vertexCount = readU64(view, 48, 'vertexCount');
 	const faceCount = readU64(view, 56, 'faceCount');
@@ -222,10 +230,7 @@ export function parseHeader(bytes, fileSize) {
 		patchCount,
 		textureCount,
 		textureTableStart: expected.textureTableStart,
-		sphere: {
-			center: [view.getFloat32(108, true), view.getFloat32(112, true), view.getFloat32(116, true)],
-			radius: view.getFloat32(120, true),
-		},
+		sphere,
 		fileSize,
 	};
 }
@@ -312,13 +317,23 @@ function checkNoOverlap({ starts, ends, name }) {
 	}
 }
 
-/** The rules of section 4.1 and 4.2, in the order of section 11. */
+/**
+ * The rules of the index of section 11, rule by rule: each one over the whole table before the next,
+ * so that the node or patch reported is the first one that breaks the first rule broken.
+ */
 function checkIndex(header, tables, bytes) {
 	const { nodes, patches } = tables;
 	const { nodeCount, patchCount, textureCount } = header;
 	const sink = nodeCount - 1;
 	const bad = (what) => fail(ErrorCode.BAD_INDEX, what);
 	const patchesOf = (node) => [nodes.firstPatch[node], nodes.firstPatch[node + 1]];
+	/** Calls `check(p, node)` for every patch of every real node, in the order of the table. */
+	const eachPatch = (check) => {
+		for (let i = 0; i < sink; i++) {
+			const [from, to] = patchesOf(i);
+			for (let p = from; p < to; p++) check(p, i);
+		}
+	};
 
 	if (nodes.firstPatch[0] !== 0) bad(`firstPatch of node 0 is ${nodes.firstPatch[0]}, not 0`);
 	for (let i = 1; i < nodeCount; i++) {
@@ -326,7 +341,7 @@ function checkIndex(header, tables, bytes) {
 	}
 	if (nodes.firstPatch[sink] !== patchCount) bad(`firstPatch of the sink is ${nodes.firstPatch[sink]}, not patchCount (${patchCount})`);
 
-	// All the fields of the sink but firstPatch are 0 (its first 52 bytes)
+	// All the fields of the sink but firstPatch are 0 (its first 52 bytes; a float is +0, not -0)
 	const sinkRecord = bytes.subarray(sink * NODE_RECORD_SIZE, sink * NODE_RECORD_SIZE + 52);
 	if (sinkRecord.some((byte) => byte !== 0)) bad('a field of the sink other than firstPatch is not 0');
 
@@ -335,47 +350,47 @@ function checkIndex(header, tables, bytes) {
 		if (from === to) bad(`node ${i} has no patch`);
 	}
 	for (let i = 0; i < sink; i++) {
-		if (nodes.faceCount[i] === 0) bad(`node ${i} has no triangle`);
-		if (nodes.vertexCount[i] < 3) bad(`node ${i} has ${nodes.vertexCount[i]} vertices, fewer than 3`);
+		if (nodes.faceCount[i] === 0 || nodes.vertexCount[i] < 3) bad(`node ${i} has ${nodes.vertexCount[i]} vertices and ${nodes.faceCount[i]} triangles`);
 	}
 	for (let i = 0; i < sink; i++) {
-		const [from, to] = patchesOf(i);
-		for (let p = from; p < to; p++) {
-			const child = patches[p * 3];
-			if (child >= nodeCount) bad(`patch ${p} of node ${i} names node ${child}, and there are ${nodeCount} nodes`);
-			if (child !== sink && child <= i) bad(`patch ${p} of node ${i} names node ${child}, which does not come after it`);
+		const sphere = nodes.spheres.subarray(i * 5, i * 5 + 5); // centre, radius, tight radius
+		if (!Number.isFinite(nodes.error[i]) || !sphere.every(Number.isFinite)) {
+			bad(`node ${i} has a value that is not finite: error ${nodes.error[i]}, sphere centre (${Array.from(sphere.subarray(0, 3)).join(', ')}) radius ${sphere[3]}, tight radius ${sphere[4]}`);
 		}
 	}
+	eachPatch((p, i) => {
+		if (patches[p * 3] >= nodeCount) bad(`patch ${p} of node ${i} names node ${patches[p * 3]}, and there are ${nodeCount} nodes`);
+	});
+	eachPatch((p, i) => {
+		const child = patches[p * 3];
+		if (child !== sink && child <= i) bad(`patch ${p} of node ${i} names node ${child}, which does not come after it`);
+	});
 	for (let i = 0; i < sink; i++) {
 		const [from, to] = patchesOf(i);
 		let sinks = 0;
 		for (let p = from; p < to; p++) if (patches[p * 3] === sink) sinks++;
 		if (sinks !== 0 && sinks !== to - from) bad(`node ${i} has patches that name the sink and patches that do not`);
 	}
+	eachPatch((p, i) => {
+		if (p > patchesOf(i)[0] && patches[p * 3 + 1] < patches[(p - 1) * 3 + 1]) bad(`triangleOffset decreases from ${patches[(p - 1) * 3 + 1]} to ${patches[p * 3 + 1]} in node ${i} (patch ${p})`);
+	});
 	for (let i = 0; i < sink; i++) {
-		const [from, to] = patchesOf(i);
-		for (let p = from + 1; p < to; p++) {
-			if (patches[p * 3 + 1] < patches[(p - 1) * 3 + 1]) bad(`triangleOffset decreases from ${patches[(p - 1) * 3 + 1]} to ${patches[p * 3 + 1]} in node ${i} (patch ${p})`);
-		}
-		if (patches[(to - 1) * 3 + 1] !== nodes.faceCount[i]) bad(`the last triangleOffset of node ${i} is ${patches[(to - 1) * 3 + 1]} and its faceCount is ${nodes.faceCount[i]}`);
+		const last = patchesOf(i)[1] - 1;
+		if (patches[last * 3 + 1] !== nodes.faceCount[i]) bad(`the last triangleOffset of node ${i} is ${patches[last * 3 + 1]} and its faceCount is ${nodes.faceCount[i]}`);
 	}
-	for (let i = 0; i < sink; i++) {
-		const [from, to] = patchesOf(i);
-		const texture = patches[from * 3 + 2];
-		for (let p = from; p < to; p++) {
-			const t = patches[p * 3 + 2];
-			if (t !== NO_TEXTURE && t >= textureCount) bad(`patch ${p} of node ${i} names texture ${t}, and there are ${textureCount} textures`);
-			if (t !== texture) bad(`the patches of node ${i} name different textures (${texture} and ${t})`);
-		}
-	}
-	for (let i = 0; i < sink; i++) {
-		const [from, to] = patchesOf(i);
-		for (let p = from; p < to; p++) {
-			const has = patches[p * 3 + 2] !== NO_TEXTURE;
-			if (header.hasUvs && !has) bad(`patch ${p} of node ${i} has no texture and the vertices have texture coordinates`);
-			if (!header.hasUvs && has) bad(`patch ${p} of node ${i} has a texture and the vertices have no texture coordinates`);
-		}
-	}
+	eachPatch((p, i) => {
+		const t = patches[p * 3 + 2];
+		if (t !== NO_TEXTURE && t >= textureCount) bad(`patch ${p} of node ${i} names texture ${t}, and there are ${textureCount} textures`);
+	});
+	eachPatch((p, i) => {
+		const texture = patches[patchesOf(i)[0] * 3 + 2];
+		if (patches[p * 3 + 2] !== texture) bad(`the patches of node ${i} name different textures (${texture} and ${patches[p * 3 + 2]})`);
+	});
+	eachPatch((p, i) => {
+		const has = patches[p * 3 + 2] !== NO_TEXTURE;
+		if (header.hasUvs && !has) bad(`patch ${p} of node ${i} has no texture and the vertices have texture coordinates`);
+		if (!header.hasUvs && has) bad(`patch ${p} of node ${i} has a texture and the vertices have no texture coordinates`);
+	});
 }
 
 /** The roots of the hierarchy: the nodes 0 .. rootCount - 1 (section 4.2). */

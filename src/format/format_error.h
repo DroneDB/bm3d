@@ -23,6 +23,7 @@ enum class FormatErrorKind {
     UnknownFlags,
     UnsupportedLayout,
     BadCounts,
+    BadSphere,
     OutOfRange,
     OverlappingSections,
     BadIndex,

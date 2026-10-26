@@ -155,6 +155,10 @@ describe('the open-time errors, in the order of the document', () => {
 		['a slot with a type and no components', ErrorCode.UNSUPPORTED_LAYOUT, () => edit(good, (v, b) => b.set([0, 3], HEADER.vertexLayout + 2)), 'normal'],
 		['one node', ErrorCode.BAD_COUNTS, () => edit(good, (v) => v.setUint32(HEADER.nodeCount, 1, true)), 'nodeCount is 1'],
 		['no node', ErrorCode.BAD_COUNTS, () => edit(good, (v) => v.setUint32(HEADER.nodeCount, 0, true)), 'nodeCount is 0'],
+		['a centre of the sphere that is not a number', ErrorCode.BAD_SPHERE, () => edit(good, (v) => v.setFloat32(HEADER.sphere + 4, NaN, true)), 'not finite'],
+		['an infinite centre of the sphere', ErrorCode.BAD_SPHERE, () => edit(good, (v) => v.setFloat32(HEADER.sphere, -Infinity, true)), '-Infinity'],
+		['a radius of the sphere that is not a number', ErrorCode.BAD_SPHERE, () => edit(good, (v) => v.setFloat32(HEADER.sphere + 12, NaN, true)), 'radius NaN'],
+		['an infinite radius of the sphere', ErrorCode.BAD_SPHERE, () => edit(good, (v) => v.setFloat32(HEADER.sphere + 12, Infinity, true)), 'radius Infinity'],
 	];
 	for (const [name, code, change, text] of cases) {
 		it(`${code}: ${name}`, async () => {
@@ -266,8 +270,14 @@ describe('bad index', () => {
 		['an error in the sink', (v, b, at) => v.setFloat32(at.node(5) + NODE.error, 1, true), 'sink'],
 		['a negative zero in the sink', (v, b, at) => v.setFloat32(at.node(5) + NODE.tightRadius, -0, true), 'sink'],
 		['a node without patch', (v, b, at) => v.setUint32(at.node(1) + NODE.firstPatch, 0, true), 'node 0 has no patch'],
-		['a node without triangle', (v, b, at) => v.setUint16(at.node(3) + NODE.faceCount, 0, true), 'node 3 has no triangle'],
+		['a node without triangle', (v, b, at) => v.setUint16(at.node(3) + NODE.faceCount, 0, true), 'node 3 has 20 vertices and 0 triangles'],
 		['a node with two vertices', (v, b, at) => v.setUint16(at.node(3) + NODE.vertexCount, 2, true), 'node 3 has 2 vertices'],
+		['an error that is not a number', (v, b, at) => v.setFloat32(at.node(1) + NODE.error, NaN, true), 'node 1 has a value that is not finite: error NaN'],
+		['an infinite error', (v, b, at) => v.setFloat32(at.node(0) + NODE.error, Infinity, true), 'error Infinity'],
+		['an infinite centre', (v, b, at) => v.setFloat32(at.node(2) + NODE.sphere + 8, -Infinity, true), 'node 2 has a value that is not finite'],
+		['a radius that is not a number', (v, b, at) => v.setFloat32(at.node(3) + NODE.sphere + 12, NaN, true), 'radius NaN'],
+		['a tight radius that is not a number', (v, b, at) => v.setFloat32(at.node(4) + NODE.tightRadius, NaN, true), 'tight radius NaN'],
+		['a radius in the sink that is not a number', (v, b, at) => v.setFloat32(at.node(5) + NODE.sphere + 12, NaN, true), 'sink'],
 		['a child beyond the table', (v, b, at) => v.setUint32(at.patch(0), 9, true), 'names node 9'],
 		['a child that is the node itself', (v, b, at) => v.setUint32(at.patch(2), 1, true), 'does not come after'],
 		['a child before the node', (v, b, at) => v.setUint32(at.patch(4), 1, true), 'does not come after'],
@@ -309,7 +319,23 @@ describe('bad index', () => {
 			v.setUint16(at.node(3) + NODE.faceCount, 0, true);
 			v.setUint32(at.patch(2), 1, true);
 		});
-		expect((await openError(second)).message).toContain('node 3 has no triangle');
+		expect((await openError(second)).message).toContain('node 3 has 20 vertices and 0 triangles');
+	});
+
+	it('checks each rule over the whole table before the next', async () => {
+		// a later node that breaks an earlier rule is the one reported
+		const broken = (changes) => edit(good, (v, b, at) => changes.forEach((change) => change(v, at)));
+		const differentTextures = (v, at) => v.setUint32(at.patch(1) + 8, 2, true); // node 0 (14)
+		const textureBeyond = (v, at) => v.setUint32(at.patch(7) + 8, 9, true); // node 4 (13)
+		const offsetAbove = (v, at) => v.setUint32(at.patch(0) + 4, 9, true); // node 0 (11)
+		const childBefore = (v, at) => v.setUint32(at.patch(4), 1, true); // node 2 (9)
+		const errorNaN = (v, at) => v.setFloat32(at.node(4) + NODE.error, NaN, true); // node 4 (7)
+		const message = async (changes) => (await openError(broken(changes))).message;
+		expect(await message([differentTextures, textureBeyond, offsetAbove, childBefore, errorNaN])).toContain('node 4 has a value that is not finite');
+		expect(await message([differentTextures, textureBeyond, offsetAbove, childBefore])).toContain('patch 4 of node 2 names node 1');
+		expect(await message([differentTextures, textureBeyond, offsetAbove])).toContain('in node 0 (patch 1)');
+		expect(await message([differentTextures, textureBeyond])).toContain('patch 7 of node 4 names texture 9');
+		expect(await message([differentTextures])).toContain('the patches of node 0 name different textures');
 	});
 
 	it('is reported after overlaps', async () => {

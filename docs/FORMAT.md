@@ -28,8 +28,9 @@ The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 * Every multi-byte value is **little endian**. There is no padding inside a record other than the fields
   listed: a record is its fields, in the order of its table, back to back.
 * Types: `u8`, `u16`, `u32`, `u64` are unsigned integers of 8, 16, 32 and 64 bits; `i16` is a signed 16-bit
-  integer (two's complement); `f32` is an IEEE 754 binary32. An `f32` that a table says is a size, a radius
-  or an error is finite.
+  integer (two's complement); `f32` is an IEEE 754 binary32. Every `f32` of the header and of the node
+  table (a centre, a radius, an error) is finite: a NaN or an infinity there is an error (section 11, "bad
+  sphere" and "bad index").
 * **Offsets and lengths are byte counts**, `u64`, counted from the first byte of the file. There is no
   unit of 256 bytes as in the Nexus container.
 * **Alignment.** Every section, node payload and texture starts at an offset that is a multiple of 8. The
@@ -246,8 +247,9 @@ The viewer of version 1 does not use the cone; a reader may ignore it.
 
 **The sink.** The last row of the node table (index `nodeCount - 1`) is not a node. It ends the table, so
 that the patches of the node before it end where the sink's `firstPatch` begins, and the leaves of the
-hierarchy link to it (section 4.2). All its fields are 0 except `firstPatch`, which is `patchCount`, and a
-reader checks that they are (section 11). A reader MUST NOT read a payload, a sphere or an error from the
+hierarchy link to it (section 4.2). All its fields are 0 except `firstPatch`, which is `patchCount`: its
+first 52 bytes are zero bytes (so a float field is +0, not -0), and a reader checks that they are
+(section 11). A reader MUST NOT read a payload, a sphere or an error from the
 sink.
 
 ### 4.2 Patch record, 12 bytes
@@ -505,10 +507,35 @@ error with a message that says what is wrong and the value found; none is repair
 | unknown flags | a bit other than the two of section 3.1 is set; or `TEXTURE_WEBP` does not match `textureCount > 0` |
 | unsupported layout | `vertexLayout` or `faceLayout` is not one of section 3.2, or the texture coordinates slot disagrees with `textureCount` |
 | bad counts | `nodeCount` below 2 |
+| bad sphere | a coordinate of the centre of the header's `sphere`, or its `radius`, is not finite (a NaN or an infinity) |
 | out of range | any of the following does not hold, with all sums and comparisons exact (no wrap): `indexOffset` and `indexLength` as section 4 says (offset a multiple of 8 and at least `headerSize`, length equal to the formula); the index inside the file; `metadataOffset` a multiple of 8, at least `indexOffset + indexLength`, and `metadataOffset + metadataLength` at most the file size (this is also the **truncated file** error when the file is shorter than the header says); every real node's `payloadOffset` a multiple of 8 and `payloadLength` above 0, and every texture's `offset` a multiple of 8 and `length` above 0, the range inside `[indexOffset + indexLength, metadataOffset)` |
 | overlapping sections | two of these ranges overlap: the header `[0, headerSize)`, the index, the payload of each real node, each texture, the metadata block (a range of length 0 overlaps nothing) |
-| bad index | any of the following, checked in this order: `firstPatch` of the first node is not 0, decreases along the table, or the sink's is not `patchCount`; a field of the sink other than `firstPatch` is not 0; a real node has no patch; a real node with `faceCount` 0 or `vertexCount` below 3; a patch names a node at or beyond `nodeCount`, or a real node that is not after the node it belongs to; a node with some patches that name the sink and some that do not; a `triangleOffset` that decreases within a node or whose last value is not the node's `faceCount`; a `texture` that is neither `0xFFFFFFFF` nor below `textureCount`, or a node whose patches name different textures; the layout has texture coordinates and a patch has no texture, or the layout has none and a patch has one |
+| bad index | one of the rules of the index below is broken |
 | value too large (JavaScript) | a `u64` above `Number.MAX_SAFE_INTEGER` (section 10.3) |
+
+**The rules of the index**, for "bad index". They are checked **rule by rule, in this order**: each rule is
+checked over the whole table (every real node, or every patch, from the first to the last) before the next
+rule is checked, and the error names the first node or patch, in the order of the table, that breaks the
+first rule that is broken. So every reader reports the same rule and the same node or patch for the same
+file.
+
+1. `firstPatch` of node 0 is not 0.
+2. `firstPatch` decreases from a node to the next one (the sink included).
+3. `firstPatch` of the sink is not `patchCount`.
+4. A byte of the first 52 of the sink (every field but `firstPatch`) is not zero.
+5. A real node has no patch (its `firstPatch` equals the next one's).
+6. A real node has `faceCount` 0 or `vertexCount` below 3.
+7. A real node has an `error`, a coordinate of its `sphere` centre, a `sphere.radius` or a `tightRadius`
+   that is not finite (a NaN or an infinity).
+8. A patch names a node at or beyond `nodeCount`.
+9. A patch names a real node that is not after the node the patch belongs to.
+10. A real node has some patches that name the sink and some that do not.
+11. A `triangleOffset` is below the one of the patch before it in the same node.
+12. The `triangleOffset` of the last patch of a real node is not the node's `faceCount`.
+13. A patch has a `texture` that is neither `0xFFFFFFFF` nor below `textureCount`.
+14. The patches of a real node name different textures.
+15. The layout has texture coordinates and a patch has no texture (`0xFFFFFFFF`), or the layout has none
+    and a patch has one.
 
 The `u64` fields are converted when they are read, so in JavaScript the last error can stop any of the
 steps that read one. A reader reports the node or the texture by its index. A file whose size is larger

@@ -192,6 +192,9 @@ class Bm3dFile(ModelFile):
             raise Bm3dError("unsupported layout", "the texture coordinates and the %d textures disagree" % self.texture_count)
         if self.node_count < 2:
             raise Bm3dError("bad counts", "the file has %d nodes and the sink is one of them" % self.node_count)
+        if not np.all(np.isfinite(self.sphere)):
+            raise Bm3dError("bad sphere", "the sphere of the header, centre (%r, %r, %r) radius %r, is not finite"
+                            % tuple(self.sphere.tolist()))
 
     def _index_layout(self):
         patch_table = NODE_DTYPE.itemsize * self.node_count
@@ -247,6 +250,8 @@ class Bm3dFile(ModelFile):
                 raise Bm3dError("overlapping sections", "%s [%d, %d) and %s [%d, %d) overlap" % (before[2], before[0], before[1], after[2], after[0], after[1]))
 
     def _check_index(self):
+        """The rules of the index (section 11), rule by rule: each one over the whole table before
+        the next, and the first node or patch that breaks it is the one reported."""
         n, sink = self.node_count, self.node_count - 1
         first = self.nodes["first_patch"].astype(np.int64)
         patches = self.patches
@@ -254,55 +259,69 @@ class Bm3dFile(ModelFile):
         def bad(message):
             raise Bm3dError("bad index", message)
 
+        def first_of(mask):
+            found = np.nonzero(mask)[0]
+            return int(found[0]) if found.size else None
+
         if first[0] != 0:
             bad("the first patch of node 0 is %d and not 0" % first[0])
-        decreasing = np.nonzero(np.diff(first) < 0)[0]
-        if decreasing.size:
-            bad("the first patch decreases from node %d to node %d" % (decreasing[0], decreasing[0] + 1))
+        i = first_of(np.diff(first) < 0)
+        if i is not None:
+            bad("the first patch decreases from node %d to node %d" % (i, i + 1))
         if first[sink] != self.patch_count:
             bad("the first patch of the sink is %d and the file has %d patches" % (first[sink], self.patch_count))
-        s = self.nodes[sink]
-        if any(s[f] != 0 for f in SINK_FIELDS) or s["cone"].any() or s["center"].any():
+        # every byte of the sink but its first patch is zero (a float field is +0, not -0)
+        if any(self.nodes[sink:].tobytes()[:NODE_DTYPE.itemsize - 4]):
             bad("the sink (node %d) has a field other than the first patch that is not 0" % sink)
         counts = np.diff(first)[:sink]
-        empty = np.nonzero(counts == 0)[0]
-        if empty.size:
-            bad("node %d has no patch" % empty[0])
+        i = first_of(counts == 0)
+        if i is not None:
+            bad("node %d has no patch" % i)
         real = self.nodes[:sink]
-        small = np.nonzero((real["nface"] == 0) | (real["nvert"] < 3))[0]
-        if small.size:
-            bad("node %d has %d vertices and %d triangles" % (small[0], real["nvert"][small[0]], real["nface"][small[0]]))
+        i = first_of((real["nface"] == 0) | (real["nvert"] < 3))
+        if i is not None:
+            bad("node %d has %d vertices and %d triangles" % (i, real["nvert"][i], real["nface"][i]))
+        finite = (np.isfinite(real["error"]) & np.all(np.isfinite(real["center"]), axis=1) & np.isfinite(real["radius"])
+                  & np.isfinite(real["tight_radius"]))
+        i = first_of(~finite)
+        if i is not None:
+            bad("node %d has a value that is not finite: error %r, sphere centre %r radius %r, tight radius %r"
+                % (i, float(real["error"][i]), real["center"][i].tolist(), float(real["radius"][i]), float(real["tight_radius"][i])))
         owner = np.repeat(np.arange(sink), counts)  # the node each patch belongs to
         child = patches["node"].astype(np.int64)
-        beyond = np.nonzero(child >= n)[0]
-        if beyond.size:
-            bad("patch %d of node %d names node %d and the file has %d" % (beyond[0], owner[beyond[0]], child[beyond[0]], n))
-        before = np.nonzero((child != sink) & (child <= owner))[0]
-        if before.size:
-            bad("patch %d of node %d names node %d, which is not stored after it" % (before[0], owner[before[0]], child[before[0]]))
+        p = first_of(child >= n)
+        if p is not None:
+            bad("patch %d of node %d names node %d and the file has %d" % (p, owner[p], child[p], n))
+        p = first_of((child != sink) & (child <= owner))
+        if p is not None:
+            bad("patch %d of node %d names node %d, which is not stored after it" % (p, owner[p], child[p]))
         to_sink = (child == sink)
         per_node = np.add.reduceat(to_sink.astype(np.int64), first[:sink]) if sink else np.array([], dtype=np.int64)
-        mixed = np.nonzero((per_node != 0) & (per_node != counts))[0]
-        if mixed.size:
-            bad("node %d has patches that name the sink and patches that do not" % mixed[0])
+        i = first_of((per_node != 0) & (per_node != counts))
+        if i is not None:
+            bad("node %d has patches that name the sink and patches that do not" % i)
         ends = patches["triangle_offset"].astype(np.int64)
-        for i in range(sink):
-            lo, hi = first[i], first[i + 1]
-            if np.any(np.diff(ends[lo:hi]) < 0):
-                bad("the triangle offsets of node %d decrease" % i)
-            if ends[hi - 1] != real["nface"][i]:
-                bad("the last triangle offset of node %d is %d and the node has %d triangles" % (i, ends[hi - 1], real["nface"][i]))
+        starts = np.zeros(len(ends), dtype=bool)
+        starts[first[:sink]] = True  # the first patch of each node has no patch before it in its node
+        p = first_of(~starts[1:] & (np.diff(ends) < 0))
+        if p is not None:
+            bad("the triangle offset of patch %d of node %d (%d) is below the one before it (%d)"
+                % (p + 1, owner[p + 1], ends[p + 1], ends[p]))
+        last = ends[first[1:sink + 1] - 1]
+        i = first_of(last != real["nface"])
+        if i is not None:
+            bad("the last triangle offset of node %d is %d and the node has %d triangles" % (i, last[i], real["nface"][i]))
         texture = patches["texture"].astype(np.int64)
-        wrong = np.nonzero((texture != NO_TEXTURE) & (texture >= self.texture_count))[0]
-        if wrong.size:
-            bad("patch %d names texture %d and the file has %d" % (wrong[0], texture[wrong[0]], self.texture_count))
-        for i in range(sink):
-            t = texture[first[i]:first[i + 1]]
-            if np.any(t != t[0]):
-                bad("node %d has patches with different textures" % i)
-            if (t[0] != NO_TEXTURE) != self.has_uvs:
-                bad("node %d %s" % (i, "has a texture and the layout has no texture coordinates" if t[0] != NO_TEXTURE
-                                    else "has no texture and the layout has texture coordinates"))
+        p = first_of((texture != NO_TEXTURE) & (texture >= self.texture_count))
+        if p is not None:
+            bad("patch %d of node %d names texture %d and the file has %d" % (p, owner[p], texture[p], self.texture_count))
+        p = first_of(texture != texture[first[owner]])
+        if p is not None:
+            bad("node %d has patches with different textures" % owner[p])
+        p = first_of((texture != NO_TEXTURE) != self.has_uvs)
+        if p is not None:
+            bad("patch %d of node %d %s" % (p, owner[p], "has no texture and the layout has texture coordinates" if self.has_uvs
+                                            else "has a texture and the layout has no texture coordinates"))
 
     def _root_count(self):
         first = self.nodes["first_patch"].tolist()

@@ -5,9 +5,13 @@
 
 #include <algorithm>
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 
 #include <corto/decoder.h>
 
@@ -78,6 +82,14 @@ std::string str(uint64_t value) {
     return std::to_string(value);
 }
 
+// A float as the shortest text that reads back to it ("nan", "inf" for those)
+std::string strFloat(float value) {
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(9) << value;
+    return out.str();
+}
+
 std::string hex(uint32_t value) {
     static const char digits[] = "0123456789abcdef";
     std::string out = "0x";
@@ -89,6 +101,18 @@ std::string hex(uint32_t value) {
 // Whether [offset, offset + length) lies inside [0, limit), with arithmetic that cannot wrap
 bool inside(uint64_t offset, uint64_t length, uint64_t limit) {
     return offset <= limit && length <= limit - offset;
+}
+
+// --- spheres -------------------------------------------------------------------------------------
+
+bool finiteSphere(const SphereRecord& sphere) {
+    return std::isfinite(sphere.center[0]) && std::isfinite(sphere.center[1]) && std::isfinite(sphere.center[2]) &&
+           std::isfinite(sphere.radius);
+}
+
+std::string describe(const SphereRecord& sphere) {
+    return "centre (" + strFloat(sphere.center[0]) + ", " + strFloat(sphere.center[1]) + ", " +
+           strFloat(sphere.center[2]) + ") radius " + strFloat(sphere.radius);
 }
 
 // --- the ranges of a file that must not overlap ------------------------------------------------
@@ -168,6 +192,8 @@ void Bm3dReader::openChecks() {
                  str(h.textureCount) + " textures");
     if (h.nodeCount < 2)
         fail(FormatErrorKind::BadCounts, "the file has " + str(h.nodeCount) + " nodes and the sink is one of them");
+    if (!finiteSphere(h.sphere))
+        fail(FormatErrorKind::BadSphere, "the sphere of the header, " + describe(h.sphere) + ", is not finite");
 
     checkIndexRanges();
 
@@ -252,7 +278,8 @@ void Bm3dReader::checkIndex() {
         if (ranges[i].begin < ranges[i - 1].end)
             fail(FormatErrorKind::OverlappingSections, describe(ranges[i - 1]) + " and " + describe(ranges[i]) + " overlap");
 
-    // the index: each rule over the whole table, in the order of the specification
+    // the index (docs/FORMAT.md, section 11, the rules of the index): rule by rule, each one over the
+    // whole table before the next, so that the node or patch reported is the one every reader reports
     const auto bad = [](const std::string& message) { fail(FormatErrorKind::BadIndex, message); };
     if (nodes_[0].firstPatch != 0)
         bad("the first patch of node 0 is " + str(nodes_[0].firstPatch) + " and not 0");
@@ -264,10 +291,10 @@ void Bm3dReader::checkIndex() {
         bad("the first patch of the sink is " + str(nodes_[sinkNode].firstPatch) + " and the file has " +
             str(h.patchCount) + " patches");
 
-    const NodeRecord& s = nodes_[sinkNode];
-    if (s.payloadOffset != 0 || s.payloadLength != 0 || s.error != 0 || s.vertexCount != 0 || s.faceCount != 0 ||
-        s.cone[0] != 0 || s.cone[1] != 0 || s.cone[2] != 0 || s.cone[3] != 0 || s.sphere.center[0] != 0 ||
-        s.sphere.center[1] != 0 || s.sphere.center[2] != 0 || s.sphere.radius != 0 || s.tightRadius != 0)
+    // every byte of the sink but its first patch is zero (a float field is +0, not -0)
+    uint8_t sinkBytes[kNodeRecordSize];
+    encodeNodeRecord(nodes_[sinkNode], sinkBytes);
+    if (std::any_of(sinkBytes, sinkBytes + kNodeRecordSize - 4, [](uint8_t b) { return b != 0; }))
         bad("the sink (node " + str(sinkNode) + ") has a field other than the first patch that is not 0");
 
     for (uint32_t i = 0; i < sinkNode; i++)
@@ -277,16 +304,22 @@ void Bm3dReader::checkIndex() {
         if (nodes_[i].faceCount == 0 || nodes_[i].vertexCount < 3)
             bad("node " + str(i) + " has " + str(nodes_[i].vertexCount) + " vertices and " + str(nodes_[i].faceCount) +
                 " triangles");
+    for (uint32_t i = 0; i < sinkNode; i++) {
+        const NodeRecord& n = nodes_[i];
+        if (!std::isfinite(n.error) || !finiteSphere(n.sphere) || !std::isfinite(n.tightRadius))
+            bad("node " + str(i) + " has a value that is not finite: error " + strFloat(n.error) + ", sphere " +
+                describe(n.sphere) + ", tight radius " + strFloat(n.tightRadius));
+    }
     for (uint32_t i = 0; i < sinkNode; i++)
-        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++) {
-            const uint32_t child = patches_[p].node;
-            if (child >= h.nodeCount)
-                bad("patch " + str(p) + " of node " + str(i) + " names node " + str(child) + " and the file has " +
-                    str(h.nodeCount));
-            if (child != sinkNode && child <= i)
-                bad("patch " + str(p) + " of node " + str(i) + " names node " + str(child) +
+        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
+            if (patches_[p].node >= h.nodeCount)
+                bad("patch " + str(p) + " of node " + str(i) + " names node " + str(patches_[p].node) +
+                    " and the file has " + str(h.nodeCount));
+    for (uint32_t i = 0; i < sinkNode; i++)
+        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
+            if (patches_[p].node != sinkNode && patches_[p].node <= i)
+                bad("patch " + str(p) + " of node " + str(i) + " names node " + str(patches_[p].node) +
                     ", which is not stored after it");
-        }
     for (uint32_t i = 0; i < sinkNode; i++) {
         uint32_t leaves = 0;
         for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
@@ -294,35 +327,30 @@ void Bm3dReader::checkIndex() {
         if (leaves != 0 && leaves != patchEnd(i) - patchBegin(i))
             bad("node " + str(i) + " has patches that name the sink and patches that do not");
     }
-    for (uint32_t i = 0; i < sinkNode; i++) {
-        uint32_t previous = 0;
-        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++) {
-            if (patches_[p].triangleOffset < previous)
+    for (uint32_t i = 0; i < sinkNode; i++)
+        for (uint32_t p = patchBegin(i) + 1; p < patchEnd(i); p++)
+            if (patches_[p].triangleOffset < patches_[p - 1].triangleOffset)
                 bad("the triangle offset of patch " + str(p) + " of node " + str(i) + " (" + str(patches_[p].triangleOffset) +
-                    ") is below the one before it (" + str(previous) + ")");
-            previous = patches_[p].triangleOffset;
-        }
-        if (previous != nodes_[i].faceCount)
-            bad("the last triangle offset of node " + str(i) + " is " + str(previous) + " and the node has " +
-                str(nodes_[i].faceCount) + " triangles");
-    }
-    for (uint32_t i = 0; i < sinkNode; i++) {
-        const uint32_t texture = patches_[patchBegin(i)].texture;
-        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++) {
-            const uint32_t t = patches_[p].texture;
-            if (t != kNoTexture && t >= h.textureCount)
-                bad("patch " + str(p) + " of node " + str(i) + " names texture " + str(t) + " and the file has " +
-                    str(h.textureCount));
-            if (t != texture)
+                    ") is below the one before it (" + str(patches_[p - 1].triangleOffset) + ")");
+    for (uint32_t i = 0; i < sinkNode; i++)
+        if (patches_[patchEnd(i) - 1].triangleOffset != nodes_[i].faceCount)
+            bad("the last triangle offset of node " + str(i) + " is " + str(patches_[patchEnd(i) - 1].triangleOffset) +
+                " and the node has " + str(nodes_[i].faceCount) + " triangles");
+    for (uint32_t i = 0; i < sinkNode; i++)
+        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
+            if (patches_[p].texture != kNoTexture && patches_[p].texture >= h.textureCount)
+                bad("patch " + str(p) + " of node " + str(i) + " names texture " + str(patches_[p].texture) +
+                    " and the file has " + str(h.textureCount));
+    for (uint32_t i = 0; i < sinkNode; i++)
+        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
+            if (patches_[p].texture != patches_[patchBegin(i)].texture)
                 bad("node " + str(i) + " has patches with different textures");
-        }
-    }
-    for (uint32_t i = 0; i < sinkNode; i++) {
-        const bool textured = patches_[patchBegin(i)].texture != kNoTexture;
-        if (textured != layout_.texCoords)
-            bad("node " + str(i) + (textured ? " has a texture and the layout has no texture coordinates"
-                                             : " has no texture and the layout has texture coordinates"));
-    }
+    for (uint32_t i = 0; i < sinkNode; i++)
+        for (uint32_t p = patchBegin(i); p < patchEnd(i); p++)
+            if ((patches_[p].texture != kNoTexture) != layout_.texCoords)
+                bad("patch " + str(p) + " of node " + str(i) +
+                    (layout_.texCoords ? " has no texture and the layout has texture coordinates"
+                                       : " has a texture and the layout has no texture coordinates"));
 }
 
 std::vector<uint8_t> Bm3dReader::readNodePayload(uint32_t node) {

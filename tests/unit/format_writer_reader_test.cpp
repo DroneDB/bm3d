@@ -468,6 +468,10 @@ void put16(Bytes& b, size_t at, uint16_t v) { std::memcpy(&b[at], &v, 2); }
 void put32(Bytes& b, size_t at, uint32_t v) { std::memcpy(&b[at], &v, 4); }
 void put64(Bytes& b, size_t at, uint64_t v) { std::memcpy(&b[at], &v, 8); }
 uint64_t get64(const Bytes& b, size_t at) { uint64_t v; std::memcpy(&v, &b[at], 8); return v; }
+// the bits of floats that are not finite
+constexpr uint32_t kNan = 0x7fc00000u;
+constexpr uint32_t kInfinity = 0x7f800000u;
+constexpr uint32_t kMinusInfinity = 0xff800000u;
 
 // Expects the file to be refused with this error and a message that holds `fragment`
 void expectRefused(const Bytes& file, FormatErrorKind kind, const std::string& fragment, const std::string& what) {
@@ -544,6 +548,10 @@ TEST(FormatReader, theHeaderIsChecked) {
         {"no texture coordinates in a model with textures", FormatErrorKind::UnsupportedLayout, "texture coordinates", [](Bytes& b) { b[16 + 6] = 0; b[16 + 7] = 0; }},
         {"fewer than 2 nodes", FormatErrorKind::BadCounts, "1 nodes", [](Bytes& b) { put32(b, 96, 1); }},
         {"no node", FormatErrorKind::BadCounts, "0 nodes", [](Bytes& b) { put32(b, 96, 0); }},
+        {"a centre of the sphere that is not a number", FormatErrorKind::BadSphere, "not finite", [](Bytes& b) { put32(b, 112, kNan); }},
+        {"an infinite centre of the sphere", FormatErrorKind::BadSphere, "not finite", [](Bytes& b) { put32(b, 108, kMinusInfinity); }},
+        {"a radius that is not a number", FormatErrorKind::BadSphere, "radius nan", [](Bytes& b) { put32(b, 120, kNan); }},
+        {"an infinite radius", FormatErrorKind::BadSphere, "radius inf", [](Bytes& b) { put32(b, 120, kInfinity); }},
     });
 
     // a file with no textures: the layout must not have the coordinates, and the WebP flag is clear
@@ -579,8 +587,12 @@ TEST(FormatReader, theChecksAreMadeInTheOrderOfTheSpecification) {
     put32(b, 12, 3);
     expectRefused(b, FormatErrorKind::UnsupportedLayout, "layout", "layout before counts");
     b[16] = 7;
-    expectRefused(b, FormatErrorKind::BadCounts, "nodes", "counts before ranges");
+    put32(b, 116, kNan);  // the sphere
+    expectRefused(b, FormatErrorKind::BadCounts, "nodes", "counts before the sphere");
     put32(b, 96, 4);
+    put64(b, 80, 129);    // index offset
+    expectRefused(b, FormatErrorKind::BadSphere, "sphere", "the sphere before the ranges");
+    std::copy(file.begin() + 116, file.begin() + 120, b.begin() + 116);
     put64(b, 80, 129);    // index offset
     put64(b, 64, 1);      // metadata offset
     expectRefused(b, FormatErrorKind::OutOfRange, "index", "index before metadata");
@@ -690,6 +702,16 @@ TEST(FormatReader, theIndexIsChecked) {
          [](Bytes& b) { put32(b, nodeAt(2) + 52, 4); }},
         {"a node without triangles", FormatErrorKind::BadIndex, "node 1 has", [](Bytes& b) { put16(b, nodeAt(1) + 22, 0); }},
         {"a node of two vertices", FormatErrorKind::BadIndex, "node 1 has 2 vertices", [](Bytes& b) { put16(b, nodeAt(1) + 20, 2); }},
+        {"an error that is not a number", FormatErrorKind::BadIndex, "node 1 has a value that is not finite: error nan",
+         [](Bytes& b) { put32(b, nodeAt(1) + 16, kNan); }},
+        {"an infinite error", FormatErrorKind::BadIndex, "error inf", [](Bytes& b) { put32(b, nodeAt(0) + 16, kInfinity); }},
+        {"an infinite centre", FormatErrorKind::BadIndex, "node 2 has a value that is not finite",
+         [](Bytes& b) { put32(b, nodeAt(2) + 32, kMinusInfinity); }},
+        {"a radius that is not a number", FormatErrorKind::BadIndex, "radius nan", [](Bytes& b) { put32(b, nodeAt(0) + 44, kNan); }},
+        {"a tight radius that is not a number", FormatErrorKind::BadIndex, "tight radius nan",
+         [](Bytes& b) { put32(b, nodeAt(2) + 48, kNan); }},
+        {"a sink with an error of minus zero", FormatErrorKind::BadIndex, "sink", [](Bytes& b) { put32(b, nodeAt(3) + 16, 0x80000000u); }},
+        {"a sink with a radius that is not a number", FormatErrorKind::BadIndex, "sink", [](Bytes& b) { put32(b, nodeAt(3) + 44, kNan); }},
         {"a patch that names a node beyond the table", FormatErrorKind::BadIndex, "names node 9",
          [](Bytes& b) { put32(b, patchAt(0), 9); }},
         {"a patch that names its own node", FormatErrorKind::BadIndex, "not stored after it",
@@ -740,6 +762,26 @@ TEST(FormatReader, theRulesOfTheIndexAreCheckedInTheOrderOfTheSpecification) {
     expectRefused(b, FormatErrorKind::BadIndex, "names texture 9", "8");
     put32(b, patchAt(2) + 8, 2);
     EXPECT_NO_THROW(Bm3dReader::fromBytes(b));
+}
+
+// Each rule over the whole table before the next: a later node that breaks an earlier rule is the
+// one reported, not an earlier node that breaks a later rule
+TEST(FormatReader, eachRuleOfTheIndexIsCheckedOverTheWholeTableBeforeTheNext) {
+    TempDir dir;
+    const Bytes file = writeSample(dir, true).bytes;
+    Bytes b = file;
+    put32(b, patchAt(1) + 8, 2);       // node 0: patches with different textures (14)
+    put32(b, patchAt(3), 0);           // node 2: a patch that names a node before it (9)
+    put32(b, nodeAt(2) + 16, kNan);    // node 2: an error that is not a number (7)
+    put32(b, patchAt(0) + 4, 9);       // node 0: a triangle offset above the next one (11)
+    expectRefused(b, FormatErrorKind::BadIndex, "node 2 has a value that is not finite", "7 before 9, 11 and 14");
+    std::copy(file.begin() + nodeAt(2) + 16, file.begin() + nodeAt(2) + 20, b.begin() + nodeAt(2) + 16);
+    expectRefused(b, FormatErrorKind::BadIndex, "patch 3 of node 2 names node 0", "9 before 11 and 14");
+    put32(b, patchAt(3), kSink);
+    expectRefused(b, FormatErrorKind::BadIndex, "patch 1 of node 0", "11 before 14");
+    std::copy(file.begin() + patchAt(0) + 4, file.begin() + patchAt(0) + 8, b.begin() + patchAt(0) + 4);
+    put32(b, patchAt(3) + 8, 9);       // node 2: a texture beyond the table (13)
+    expectRefused(b, FormatErrorKind::BadIndex, "patch 3 of node 2 names texture 9", "13 before 14");
 }
 
 // A model with two roots: nodes 0 and 1 are refined by nodes 2 and 3
