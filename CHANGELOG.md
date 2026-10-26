@@ -38,6 +38,26 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   run for ever. The PLY loader also starts each vertex it reads from zero, not from the stack: the
   alpha of the colour of a PLY that has red, green and blue and no alpha was whatever the stack
   held (0 in the files built so far).
+- STL files are read by their size, not by how they start. A file of 84 + 50 n bytes, n being the
+  count in its header, is binary, whatever its header says (a binary STL that begins with `solid`,
+  which many programs write, was read as ASCII and gave garbage or no model); otherwise a file that
+  starts with `solid` and a facet is ASCII; otherwise a longer file is binary and its n triangles
+  are read, with a warning for the bytes after them; a shorter one is refused as truncated (exit
+  code 2) instead of read as far as it goes. The numbers are read as little-endian floats from the
+  bytes, without the unaligned loads UBSan reported. The ASCII reader takes words, not lines: any
+  white space, blank lines, Windows line ends, keywords in any case and several solids in a file;
+  an error names the line. A binary STL whose header holds `COLOR=` (Materialise Magics, and the
+  header MeshLab writes) gives vertex colours when some triangle has a colour of its own: bit 15
+  of the two bytes after a triangle set, then red in bits 0-4, green in 5-9 and blue in 10-14; the
+  other triangles get the colour of the header. The bit order of VisCAM and SolidView, which is
+  the opposite, is not read. The two sample STL files give the same bytes as before.
+- A file of random bytes named `.stl` no longer keeps the program busy for ever. The cause was not
+  the kd-tree: the search for the bounding sphere of a node (`vcg::Sphere3::CreateTight`) loops until
+  its step is smaller than its radius, and with coordinates of the size of the floats (random bytes
+  give them) the distances overflow, the radius becomes NaN, and the comparison is never true.
+  The same model of 1e12 units across crashed in the cone of the normals instead, where the product
+  of two edges overflows. A model whose bounding box is more than 1e9 units across (a city is 1e7
+  millimetres) is now refused as invalid input, in every format, with its size in the message.
 
 ## 0.1.0
 

@@ -9,9 +9,6 @@
 # operator-=, cstream.h encodeArray, BitStream::write shifts by 32); and OutStream::push() calls
 # memcpy(pos, nullptr, 0) for an empty array.
 #
-# The binary STL loader (src/nxsbuild/stlloader.cpp) reads the floats of a 50 byte triangle
-# record in place, at offsets that are not a multiple of 4.
-#
 # These entries are temporary: the commit that fixes the code deletes its entry. Nothing else is
 # listed, a report anywhere else is a bug to fix.
 alignment:corto/
@@ -19,4 +16,3 @@ signed-integer-overflow:corto/
 shift-exponent:corto/
 nonnull-attribute:corto/
 float-cast-overflow:corto/include/corto/normal_attribute.h
-alignment:src/nxsbuild/stlloader.cpp

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <string>
 #include <vector>
@@ -136,14 +137,14 @@ TEST(BuildFailure, aCoordinateThatIsNotAFiniteNumberIsInvalidInputInEveryFormat)
     const auto clean = waveTriangles(2);
     const struct {
         const char* name;
-        std::string (*write)(const std::vector<Triangle>&);
+        std::function<std::string(const std::vector<Triangle>&)> write;
         const char* message;  // what the error says besides the file
     } formats[] = {
         {"model.obj", objOf, "obj file"},
         {"model.ply", plyOf, "ply file"},
         {"binary.ply", binaryPlyOf, "not a finite number"},
         {"ascii.stl", asciiStl, "finite"},
-        {"binary.stl", binaryStl, "not a finite number"},
+        {"binary.stl", [](const std::vector<Triangle>& t) { return binaryStl(t); }, "not a finite number"},
     };
     for (const auto& format : formats) {
         Folders f;
@@ -187,6 +188,95 @@ TEST(BuildFailure, aCoordinateBeyondTheRangeOfAFloatIsInvalidInput) {
     EXPECT_EQ(failureKind(f.in / "big.ply", f.out / "big2.nxz", &message), ErrorKind::InvalidInput);
     EXPECT_NE(message.find("vertex 2 of ply file"), std::string::npos) << message;
     expectEmpty(f.dir, "out");
+}
+
+// --- STL
+
+// A binary STL that ends before the last triangle its header counts is cut: it is refused, not read
+// as far as it goes
+TEST(BuildFailure, aTruncatedBinaryStlIsInvalidInputThatSaysSo) {
+    Folders f;
+    const std::string bytes = binaryStl(waveTriangles(3));
+    for (const size_t cut : {size_t(1), size_t(49), size_t(50), bytes.size() - 84}) {
+        writeBinaryFile(f.in / "cut.stl", bytes.substr(0, bytes.size() - cut));
+        std::string message;
+        EXPECT_EQ(failureKind(f.in / "cut.stl", f.out / "cut.nxz", &message), ErrorKind::InvalidInput) << cut;
+        EXPECT_NE(message.find("cut.stl"), std::string::npos) << message;
+        EXPECT_NE(message.find("truncated"), std::string::npos) << message;
+    }
+    expectEmpty(f.dir, "out");
+}
+
+// The count of a binary STL is checked against the size of the file before a triangle is read
+TEST(BuildFailure, aBinaryStlThatCountsMoreTrianglesThanItHoldsIsInvalidInput) {
+    Folders f;
+    std::string bytes = binaryStl(waveTriangles(2));
+    bytes[80] = bytes[81] = bytes[82] = bytes[83] = char(0xff);  // 4294967295 triangles
+    writeBinaryFile(f.in / "many.stl", bytes);
+    std::string message;
+    EXPECT_EQ(failureKind(f.in / "many.stl", f.out / "many.nxz", &message), ErrorKind::InvalidInput);
+    EXPECT_NE(message.find("many.stl"), std::string::npos) << message;
+    expectEmpty(f.dir, "out");
+}
+
+TEST(BuildFailure, anStlWithNoTriangleIsInvalidInput) {
+    Folders f;
+    writeBinaryFile(f.in / "none.stl", binaryStl({}));
+    writeTextFile(f.in / "ascii.stl", "solid nothing\nendsolid nothing\n");
+    writeTextFile(f.in / "empty.stl", "");
+    writeTextFile(f.in / "short.stl", "solid");
+    for (const char* name : {"none.stl", "ascii.stl", "empty.stl", "short.stl"})
+        EXPECT_EQ(failureKind(f.in / name, f.out / "none.nxz"), ErrorKind::InvalidInput) << name;
+    expectEmpty(f.dir, "out");
+}
+
+// An ASCII STL that is not what it says names the line that breaks it
+TEST(BuildFailure, aBrokenAsciiStlIsInvalidInputThatNamesTheLine) {
+    Folders f;
+    const std::string facet = "facet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\n";
+    const struct {
+        const char* name;
+        std::string text;
+        const char* line;  // where the error is
+    } cases[] = {
+        {"cut.stl", "solid x\n" + facet + "facet normal 0 0 1\nouter loop\nvertex 0 0 0\n", "line 11"},
+        {"word.stl", "solid x\n" + facet + "triangle 0 0 0\n", "line 9"},
+        {"number.stl", "solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 zero 0\n", "line 4"},
+        {"missing.stl", "solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 0\nvertex 1 0 0\n", "line 5"},  // the numbers go on to the next line
+        {"endloop.stl", "solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nvertex 1 1 1\n", "line 7"},
+    };
+    for (const auto& c : cases) {
+        writeTextFile(f.in / c.name, c.text);
+        std::string message;
+        EXPECT_EQ(failureKind(f.in / c.name, f.out / "x.nxz", &message), ErrorKind::InvalidInput) << c.name;
+        EXPECT_NE(message.find(c.name), std::string::npos) << message;
+        EXPECT_NE(message.find(c.line), std::string::npos) << c.name << ": " << message;
+    }
+    expectEmpty(f.dir, "out");
+}
+
+// The builder measures with floats: the squares of the lengths in a model, and the products of its
+// edges, have to fit in one. A model larger than a billion units is refused, as the build of one used to
+// run for ever (the bounding sphere never ended) or crash.
+TEST(BuildFailure, aModelTooLargeToBeMeasuredIsInvalidInput) {
+    Folders f;
+    for (const float size : {2e9f, 1e12f, 1e30f, 3e38f}) {
+        const Triangle triangle{{{0, 0, 0}, {size, 0, 0}, {0, 1, 0}}};
+        writeBinaryFile(f.in / "large.stl", binaryStl({triangle}));
+        std::string message;
+        EXPECT_EQ(failureKind(f.in / "large.stl", f.out / "large.nxz", &message), ErrorKind::InvalidInput) << size;
+        EXPECT_NE(message.find("large.stl"), std::string::npos) << message;
+        EXPECT_NE(message.find("units across"), std::string::npos) << message;
+    }
+    expectEmpty(f.dir, "out");
+}
+
+TEST(BuildFailure, aLargeModelThatCanBeMeasuredIsBuilt) {
+    Folders f;
+    const Triangle triangle{{{0, 0, 0}, {6e8f, 0, 0}, {0, 6e8f, 0}}};
+    writeBinaryFile(f.in / "large.stl", binaryStl({triangle}));
+    ASSERT_NO_THROW(bm3d::build(f.in / "large.stl", f.out / "large.nxz"));
+    EXPECT_EQ(readNexusFile(f.out / "large.nxz").nface, 1u);
 }
 
 // The input is read (and has triangles) before this fails: it is a failure of the build

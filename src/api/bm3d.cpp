@@ -14,9 +14,11 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <new>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -216,8 +218,16 @@ void readInput(const ScratchFiles& scratch, Read&& read) {
     }
 }
 
+// The builder computes in floats the squares of the lengths in a model and the products of its
+// edges (the bounding sphere, the cone of the normals, the quadrics of the simplification), and
+// those overflow when the model is some billions of units across (a city is 1e7 millimetres). The
+// bounding sphere of a model beyond that is not a number and the search for it never ended: that
+// is what a file of random bytes read as floats did.
+constexpr double kMaxModelSize = 1e9;
+
 // Reads the input into the out-of-core stream. A file the loaders accept without finding a
-// triangle in it (a text file with an .obj name, say) is a problem of the input as well.
+// triangle in it (a text file with an .obj name, say), or whose triangles span more than the
+// builder can measure, is a problem of the input as well.
 void loadInput(StreamSoup& stream, const std::string& input, const ScratchFiles& scratch) {
     readInput(scratch, [&] {
         std::string mtl;  // not exposed yet
@@ -225,6 +235,19 @@ void loadInput(StreamSoup& stream, const std::string& input, const ScratchFiles&
     });
     if (stream.size() == 0)
         throw Error(ErrorKind::InvalidInput, "The input holds no triangles: " + input);
+
+    // in double, where the square of the largest float difference still fits
+    double squared = 0;
+    for (int k = 0; k < 3; k++) {
+        const double extent = double(stream.box.max[k]) - double(stream.box.min[k]);
+        squared += extent * extent;
+    }
+    if (!(std::sqrt(squared) <= kMaxModelSize)) {
+        std::ostringstream message;
+        message << "The model is " << std::setprecision(3) << std::sqrt(squared) << " units across (the diagonal of its "
+                << "bounding box); the largest that can be built is " << kMaxModelSize << ": " << input;
+        throw Error(ErrorKind::InvalidInput, message.str());
+    }
 }
 
 // Reads the textures the materials of the input name, which are part of the input: one that is

@@ -84,12 +84,17 @@ inline std::string firstWord(const std::string &simplifiedLine) {
 	return simplifiedLine.substr(0, simplifiedLine.find(' '));
 }
 
-inline bool equalsNoCase(const std::string &a, const char *b) {
+//true when the n characters at a are the text b (zero terminated), whatever the case
+inline bool equalsNoCase(const char *a, size_t n, const char *b) {
 	size_t i = 0;
-	for(; i < a.size() && b[i]; i++)
+	for(; i < n && b[i]; i++)
 		if(std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i]))
 			return false;
-	return i == a.size() && !b[i];
+	return i == n && !b[i];
+}
+
+inline bool equalsNoCase(const std::string &a, const char *b) {
+	return equalsNoCase(a.data(), a.size(), b);
 }
 
 //true when line starts with the word (followed by white space or the end of the line)

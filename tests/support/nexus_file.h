@@ -24,6 +24,7 @@ struct NexusFile {
     uint32_t nNodes = 0;     // with the sink, the last node
     uint32_t nPatches = 0;
     uint32_t nTextures = 0;  // with the end marker, the last texture
+    bool hasColors = false;  // the vertices carry a colour
     std::vector<std::vector<uint8_t>> textures;  // one per texture, as stored (padding included)
     std::vector<int> nodeTexture;                // the texture of each node but the sink
     std::vector<bool> leaf;                      // nodes whose patches all point to the sink
@@ -35,6 +36,16 @@ constexpr uint32_t kNexusMagic = 0x4e787320u;
 
 // Reads the file; a test failure, and what could be read, when it is too short
 NexusFile readNexusFile(const fs::path& path);
+
+// The geometry of one node, decoded with corto (the library the program compresses it with)
+struct NodeMesh {
+    std::vector<std::array<float, 3>> positions;
+    std::vector<std::array<uint8_t, 4>> colors;  // red, green, blue, alpha; empty when the file holds none
+    std::vector<uint32_t> indices;               // three per triangle
+};
+
+// Decodes node `node` of the file (a failure of the test when it cannot)
+NodeMesh readNode(const fs::path& path, uint32_t node = 0);
 
 // The encoded texture is a WebP image
 bool isWebp(const std::vector<uint8_t>& texture);

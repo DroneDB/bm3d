@@ -94,8 +94,9 @@ std::string asciiStl(const std::vector<Triangle>& triangles) {
     return s.str();
 }
 
-std::string binaryStl(const std::vector<Triangle>& triangles) {
-    std::string s = "binary wave stl";  // a header that does not start with "solid"
+std::string binaryStl(const std::vector<Triangle>& triangles, const std::string& header,
+                      const std::vector<uint16_t>& attributes) {
+    std::string s = header;
     s.resize(80, ' ');
     detail::putLittleEndian(s, static_cast<uint32_t>(triangles.size()));
     auto putFloat = [&s](float f) {
@@ -103,13 +104,13 @@ std::string binaryStl(const std::vector<Triangle>& triangles) {
         std::memcpy(&bits, &f, 4);
         detail::putLittleEndian(s, bits);
     };
-    for (const Triangle& t : triangles) {
+    for (size_t i = 0; i < triangles.size(); i++) {
         for (const float n : {0.0f, 0.0f, 1.0f})
             putFloat(n);
-        for (const auto& c : t)
+        for (const auto& c : triangles[i])
             for (const float v : c)
                 putFloat(v);
-        detail::putLittleEndian(s, static_cast<uint16_t>(0));
+        detail::putLittleEndian(s, i < attributes.size() ? attributes[i] : static_cast<uint16_t>(0));
     }
     return s;
 }

@@ -48,7 +48,11 @@ using Triangle = std::array<std::array<float, 3>, 3>;
 std::vector<Triangle> waveTriangles(int n);
 
 std::string asciiStl(const std::vector<Triangle>& triangles);
-std::string binaryStl(const std::vector<Triangle>& triangles);
+// A binary STL: the 80 byte header (`header` padded with spaces or cut) and, after each triangle, its
+// 16 bit attribute (`attributes[i]`, 0 where there is none)
+std::string binaryStl(const std::vector<Triangle>& triangles,
+                      const std::string& header = "binary wave stl",  // does not start with "solid"
+                      const std::vector<uint16_t>& attributes = {});
 
 // The same triangles as an OBJ and as an ASCII PLY, one vertex per corner
 std::string objOf(const std::vector<Triangle>& triangles);

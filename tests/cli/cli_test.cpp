@@ -247,6 +247,39 @@ TEST(CliExitCodes, aCoordinateThatIsNotANumberExitsWithTwoAndNamesTheFile) {
     EXPECT_TRUE(f.dir.list("out").empty());
 }
 
+// A file of random bytes named .stl used to keep the program busy for ever: its numbers are floats
+// of any size, the bounding sphere of the model never ended. It is refused at once. The time limit
+// makes a program that does not end a failure of the test, not of the whole run.
+TEST(CliExitCodes, aFileOfRandomBytesNamedStlExitsWithTwoAtOnce) {
+    for (uint32_t seed = 1; seed <= 12; seed++) {
+        Folders f;
+        std::string bytes;
+        uint32_t state = seed * 2654435761u;
+        for (int i = 0; i < 3000; i++) {
+            state = state * 1664525u + 1013904223u;  // a linear congruential generator, the same on every platform
+            bytes.push_back(char(state >> 24));
+        }
+        writeBinaryFile(f.in / "random.stl", bytes);
+        const ProcessResult r = runProcess(bm3dExecutable(), {f.input("random.stl"), f.output()}, std::chrono::seconds(30));
+        EXPECT_FALSE(r.timedOut) << "seed " << seed;
+        EXPECT_EQ(r.exitCode, 2) << "seed " << seed << "\n" << r.output();
+        EXPECT_NE(r.err.find("random.stl"), std::string::npos) << r.err;
+        EXPECT_TRUE(f.dir.list("out").empty());
+    }
+}
+
+// The same hang, from a file that is a binary STL: its coordinates are finite but too large to measure
+TEST(CliExitCodes, aBinaryStlOfHugeCoordinatesExitsWithTwoAtOnce) {
+    Folders f;
+    const Triangle triangle{{{1e38f, -1e38f, 3e37f}, {-2e38f, 1e38f, 0}, {1e37f, 3e38f, -3e38f}}};
+    writeBinaryFile(f.in / "huge.stl", binaryStl({triangle}));
+    const ProcessResult r = runProcess(bm3dExecutable(), {f.input("huge.stl"), f.output()}, std::chrono::seconds(30));
+    EXPECT_FALSE(r.timedOut);
+    EXPECT_EQ(r.exitCode, 2) << r.output();
+    EXPECT_NE(r.err.find("units across"), std::string::npos) << r.err;
+    EXPECT_TRUE(f.dir.list("out").empty());
+}
+
 // The model is read, and its triangles cannot be divided into nodes: the failure is of the build
 TEST(CliExitCodes, aBuildThatFailsAfterTheInputIsReadExitsWithOneAndWritesNoOutput) {
     Folders f;

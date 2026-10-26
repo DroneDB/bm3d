@@ -139,6 +139,12 @@ used.
   accepted `nan` and `inf`. The loaders keep the name of their file for the message.
   `PlyLoader::cacheVertices` starts its `PlyVertex` from zero (it was uninitialised, and its alpha
   was copied into the colour of a PLY without one).
+- `src/nxsbuild/stlloader.{h,cpp}`: rewritten. The kind of file (binary or ASCII) comes from its
+  size and its first words, the count is checked against the size, the records are read with
+  explicit little-endian conversions, the ASCII parser reads words and names the line of an error,
+  and Materialise colours are read. The triangles are cleared before they are filled (the
+  buffer of the stream was uninitialised). `src/common/textparse.h`: `equalsNoCase` has a form
+  that takes a pointer and a length.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

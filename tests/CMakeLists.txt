@@ -31,7 +31,7 @@ add_library(bm3d_test_support STATIC
 target_include_directories(bm3d_test_support PUBLIC support PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(bm3d_test_support
     PUBLIC GTest::gtest bm3d::bm3d
-    PRIVATE JPEG::JPEG PNG::PNG TIFF::TIFF WebP::webp Threads::Threads)
+    PRIVATE bm3d_corto JPEG::JPEG PNG::PNG TIFF::TIFF WebP::webp Threads::Threads)
 target_compile_definitions(bm3d_test_support PUBLIC
     "BM3D_TEST_FIXTURES_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
     "BM3D_TEST_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 
+#include <corto/decoder.h>
 #include <gtest/gtest.h>
 
 namespace bm3dtest {
@@ -42,6 +43,8 @@ NexusFile readNexusFile(const fs::path& path) {
     f.nNodes = readAt<uint32_t>(b, 60);
     f.nPatches = readAt<uint32_t>(b, 64);
     f.nTextures = readAt<uint32_t>(b, 68);
+    // the vertex attributes start at byte 24, a type and a count each: coordinates, normals, colours
+    f.hasColors = readAt<uint8_t>(b, 24 + 2 * 2) != 0;
 
     const size_t nodes = kHeaderSize, patches = nodes + kNodeSize * f.nNodes,
                  textures = patches + kPatchSize * f.nPatches;
@@ -68,6 +71,39 @@ NexusFile readNexusFile(const fs::path& path) {
         f.nodeTexture.push_back(f.nTextures > 0 ? int(readAt<uint32_t>(b, patches + kPatchSize * first + 8)) : -1);
     }
     return f;
+}
+
+NodeMesh readNode(const fs::path& path, uint32_t node) {
+    std::ifstream in(path, std::ios::binary);
+    const std::vector<uint8_t> b((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    NodeMesh mesh;
+    const uint32_t nNodes = readAt<uint32_t>(b, 60);
+    EXPECT_LT(node + 1, nNodes) << pathToUtf8(path);  // the last node is the sink
+    if (b.size() < kHeaderSize || node + 1 >= nNodes)
+        return mesh;
+    // a node is stored from its offset to the offset of the next one
+    const uint64_t begin = uint64_t(readAt<uint32_t>(b, kHeaderSize + kNodeSize * node)) * 256;
+    const uint64_t end = uint64_t(readAt<uint32_t>(b, kHeaderSize + kNodeSize * (node + 1))) * 256;
+    EXPECT_TRUE(begin < end && end <= b.size());
+    if (!(begin < end && end <= b.size()))
+        return mesh;
+    const uint32_t nvert = readAt<uint16_t>(b, kHeaderSize + kNodeSize * node + 4);
+    const uint32_t nface = readAt<uint16_t>(b, kHeaderSize + kNodeSize * node + 6);
+
+    crt::Decoder decoder(int(end - begin), b.data() + begin);
+    EXPECT_EQ(decoder.nvert, nvert);
+    EXPECT_EQ(decoder.nface, nface);
+    mesh.positions.resize(decoder.nvert);
+    decoder.setPositions(&mesh.positions[0][0]);
+    if (decoder.hasAttr("color")) {
+        mesh.colors.resize(decoder.nvert);
+        decoder.setColors(&mesh.colors[0][0]);
+    }
+    mesh.indices.resize(size_t(decoder.nface) * 3);
+    if (decoder.nface > 0)
+        decoder.setIndex(mesh.indices.data());
+    decoder.decode();
+    return mesh;
 }
 
 bool isWebp(const std::vector<uint8_t>& texture) {
