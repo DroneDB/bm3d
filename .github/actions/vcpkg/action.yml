@@ -1,21 +1,24 @@
 # Copyright (C) 2026 Digipa
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# vcpkg at the commit the manifest pins as its baseline, with its binary cache restored: the steps
-# that ci.yml, sanitizers.yml and web.yml share. It sets VCPKG_ROOT and VCPKG_DEFAULT_BINARY_CACHE
-# (under the runner's temporary folder) for the steps after it. The cache is keyed on the runner,
-# a name (the job's compiler), the manifest and the commit; the vcpkg-save action saves it.
+# vcpkg at the commit the manifest pins as its baseline (so that a port is the version the
+# reference outputs were built with), bootstrapped, with its binary cache restored: the steps
+# that ci.yml, sanitizers.yml, web.yml and release.yml share. It sets VCPKG_ROOT,
+# VCPKG_DEFAULT_BINARY_CACHE (both under the runner's temporary folder) and VCPKG_DISABLE_METRICS
+# for the steps after it. The cache is keyed on the runner, a name (the job whose ports it holds),
+# the manifest and the commit; the vcpkg-save action saves it.
 name: vcpkg
-description: vcpkg at a pinned commit, bootstrapped, with its binary cache restored
+description: vcpkg at the baseline of vcpkg.json, bootstrapped, with its binary cache restored
 inputs:
-  commit:
-    description: the vcpkg commit, "builtin-baseline" of vcpkg.json
-    required: true
   cache-name:
     description: the name of the binary cache (the job whose ports it holds)
     required: true
   cache-from:
     description: another name whose cache is restored when this one has none yet
+    required: false
+    default: ""
+  commit:
+    description: the vcpkg commit; the "builtin-baseline" of vcpkg.json when empty
     required: false
     default: ""
 outputs:
@@ -28,12 +31,26 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Paths of the vcpkg checkout and its binary cache
+    - name: The vcpkg commit and the paths of the checkout and of the binary cache
+      id: paths
       shell: bash
+      env:
+        COMMIT: ${{ inputs.commit }}
       run: |
         temp="$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")"
-        echo "VCPKG_ROOT=$temp/vcpkg" >> "$GITHUB_ENV"
-        echo "VCPKG_DEFAULT_BINARY_CACHE=$temp/vcpkg-archives" >> "$GITHUB_ENV"
+        if [ -z "$COMMIT" ]; then
+          COMMIT="$(sed -n 's/.*"builtin-baseline": *"\([0-9a-f]*\)".*/\1/p' vcpkg.json)"
+        fi
+        if [ -z "$COMMIT" ]; then
+          echo "::error::no vcpkg commit was given and vcpkg.json has no builtin-baseline"
+          exit 1
+        fi
+        {
+          echo "VCPKG_ROOT=$temp/vcpkg"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$temp/vcpkg-archives"
+          echo "VCPKG_DISABLE_METRICS=1"
+        } >> "$GITHUB_ENV"
+        echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
         mkdir -p "$temp/vcpkg-archives"
 
     - name: Restore the vcpkg binary cache
@@ -41,17 +58,19 @@ runs:
       uses: actions/cache/restore@v4
       with:
         path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-        key: vcpkg-${{ runner.os }}-${{ inputs.cache-name }}-${{ hashFiles('vcpkg.json') }}-${{ inputs.commit }}
+        key: vcpkg-${{ runner.os }}-${{ inputs.cache-name }}-${{ hashFiles('vcpkg.json') }}-${{ steps.paths.outputs.commit }}
         restore-keys: |
           vcpkg-${{ runner.os }}-${{ inputs.cache-name }}-
           vcpkg-${{ runner.os }}-${{ inputs.cache-from || inputs.cache-name }}-
 
-    - name: Set up vcpkg at the pinned commit
+    - name: Fetch vcpkg at the commit
       shell: bash
+      env:
+        COMMIT: ${{ steps.paths.outputs.commit }}
       run: |
         git init -q "$VCPKG_ROOT"
         git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
-        git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "${{ inputs.commit }}"
+        git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "$COMMIT"
         git -C "$VCPKG_ROOT" checkout -q FETCH_HEAD
 
     - name: Bootstrap vcpkg (Linux)

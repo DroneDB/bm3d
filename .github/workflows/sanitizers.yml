@@ -27,9 +27,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Must equal "builtin-baseline" in vcpkg.json (ci.yml checks the pair).
-  VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
-  VCPKG_DISABLE_METRICS: "1"
   TEST_LABELS: unit|integration|cli|robustness|golden|determinism
   # Runs of the mutation loop of the robustness tests (ci.yml runs fewer)
   BM3D_MUTATION_RUNS: "500"
@@ -52,7 +49,6 @@ jobs:
         id: vcpkg
         uses: ./.github/actions/vcpkg
         with:
-          commit: ${{ env.VCPKG_COMMIT }}
           cache-name: linux-clang
 
       - name: Configure (optimised a little, with debug information, assertions on)
@@ -92,7 +88,8 @@ jobs:
 
       # Last, so that it runs after failed tests as well
       - name: Save the vcpkg binary cache
-        if: always() && steps.configure.outcome == 'success' && steps.vcpkg.outputs.cache-hit != 'true'
+        if: always() && steps.configure.outcome == 'success'
         uses: ./.github/actions/vcpkg-save
         with:
           key: ${{ steps.vcpkg.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.vcpkg.outputs.cache-hit }}

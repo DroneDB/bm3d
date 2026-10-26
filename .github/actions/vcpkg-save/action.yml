@@ -1,15 +1,18 @@
 # Copyright (C) 2026 Digipa
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Saves the vcpkg binary cache that the vcpkg action restored, when vcpkg made archives (a run that
-# found the exact cache, or built nothing, has nothing to save). A workflow runs it last, with
-# `if: always()` and its configure step passed, so that a failed build or test still saves the
-# ports it built.
+# Saves the vcpkg binary cache that the vcpkg action restored, unless that was the exact cache or
+# vcpkg made no archive (a run that built nothing has nothing to save). A workflow runs it last,
+# with `if: always()` and its configure step passed, so that a failed build or test still saves
+# the ports it built.
 name: vcpkg-save
-description: Save the vcpkg binary cache when it holds archives
+description: Save the vcpkg binary cache when it is not the exact cache and holds archives
 inputs:
   key:
     description: the cache-primary-key output of the vcpkg action
+    required: true
+  cache-hit:
+    description: the cache-hit output of the vcpkg action
     required: true
 runs:
   using: composite
@@ -17,8 +20,12 @@ runs:
     - name: Look for vcpkg binary archives to save
       id: archives
       shell: bash
+      env:
+        CACHE_HIT: ${{ inputs.cache-hit }}
       run: |
-        if [ -n "$(find "$VCPKG_DEFAULT_BINARY_CACHE" -type f -print -quit)" ]; then
+        if [ "$CACHE_HIT" = true ]; then
+          echo "The exact vcpkg binary cache was restored: nothing to save"
+        elif [ -n "$(find "$VCPKG_DEFAULT_BINARY_CACHE" -type f -print -quit)" ]; then
           echo "found=true" >> "$GITHUB_OUTPUT"
         else
           echo "The vcpkg binary cache is empty: nothing to save"

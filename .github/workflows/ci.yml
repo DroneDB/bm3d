@@ -6,10 +6,11 @@
 # Nexus still are what their manifests say.
 #
 # The dependencies come from vcpkg at the commit the manifest (vcpkg.json) pins as its baseline,
-# so a port is the version the reference outputs were built with. The binary archives vcpkg
-# makes are cached, keyed on the runner, the compiler, the manifest and that commit. The cache is
-# saved once the configure step (where vcpkg builds the ports) has passed, even when the build or
-# the tests fail afterwards, so that the next run does not build every port again.
+# so a port is the version the reference outputs were built with (.github/actions/vcpkg). The
+# binary archives vcpkg makes are cached, keyed on the runner, the compiler, the manifest and that
+# commit. The cache is saved once the configure step (where vcpkg builds the ports) has passed,
+# even when the build or the tests fail afterwards, so that the next run does not build every port
+# again.
 name: CI
 
 on:
@@ -24,9 +25,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Must equal "builtin-baseline" in vcpkg.json (the source-checks job compares the two).
-  VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
-  VCPKG_DISABLE_METRICS: "1"
   # Labels the tests carry (tests/CMakeLists.txt); a label that matches no test is fine, a run
   # that matches none at all is an error.
   TEST_LABELS: unit|integration|cli|robustness|golden|determinism
@@ -44,9 +42,6 @@ jobs:
           python-version: "3.12"
       - name: Every project source file has an SPDX-License-Identifier
         run: python scripts/check-spdx.py
-      - name: The vcpkg commit of this workflow is the manifest baseline
-        run: |
-          grep -q "\"builtin-baseline\": \"$VCPKG_COMMIT\"" vcpkg.json
       - name: The scripts compile
         run: python -m py_compile scripts/*.py scripts/tests/*.py
       - name: The Python reader of the format (scripts/dump.py) on the fixtures of the command line
@@ -142,7 +137,6 @@ jobs:
         id: vcpkg
         uses: ./.github/actions/vcpkg
         with:
-          commit: ${{ env.VCPKG_COMMIT }}
           cache-name: ${{ matrix.name }}
           cache-from: ${{ matrix.cache_from }}
 
@@ -239,7 +233,8 @@ jobs:
 
       # Last, so that it runs after a failed build or test as well
       - name: Save the vcpkg binary cache
-        if: always() && steps.configure.outcome == 'success' && steps.vcpkg.outputs.cache-hit != 'true'
+        if: always() && steps.configure.outcome == 'success'
         uses: ./.github/actions/vcpkg-save
         with:
           key: ${{ steps.vcpkg.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.vcpkg.outputs.cache-hit }}

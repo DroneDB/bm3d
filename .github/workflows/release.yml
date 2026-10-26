@@ -117,7 +117,9 @@ jobs:
         # nasm: libjpeg-turbo's port needs it on Linux.
         run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
 
-      - uses: ./.github/actions/setup-vcpkg
+      - name: vcpkg at the pinned commit, with its binary cache
+        id: vcpkg
+        uses: ./.github/actions/vcpkg
         with:
           cache-name: release-${{ matrix.platform }}
 
@@ -128,6 +130,7 @@ jobs:
           arch: x64
 
       - name: Configure
+        id: configure
         shell: bash
         env:
           LINK_FLAGS: ${{ matrix.link_flags }}
@@ -195,6 +198,14 @@ jobs:
             build/vcpkg-manifest-install.log
             build/CMakeFiles/CMakeConfigureLog.yaml
             ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
+
+      # Last, so that it runs after a failed build or check as well
+      - name: Save the vcpkg binary cache
+        if: always() && steps.configure.outcome == 'success'
+        uses: ./.github/actions/vcpkg-save
+        with:
+          key: ${{ steps.vcpkg.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.vcpkg.outputs.cache-hit }}
 
   source:
     name: source-tarball
@@ -278,7 +289,8 @@ jobs:
                       "bm3d-$VERSION-source.tar.gz" "bm3d-viewer-$VERSION.tgz"; do
             test -f "$name" || { echo "::error::missing asset $name"; exit 1; }
           done
-          test "$(ls | wc -l)" = 4 || { echo "::error::unexpected assets:"; ls; exit 1; }
+          assets=(*)
+          test "${#assets[@]}" = 4 || { echo "::error::unexpected assets: ${assets[*]}"; exit 1; }
           LC_ALL=C sha256sum -- * > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Notes of the release (the changelog section of the version)
