@@ -96,25 +96,33 @@ TEST_P(TextureFormat, theTextureEndsUpInTheFile) {
     EXPECT_TRUE(isWebp(h.textures.front()));
 }
 
+// The formats the textures come in; TIFF only when the program can read it (a preprocessor
+// directive cannot sit inside the arguments of the instantiation macro)
+std::vector<TextureCase> textureCases() {
+    std::vector<TextureCase> cases{
+        {"jpeg", "jpg", [](const fs::path& f) { writeJpeg(f, gradientRaster(3)); }},
+        {"pngRgb", "png", [](const fs::path& f) { writePng(f, gradientRaster(3)); }},
+        {"pngRgba", "png", [](const fs::path& f) { writePng(f, gradientRaster(4)); }},
+        {"pngPaletted", "png", [](const fs::path& f) { writePalettedPng(f, 16, 16, paletteIndices()); }},
+        {"pngGray", "png", [](const fs::path& f) { writePng(f, gradientRaster(1)); }},
+        {"pngGrayAlpha", "png", [](const fs::path& f) { writePng(f, grayAlphaRaster()); }},
+        {"png16Bit", "png", [](const fs::path& f) { writeRgb16Png(f, 16, 16, flat16Bit()); }},
+        {"jpegCmyk", "jpg", [](const fs::path& f) { writeCmykJpeg(f, 16, 16, flatCmyk()); }},
+        {"webp", "webp", [](const fs::path& f) { writeWebp(f, gradientRaster(3)); }},
+        {"bmp", "bmp", [](const fs::path& f) { writeBmp(f, gradientRaster(3)); }},
+        // The one picture that is a file of the repository: nothing here writes a GIF
+        {"gif", "gif", [](const fs::path& f) { fs::copy_file(std::string(BM3D_TEST_FIXTURES_DIR) + "/texture.gif", f); }},
+    };
+#ifdef BM3D_WITH_TIFF
+    cases.push_back({"tiff", "tif", [](const fs::path& f) { writeTiff(f, gradientRaster(3)); }});
+#endif
+    return cases;
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Formats,
     TextureFormat,
-    ::testing::Values(
-        TextureCase{"jpeg", "jpg", [](const fs::path& f) { writeJpeg(f, gradientRaster(3)); }},
-        TextureCase{"pngRgb", "png", [](const fs::path& f) { writePng(f, gradientRaster(3)); }},
-        TextureCase{"pngRgba", "png", [](const fs::path& f) { writePng(f, gradientRaster(4)); }},
-        TextureCase{"pngPaletted", "png", [](const fs::path& f) { writePalettedPng(f, 16, 16, paletteIndices()); }},
-        TextureCase{"pngGray", "png", [](const fs::path& f) { writePng(f, gradientRaster(1)); }},
-        TextureCase{"pngGrayAlpha", "png", [](const fs::path& f) { writePng(f, grayAlphaRaster()); }},
-        TextureCase{"png16Bit", "png", [](const fs::path& f) { writeRgb16Png(f, 16, 16, flat16Bit()); }},
-        TextureCase{"jpegCmyk", "jpg", [](const fs::path& f) { writeCmykJpeg(f, 16, 16, flatCmyk()); }},
-#ifdef BM3D_WITH_TIFF
-        TextureCase{"tiff", "tif", [](const fs::path& f) { writeTiff(f, gradientRaster(3)); }},
-#endif
-        TextureCase{"webp", "webp", [](const fs::path& f) { writeWebp(f, gradientRaster(3)); }},
-        TextureCase{"bmp", "bmp", [](const fs::path& f) { writeBmp(f, gradientRaster(3)); }},
-        // The one picture that is a file of the repository: nothing here writes a GIF
-        TextureCase{"gif", "gif", [](const fs::path& f) { fs::copy_file(std::string(BM3D_TEST_FIXTURES_DIR) + "/texture.gif", f); }}),
+    ::testing::ValuesIn(textureCases()),
     [](const ::testing::TestParamInfo<TextureCase>& i) { return std::string(i.param.name); });
 
 // --- the colors of the pictures that are easy to get wrong
