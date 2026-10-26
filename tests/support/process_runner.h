@@ -15,8 +15,9 @@ struct ProcessResult {
     // The exit code; minus the signal number when the process was killed by a signal (also by
     // the time limit); -1 when it could not be started
     int exitCode = -1;
-    std::string out;  // what it wrote to stdout
-    std::string err;  // what it wrote to stderr
+    // What it wrote to stdout and to stderr, with "\n" line ends on every platform
+    std::string out;
+    std::string err;
     bool timedOut = false;
 
     // Both streams, for a message that says what the program printed

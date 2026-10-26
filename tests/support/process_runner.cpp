@@ -99,6 +99,17 @@ void readAll(HANDLE pipe, std::string& into) {
         into.append(buffer, got);
 }
 
+// The C runtime of the child writes "\r\n" for every "\n" to stdout and stderr, which are text
+// streams on Windows. The line ends are made "\n" again, so that the tests compare the same text
+// on every platform.
+void toNewlineLineEnds(std::string& text) {
+    size_t kept = 0;
+    for (size_t i = 0; i < text.size(); ++i)
+        if (!(text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n'))
+            text[kept++] = text[i];
+    text.resize(kept);
+}
+
 // A pipe whose write end the child inherits and whose read end it does not
 bool makePipe(Handle& read, Handle& write) {
     SECURITY_ATTRIBUTES inheritable{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
@@ -156,6 +167,8 @@ ProcessResult runProcess(const fs::path& executable,
     }
     outReader.join();
     errReader.join();
+    toNewlineLineEnds(result.out);
+    toNewlineLineEnds(result.err);
 
     DWORD code = 0;
     GetExitCodeProcess(process.get(), &code);
