@@ -4,6 +4,9 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **Viewer.** The default `decoderPath` is found from `import.meta.url` when a decoder starts, not
+  with `new URL('.', import.meta.url)`, which webpack takes for a file to bundle and stops on
+  ("Can't resolve '.'"); a test bundles the package with rollup and the rule of those bundlers.
 - The Web workflow builds the command line and writes the golden files; the Python reader, the
   tests in node and the render in Chromium read and draw them. The CI workflows share the set-up of
   vcpkg and its binary cache (`.github/actions/vcpkg` and `vcpkg-save`).

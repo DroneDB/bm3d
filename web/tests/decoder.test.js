@@ -73,7 +73,7 @@ describe('the corto decoder (corto.wasm)', () => {
 	it('decodes a model with vertex colours and no texture, whose counts are those the encoder wrote', async () => {
 		const { nodes } = await nodesOf('sphere.bm3d');
 		const { payload, expected } = nodes[0];
-		expect(expected).toMatchObject({ vertexCount: 3010, faceCount: 6016, uv: false, color: true });
+		expect(expected).toMatchObject({ vertexCount: 2906, faceCount: 5808, uv: false, color: true });
 		const model = decoder.decode(payload, expected);
 		expect(Object.keys(model).sort()).toEqual(['color', 'index', 'normal', 'position']);
 		// The points of a unit sphere, quantised by the encoder (a step of 1/16 of the model)
@@ -103,7 +103,7 @@ describe('the corto decoder (corto.wasm)', () => {
 		for (const wrong of [{ vertexCount: expected.vertexCount + 1 }, { faceCount: expected.faceCount - 1 }]) {
 			expect(() => decoder.decode(payload, { ...expected, ...wrong })).toThrowError(expect.objectContaining({ code: ErrorCode.CORRUPT_NODE }));
 		}
-		expect(() => decoder.decode(payload, { ...expected, faceCount: 7 })).toThrowError(/3010 vertices and 6016 triangles/);
+		expect(() => decoder.decode(payload, { ...expected, faceCount: 7 })).toThrowError(/2906 vertices and 5808 triangles/);
 	});
 
 	it('refuses a stream whose attributes are not those of the layout', async () => {
