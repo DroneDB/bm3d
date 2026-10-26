@@ -153,6 +153,9 @@ target_include_directories(bm3d_core
         src/nxsbuild)
 # std::filesystem and the VCGLib headers need C++17
 target_compile_features(bm3d_core PUBLIC cxx_std_17)
+# The sources and the VCGLib headers hold UTF-8 text: MSVC reads them as UTF-8, not in the code
+# page of the machine
+target_compile_options(bm3d_core PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 # The image libraries stay private: a program that links bm3d_core does not need their headers.
 # The stb headers are only included, so they are not part of the link.
 target_include_directories(bm3d_core PRIVATE ${Stb_INCLUDE_DIR})
@@ -173,6 +176,8 @@ endif()
 add_executable(bm3d cli/main.cpp)
 target_include_directories(bm3d PRIVATE src/api)
 target_link_libraries(bm3d PRIVATE bm3d_core Threads::Threads)
+# UTF-8 sources, as for bm3d_core
+target_compile_options(bm3d PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 if(MSVC)
     # The program reads one environment variable for its tests
     target_compile_definitions(bm3d PRIVATE _CRT_SECURE_NO_WARNINGS)

@@ -14,6 +14,15 @@ namespace {
 
 using bm3d::jsonObjectError;
 
+// The object {"k":"<text>"}: `text` is the JSON text between the quotes of the string.
+// The JSON texts with a backslash are plain C++ strings with the backslash doubled, not raw
+// strings: MSVC reads \u and the four hex digits of a surrogate in a raw string as a character name
+// and refuses it, and its preprocessor quotes a raw string given to an EXPECT macro as if it were a
+// plain one, so that a \/ or \x in it stops the build.
+std::string withString(const std::string& text) {
+    return "{\"k\":\"" + text + "\"}";
+}
+
 // `depth` openers, the core, `depth` closers
 std::string nested(char open, char close, int depth, const std::string& core) {
     return std::string(size_t(depth), open) + core + std::string(size_t(depth), close);
@@ -36,15 +45,13 @@ TEST(JsonObject, numbersFollowTheGrammar) {
 }
 
 TEST(JsonObject, stringsKeepTheirEscapes) {
-    EXPECT_EQ(jsonObjectError(R"({"k":"quote \" backslash \\ slash \/ \b \f \n \r \t A é"})"), "");
+    EXPECT_EQ(jsonObjectError(withString("quote \\\" backslash \\\\ slash \\/ \\b \\f \\n \\r \\t \\u0041 \\u00e9")), "");
     EXPECT_EQ(jsonObjectError(R"({"a":"b"})"), "");
 }
 
 TEST(JsonObject, aBadEscapeIsRefused) {
-    EXPECT_NE(jsonObjectError(R"({"k":"\x"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\'"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\u12"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\u12G4"})"), "");
+    for (const char* text : {"\\x", "\\'", "\\u12", "\\u12G4"})
+        EXPECT_NE(jsonObjectError(withString(text)), "") << text;
     EXPECT_NE(jsonObjectError("{\"k\":\"\\"), "");
 }
 
@@ -138,7 +145,7 @@ TEST(JsonObject, badUtf8InAStringIsRefused) {
         "\xFF",
     };
     for (const char* text : bad)
-        EXPECT_NE(jsonObjectError(std::string("{\"k\":\"") + text + "\"}"), "") << "bytes starting with " << int(static_cast<unsigned char>(text[0]));
+        EXPECT_NE(jsonObjectError(withString(text)), "") << "bytes starting with " << int(static_cast<unsigned char>(text[0]));
 }
 
 TEST(JsonObject, badUtf8InAnameIsRefusedToo) {
@@ -151,22 +158,17 @@ TEST(JsonObject, badUtf8OutsideAStringIsRefused) {
 }
 
 TEST(JsonObject, aLoneSurrogateEscapeIsRefused) {
-    EXPECT_NE(jsonObjectError(R"({"k":"\ud800"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\udbff"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\udc00"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\udfff"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\uD800x"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\uD800A"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\uD800\uD800"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"k":"\uDC00\uD800"})"), "");
-    EXPECT_NE(jsonObjectError(R"({"\ud800":1})"), "");
+    for (const char* text : {"\\ud800", "\\udbff", "\\udc00", "\\udfff", "\\uD800x", "\\uD800A", "\\uD800\\uD800", "\\uDC00\\uD800"})
+        EXPECT_NE(jsonObjectError(withString(text)), "") << text;
+    EXPECT_NE(jsonObjectError("{\"\\ud800\":1}"), "");
 }
 
 TEST(JsonObject, aSurrogatePairEscapeIsAccepted) {
-    EXPECT_EQ(jsonObjectError(R"({"k":"😀"})"), "");
-    EXPECT_EQ(jsonObjectError(R"({"k":"𐀀 􏿿"})"), "");
+    // U+1F600, then U+10000 and U+10FFFF, the first and the last code points a pair can name
+    EXPECT_EQ(jsonObjectError(withString("\\ud83d\\ude00")), "");
+    EXPECT_EQ(jsonObjectError(withString("\\ud800\\udc00 \\udbff\\udfff")), "");
     // the code points either side of the surrogates are not surrogates
-    EXPECT_EQ(jsonObjectError(R"({"k":"퟿ "})"), "");
+    EXPECT_EQ(jsonObjectError(withString("\\ud7ff \\ue000")), "");
 }
 
 TEST(JsonObject, nestingPastTheLimitIsRefused) {

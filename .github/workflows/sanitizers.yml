@@ -6,8 +6,12 @@
 # compiler flag of its own. The ports come from vcpkg uninstrumented; the project's code and the
 # imported sources are instrumented.
 #
-# The imported corto sources have known reports (unaligned and overflowing integer arithmetic, one
-# empty allocation that is never freed); .github/sanitizers/*.supp lists those and nothing else.
+# The imported corto sources and the STL loader have known reports (unaligned reads, overflowing
+# integer arithmetic, a NaN cast to an int, one empty allocation that is never freed);
+# .github/sanitizers/*.supp lists those and nothing else.
+#
+# The vcpkg binary cache is the one of the linux-clang job of ci.yml, saved by whichever job gets
+# past its configure step first, even when the tests fail afterwards.
 name: Sanitizers
 
 on:
@@ -49,7 +53,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
 
       - name: Restore the vcpkg binary cache
-        uses: actions/cache@v4
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: vcpkg-${{ runner.os }}-linux-clang-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
@@ -65,6 +70,7 @@ jobs:
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure (optimised a little, with debug information, assertions on)
+        id: configure
         run: >
           cmake --preset release
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -84,7 +90,10 @@ jobs:
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.github/sanitizers/lsan.supp
+          # print_suppressions=0: LeakSanitizer would print the suppressions it used to the
+          # stderr of every process, and the cli tests check that a build that works writes
+          # nothing there
+          LSAN_OPTIONS: print_suppressions=0:suppressions=${{ github.workspace }}/.github/sanitizers/lsan.supp
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/.github/sanitizers/ubsan.supp
         run: ctest --test-dir build -L "$TEST_LABELS" --no-tests=error --output-on-failure
 
@@ -98,3 +107,21 @@ jobs:
             build/vcpkg-manifest-install.log
             build/Testing/Temporary/LastTest.log
             ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
+
+      # Last, so that it runs after failed tests as well
+      - name: Look for vcpkg binary archives to save
+        id: archives
+        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        run: |
+          if [ -n "$(find "$VCPKG_DEFAULT_BINARY_CACHE" -type f -print -quit)" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "The vcpkg binary cache is empty: nothing to save"
+          fi
+
+      - name: Save the vcpkg binary cache
+        if: always() && steps.archives.outputs.found == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}

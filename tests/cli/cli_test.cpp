@@ -403,13 +403,19 @@ TEST_F(CliHeartbeat, aLongBuildPrintsALinePerInterval) {
 }
 
 TEST_F(CliHeartbeat, aValueThatIsNotAPositiveNumberOfMillisecondsKeepsTheDefaultInterval) {
+    // The line of the start, then one per 15 s. The count of lines depends on how long the build
+    // takes (more than 15 s under the sanitizers), the time each line shows does not.
+    const long defaultIntervalSeconds = 15;
     Folders f;
     writeLargeModel(f);
     for (const char* value : {"0", "abc", "-5", ""}) {
         EnvVarGuard interval("BM3D_TEST_HEARTBEAT_MS", value);
         const ProcessResult r = runBm3d({"--threads", "1", f.input("large.stl"), f.output()});
         ASSERT_EQ(r.exitCode, 0) << value << "\n" << r.output();
-        EXPECT_EQ(lines(r.out).size(), 1u) << "'" << value << "'\n" << r.out;
+        const auto seconds = elapsedOf(lines(r.out), f.input("large.stl"));
+        ASSERT_FALSE(seconds.empty()) << "'" << value << "'\n" << r.out;
+        for (size_t i = 0; i < seconds.size(); ++i)
+            EXPECT_GE(seconds[i], defaultIntervalSeconds * long(i)) << "'" << value << "'\n" << r.out;
     }
 }
 

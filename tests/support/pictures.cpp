@@ -7,11 +7,13 @@
 #include <cmath>
 #include <csetjmp>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 
+#include <jpeglib.h>
 #include <png.h>
 #include <tiffio.h>
 #include <webp/decode.h>
@@ -40,6 +42,16 @@ void collect(void* context, void* data, int size) {
     auto* bytes = static_cast<std::vector<uint8_t>*>(context);
     const auto* p = static_cast<const uint8_t*>(data);
     bytes->insert(bytes->end(), p, p + size);
+}
+
+// libjpeg reports an error by calling error_exit, which must not return: it jumps back to the
+// setjmp of writeJpeg
+struct JpegErrorJump : jpeg_error_mgr {
+    std::jmp_buf jump;
+};
+
+extern "C" void jumpOnJpegError(j_common_ptr info) {
+    std::longjmp(static_cast<JpegErrorJump*>(info->err)->jump, 1);
 }
 
 // Runs one of the stb *_to_func writers and writes what it produced
@@ -96,11 +108,41 @@ std::vector<uint8_t> paletteIndices() {
     return indices;
 }
 
+// libjpeg, not stb: the JPEG writer of stb shifts negative ints left, which C++17 leaves undefined
 void writeJpeg(const fs::path& file, const Raster& raster) {
     requireChannels(raster, 3, "JPEG");
-    writeWithStb(file, raster, [](auto* func, void* ctx, int w, int h, int c, const uint8_t* data) {
-        return stbi_write_jpg_to_func(func, ctx, w, h, c, data, 90) != 0;
-    });
+    // Made before the jump target below: a jump back does not run the destructors of what was
+    // made after it. jpeg_destroy_compress does nothing to a zeroed object that was never created.
+    unsigned char* encoded = nullptr;  // malloc'ed by libjpeg's memory destination
+    unsigned long size = 0;
+    jpeg_compress_struct info{};
+    JpegErrorJump errors;
+    info.err = jpeg_std_error(&errors);
+    errors.error_exit = &jumpOnJpegError;
+    if (setjmp(errors.jump)) {
+        jpeg_destroy_compress(&info);
+        std::free(encoded);
+        throw std::runtime_error("cannot encode " + pathToUtf8(file));
+    }
+    jpeg_create_compress(&info);
+    jpeg_mem_dest(&info, &encoded, &size);
+    info.image_width = JDIMENSION(raster.width);
+    info.image_height = JDIMENSION(raster.height);
+    info.input_components = 3;
+    info.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&info);
+    jpeg_set_quality(&info, 90, TRUE);
+    jpeg_start_compress(&info, TRUE);
+    const size_t stride = size_t(raster.width) * 3;
+    while (info.next_scanline < info.image_height) {
+        // jpeg_write_scanlines takes rows that are not const and only reads them
+        JSAMPROW row = const_cast<JSAMPROW>(raster.pixels.data() + size_t(info.next_scanline) * stride);
+        jpeg_write_scanlines(&info, &row, 1);
+    }
+    jpeg_finish_compress(&info);
+    jpeg_destroy_compress(&info);
+    std::unique_ptr<unsigned char, decltype(&std::free)> owner(encoded, &std::free);
+    writeBytes(file, encoded, size_t(size));
 }
 
 void writePng(const fs::path& file, const Raster& raster) {
