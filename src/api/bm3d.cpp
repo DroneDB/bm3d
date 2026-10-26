@@ -237,8 +237,8 @@ void loadTextures(NexusBuilder& builder, std::vector<LoadTexture>& textures, con
 }
 
 // The coordinate step of the compression: a fraction of the smallest error among the nodes that
-// the sink follows. Sets the error factor of the extractor that goes with it.
-float coordinateStep(NexusData& nexus, Extractor& extractor) {
+// the sink follows.
+float coordinateStep(NexusData& nexus) {
     const uint32_t sink = nexus.header.n_nodes - 1;
     float step = kErrorQ * nexus.nodes[0].error / 2.0f;
     for (uint32_t i = 0; i < sink; ++i) {
@@ -250,12 +250,10 @@ float coordinateStep(NexusData& nexus, Extractor& extractor) {
         if (e < step && e > 0.0)
             step = static_cast<float>(e);
     }
-    extractor.error_factor = kErrorQ;
 
     // Fallback to avoid log2(0) if the step is still <= 0
     if (step <= 0.0f) {
         step = 1.0f;
-        extractor.error_factor = 0.0f;
     }
     return step;
 }
@@ -269,11 +267,10 @@ void compress(const std::string& source, const std::string& target) {
     }
 
     Signature signature = nexus.header.signature;
-    signature.flags &= ~(Signature::MECO | Signature::CORTO);
     signature.flags |= Signature::CORTO;
 
     Extractor extractor(&nexus);
-    extractor.coord_q = static_cast<int>(std::log2(coordinateStep(nexus, extractor)));
+    extractor.coord_q = static_cast<int>(std::log2(coordinateStep(nexus)));
     extractor.norm_bits = kNormalBits;
 
     extractor.color_bits[0] = kLumaBits;

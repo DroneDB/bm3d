@@ -8,6 +8,10 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   `TMesh::savePly`, `TMesh::savePlyTex`, and `Extractor::savePly`, `saveStl`, `saveUnifiedPly`
   with the code only they used) and the VCGLib export header that came with it. Output does not
   change.
+- Removed MECO, the compression Nexus used before corto: the encoder and decoder
+  (`src/nxszip`), the flag name and the unused error factor of the extractor. The program has
+  always written corto only; flag value 0x2 stays unused in the container header. Output does not
+  change.
 
 ## 0.1.0
 

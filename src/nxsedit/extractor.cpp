@@ -24,8 +24,6 @@ for more details.
 #include "../common/error.h"
 #include "../common/pathutil.h"
 
-#include "../nxszip/meshcoder.h"
-//typedef MeshCoder MeshEncoder;
 #include <corto/corto.h>
 
 #include <vcg/space/triangle3.h>
@@ -326,33 +324,7 @@ uint64_t Extractor::pad(uint64_t s) {
 
 void Extractor::compress(OutputFile &file, nx::Signature &signature, nx::Node &node, nx::NodeData &data, Patch *patches) {
 
-	//detect first node error which is out of boundary.
-	if(signature.flags & Signature::MECO) {
-
-		meco::MeshEncoder coder(node, data, patches, signature);
-		coder.coord_q = coord_q;
-		coder.error = error_factor*node.error;
-		coder.norm_q = norm_bits;
-		for(int k = 0; k < 4; k++)
-			coder.color_q[k] = color_bits[k];
-		//HER if signaure has texture was set to (int)log2(tex_step * pow(2, -12)); //here set to -14
-		//here we shold set to -log2(max_side/tex_step) where max_side width or height of the associated texture.
-		//unfortunately we have no really fast to provide this info.....
-		//so assume
-		coder.tex_q = -(int)log2(512/tex_step);
-
-		coder.encode();
-
-		//cout << "V size: " << coder.coord_size << endl;
-		//cout << "N size: " << coder.normal_size << endl;
-		//cout << "C size: " << coder.color_size << endl;
-		//cout << "I size: " << coder.face_size << endl;
-
-		if(coder.stream.size() > 0)
-			file.write((char *)&*coder.stream.buffer, coder.stream.size());
-		//padding
-		file.padTo(pad(file.pos()));
-	} else if(signature.flags & Signature::CORTO) {
+	if(signature.flags & Signature::CORTO) {
 
 		crt::Encoder encoder(node.nvert, node.nface);
 

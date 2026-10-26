@@ -23,7 +23,6 @@ for more details.
 #include <vcg/space/line3.h>
 #include <vcg/space/intersection3.h>
 
-#include "../nxszip/meshdecoder.h"
 #include <corto/decoder.h>
 
 //#if _MSC_VER >= 1800
@@ -189,26 +188,19 @@ uint64_t NexusData::loadRam(uint32_t n) {
 
 		d.memory = new char[size];
 
-		if(sign.flags & Signature::MECO) {
-			meco::MeshDecoder coder(node, d, patches, sign);
-			coder.decode(compressed_size, (unsigned char *)buffer);
+		crt::Decoder decoder(compressed_size, (unsigned char *)buffer);
 
-		} else if(sign.flags & Signature::CORTO) {
+		decoder.setPositions((float *)d.coords());
+		if(sign.vertex.hasNormals())
+			decoder.setNormals((int16_t *)d.normals(sign, node.nvert));
+		if(sign.vertex.hasColors())
+			decoder.setColors((unsigned char *)d.colors(sign, node.nvert));
+		if(sign.vertex.hasTextures())
+			decoder.setUvs((float *)d.texCoords(sign, node.nvert));
+		if(node.nface)
+			decoder.setIndex(d.faces(sign, node.nvert));
 
-			crt::Decoder decoder(compressed_size, (unsigned char *)buffer);
-
-			decoder.setPositions((float *)d.coords());
-			if(sign.vertex.hasNormals())
-				decoder.setNormals((int16_t *)d.normals(sign, node.nvert));
-			if(sign.vertex.hasColors())
-				decoder.setColors((unsigned char *)d.colors(sign, node.nvert));
-			if(sign.vertex.hasTextures())
-				decoder.setUvs((float *)d.texCoords(sign, node.nvert));
-			if(node.nface)
-				decoder.setIndex(d.faces(sign, node.nvert));
-
-			decoder.decode();
-		}
+		decoder.decode();
 		if(sign.isDeepzoom())
 			file->dropDZNode(buffer);
 		else

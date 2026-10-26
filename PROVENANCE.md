@@ -40,7 +40,7 @@ with their authorship.
 |---|---|---|
 | `third_party/vcg/` (only the VCGLib files the build reads) | `FILES`, `VCG_SOURCE` | `scripts/sync-vcg.py` |
 | `third_party/corto/` (the 8 compiled sources and the headers they include) | `FILES`, `CORTO_SOURCE` | `scripts/sync-corto.py` |
-| `src/common`, `src/nxsbuild`, `src/nxsedit`, `src/nxszip` | `NEXUS_SOURCE` | `scripts/import-nexus.py` |
+| `src/common`, `src/nxsbuild`, `src/nxsedit` (and `src/nxszip`, since removed) | `NEXUS_SOURCE` | `scripts/import-nexus.py` |
 
 The lists come from `scripts/closure.py`, which reads the compiler's dependency files (GCC and
 Clang) and the `/showIncludes` output of MSVC and keeps the files that lie under the three source
@@ -81,6 +81,12 @@ used.
 - `src/nxsedit/extractor.{h,cpp}`: `savePly`, `saveStl`, `saveUnifiedPly` and `countElements`
   (which only they used) are removed, with the small PLY structures of `saveUnifiedPly`. The
   program never wrote an extracted mesh.
+- `src/nxszip/*` (`abitstream.cpp`, `atunstall.cpp`, `meshcoder.{h,cpp}`, `meshdecoder.{h,cpp}`,
+  `bitstream.h`, `cstream.h`, `fpu_precision.h`, `tunstall.h`, `zpoint.h`): removed, the whole
+  directory. It held MECO, the compression Nexus used before corto, which the program never
+  selects; its two call sites (`extractor.cpp`, `nexusdata.cpp`), the `MECO` name in
+  `src/common/signature.h` and the extractor's `error_factor`, which only MECO read, go with it.
+  The flag values of the container are unchanged.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

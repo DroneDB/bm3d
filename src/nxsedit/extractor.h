@@ -13,7 +13,6 @@ class Extractor: public nx::Traversal {
 public:
 	//compression options
 	int coord_q;      //step of coord quantizations (a power of 2: 0 means 1 unit)
-	double error_factor; //unused error for internal vertices
 	int color_bits[4];
 	int norm_bits;
 	float tex_step; //in pixel units

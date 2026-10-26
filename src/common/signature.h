@@ -90,13 +90,15 @@ public:
 	VertexElement vertex;
 	FaceElement face;
 
-	enum Flags { PTEXTURE = 0x1, MECO = 0x2, CORTO = 0x4, DEEPZOOM = 0x8 };
+	// 0x2 was MECO, the compression Nexus used before corto: it is no longer read or written, and
+	// a container that has it is not compressed as far as this code can tell.
+	enum Flags { PTEXTURE = 0x1, CORTO = 0x4, DEEPZOOM = 0x8 };
 	uint32_t flags;
 	void setFlag(Flags f) { flags |= f; }
 	void unsetFlag(Flags f) { flags &= ~f; }
 
 	bool hasPTextures() { return (bool)(flags | PTEXTURE); }
-	bool isCompressed() { return (bool)(flags & (MECO|CORTO)); }
+	bool isCompressed() { return (bool)(flags & CORTO); }
 	bool isDeepzoom() { return (bool)(flags & (DEEPZOOM)); }
 
 	Signature(): flags(0) {}

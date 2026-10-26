@@ -131,11 +131,7 @@ add_library(bm3d_core STATIC
     src/nxsbuild/tmesh.cpp
     src/nxsbuild/tsloader.cpp
     src/nxsbuild/tsploader.cpp
-    src/nxsedit/extractor.cpp
-    src/nxszip/abitstream.cpp
-    src/nxszip/atunstall.cpp
-    src/nxszip/meshcoder.cpp
-    src/nxszip/meshdecoder.cpp)
+    src/nxsedit/extractor.cpp)
 add_library(bm3d::bm3d ALIAS bm3d_core)
 set_target_properties(bm3d_core PROPERTIES
     EXPORT_NAME bm3d
