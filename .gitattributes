@@ -1,0 +1,7 @@
+# Imported upstream sources keep their bytes, line endings included (several upstream files use
+# CRLF). scripts/sync-*.py and scripts/import-nexus.py compare SHA-256 hashes of these bytes, so
+# no checkout may convert them. The licence texts are copies of the upstream files too.
+third_party/** -text
+src/** -text
+licenses/** -text
+/LICENSE -text

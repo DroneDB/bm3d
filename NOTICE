@@ -1,0 +1,51 @@
+bm3d
+Copyright (C) 2026 Digipa
+
+bm3d is free software, distributed under the GNU General Public License, version 3 (LICENSE).
+The files written for it are licensed under version 3 or (at your option) any later version;
+src/api/bm3d.cpp and cli/main.cpp derive from libnexus and are licensed under version 3 only.
+It contains and links the software below; each part keeps its own copyright and licence. Where
+each file comes from is described in PROVENANCE.md.
+
+libnexus (the DroneDB fork)
+  Copyright (C) Digipa (Piero Toffanin, Luca Di Leo and HeDo). The C interface and command line
+  that wrapped the Nexus builder for DroneDB; src/api/bm3d.cpp and cli/main.cpp derive from it.
+  GNU General Public License, version 3 only.
+
+Nexus
+  Copyright (C) 2012-2017 Federico Ponchio, ISTI - Italian National Research Council,
+  Visual Computing Lab. Files under src/ keep their headers: GNU General Public License,
+  version 2 or (at your option) any later version. The files added by the DroneDB fork name
+  Digipa as their author under the same licence. The repository's licence text is
+  licenses/Nexus.LICENSE.
+
+VCGLib
+  Copyright (C) 2004-2026 Visual Computing Lab, ISTI - Italian National Research Council
+  (Paolo Cignoni and others, the authors named in the file headers). Files under
+  third_party/vcg keep their headers: GNU General Public License, version 2 or (at your
+  option) any later version. The repository's licence text is licenses/vcglib.LICENSE. The
+  files wrap/ply/plylib.cpp and wrap/ply/plylib.h are modified (third_party/vcg-patches).
+
+corto
+  Copyright (c) 2015-2022, Visual Computing Lab, ISTI - CNR (Federico Ponchio). MIT licence,
+  licenses/corto.LICENSE. Files under third_party/corto.
+
+Eigen
+  Copyright (C) the Eigen authors. Mozilla Public License 2.0 (parts under the BSD licence).
+  Used as a header-only library from the system or vcpkg; its source is available at
+  https://eigen.tuxfamily.org.
+
+Image libraries, linked from vcpkg:
+  libjpeg-turbo  Copyright (C) 2009-2024 D. R. Commander and others; Copyright (C) 1991-2020
+                 Thomas G. Lane, Guido Vollbeding (Independent JPEG Group). IJG licence,
+                 modified BSD licence and zlib licence.
+  libpng         Copyright (c) the PNG Reference Library Authors (Glenn Randers-Pehrson and
+                 others). libpng licence.
+  libwebp        Copyright (c) Google Inc. and contributors. BSD 3-clause licence.
+  libtiff        Copyright (c) 1988-1997 Sam Leffler; Copyright (c) 1991-1997 Silicon
+                 Graphics, Inc. libtiff licence (permissive).
+  stb            Public domain or MIT licence, at your option (Sean Barrett and
+                 contributors): stb_image.
+
+The full licence texts of the image libraries and of Eigen are shipped with the binary
+archives of each release and are in the vcpkg packages they come from.

@@ -1,0 +1,703 @@
+From 42b35dd492bbc0a32a7dd914a402af88196e96dc Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Sun, 25 Oct 2026 20:21:27 +0100
+Subject: [PATCH 4/4] plylib reads the length of a binary list as the type the
+ header declares
+
+PLY lets a list give its length as any integer type: "property list int int vertex_indices"
+is valid, and some writers use it. The binary list readers read the length as one byte
+whatever the header said (only the int-to-int reader looked at the type, and it did not know
+ushort), so such a file was misread from its first list on; the readers that skip a list
+nobody asked for did the same. All of them now read the length through one function,
+ReadListLengthB, which reads the declared type (char, uchar, short, ushort, int or uint, in
+the file's byte order) and fails the read for any other type, a negative length or one
+beyond int. compile() gives a list property it will skip the type of its length too, since
+AddToRead fills in the descriptor only for the properties it reads. Lists of uchar length
+read exactly as before.
+---
+ wrap/ply/plylib.cpp | 268 +++++++++++++++++++++++---------------------
+ 1 file changed, 140 insertions(+), 128 deletions(-)
+
+diff --git a/wrap/ply/plylib.cpp b/wrap/ply/plylib.cpp
+index c9bd03e50..a0e46593b 100644
+--- a/wrap/ply/plylib.cpp
++++ b/wrap/ply/plylib.cpp
+@@ -60,6 +60,7 @@ extern "C" __declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int,
+ #include <math.h>
+ #include <string.h>
+ #include <assert.h>
++#include <limits.h>
+ 
+ #include <vector>
+ #include <algorithm>
+@@ -1932,21 +1933,38 @@ static bool cb_read_ascii( GZFILE fp, void * mem, PropDescriptor * d )
+ }
+ 
+ 
++// The length of a binary list, read as the type the header declares for it: most files give it
++// as an uchar, but any integer type is valid PLY (some writers use int or uint), and reading one
++// byte of a wider length misreads the list and everything after it. False when the file ends,
++// the type is not an integer one, or the length is negative or beyond int.
++static inline bool ReadListLengthB( GZFILE fp, const PropDescriptor * d, int & n )
++{
++	switch(d->stotype2)
++	{
++	case T_CHAR: case T_UCHAR: case T_SHORT: case T_USHORT: case T_INT: case T_UINT: break;
++	default: return false;
++	}
++	double length;
++	if( !ReadScalarB(fp,&length,d->stotype2,T_DOUBLE,d->format) ) return false;
++	if( length<0 || length>double(INT_MAX) ) return false;
++	n = int(length);
++	return true;
++}
++
+ const int SKIP_MAX_BUF = 512;
+ 
+-// Discard one binary list property: a uchar count followed by n elements of
+-// elemSize bytes. The count reaches 255, so a single pb_fread of n*elemSize bytes
++// Discard one binary list property: a count (of the type the header declares, see
++// ReadListLengthB) followed by n elements of elemSize bytes. A single pb_fread of n*elemSize bytes
+ // overruns skip_buf as soon as the list is longer than SKIP_MAX_BUF/elemSize --
+ // 128 entries for uint32 lists, 64 for 8-byte ones. That is a stack smash driven
+ // straight from file contents, so the skip is chunked instead.
+ // An empty list is not an error either: the old code asked fread for zero items,
+ // got zero back and reported failure.
+-static bool cb_skip_list_bin( GZFILE fp, int elemSize )
++static bool cb_skip_list_bin( GZFILE fp, const PropDescriptor * d, int elemSize )
+ {
+   char skip_buf[SKIP_MAX_BUF];
+-  uchar n;
+-		// Solo indici uchar
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++  int n;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 
+ 	size_t remaining = size_t(n) * size_t(elemSize);
+ 	while( remaining > 0 )
+@@ -1958,24 +1976,24 @@ static bool cb_skip_list_bin( GZFILE fp, int elemSize )
+ 	return true;
+ }
+ 
+-static bool cb_skip_list_bin1( GZFILE fp, void * /*mem*/, PropDescriptor * /*d*/ )
++static bool cb_skip_list_bin1( GZFILE fp, void * /*mem*/, PropDescriptor * d )
+ {
+-	return cb_skip_list_bin(fp,1);
++	return cb_skip_list_bin(fp,d,1);
+ }
+ 
+-static bool cb_skip_list_bin2( GZFILE fp, void * /*mem*/, PropDescriptor * /*d*/ )
++static bool cb_skip_list_bin2( GZFILE fp, void * /*mem*/, PropDescriptor * d )
+ {
+-	return cb_skip_list_bin(fp,2);
++	return cb_skip_list_bin(fp,d,2);
+ }
+ 
+-static bool cb_skip_list_bin4( GZFILE fp, void * /*mem*/, PropDescriptor * /*d*/ )
++static bool cb_skip_list_bin4( GZFILE fp, void * /*mem*/, PropDescriptor * d )
+ {
+-	return cb_skip_list_bin(fp,4);
++	return cb_skip_list_bin(fp,d,4);
+ }
+ 
+-static bool cb_skip_list_bin8( GZFILE fp, void * /*mem*/, PropDescriptor * /*d*/ )
++static bool cb_skip_list_bin8( GZFILE fp, void * /*mem*/, PropDescriptor * d )
+ {
+-	return cb_skip_list_bin(fp,8);
++	return cb_skip_list_bin(fp,d,8);
+ }
+ 
+ static bool cb_skip_list_ascii ( GZFILE fp, void * /*mem*/, PropDescriptor * /*d*/ )
+@@ -2031,8 +2049,8 @@ static bool cb_read_list_ascii( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chch( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2052,8 +2070,8 @@ static bool cb_read_list_chch( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chsh( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2077,8 +2095,8 @@ static bool cb_read_list_chsh( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2102,8 +2120,8 @@ static bool cb_read_list_chin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2127,8 +2145,8 @@ static bool cb_read_list_chuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chus( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2152,8 +2170,8 @@ static bool cb_read_list_chus( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2177,8 +2195,8 @@ static bool cb_read_list_chui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chfl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2202,8 +2220,8 @@ static bool cb_read_list_chfl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_chdo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2229,8 +2247,8 @@ static bool cb_read_list_chdo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shch( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2253,8 +2271,8 @@ static bool cb_read_list_shch( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shsh( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2277,8 +2295,8 @@ static bool cb_read_list_shsh( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2301,8 +2319,8 @@ static bool cb_read_list_shin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2325,8 +2343,8 @@ static bool cb_read_list_shuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shus( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2349,8 +2367,8 @@ static bool cb_read_list_shus( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2373,8 +2391,8 @@ static bool cb_read_list_shui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shfl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2397,8 +2415,8 @@ static bool cb_read_list_shfl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_shdo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2424,8 +2442,8 @@ static bool cb_read_list_shdo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_inch( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2448,8 +2466,8 @@ static bool cb_read_list_inch( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_insh( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2472,18 +2490,8 @@ static bool cb_read_list_insh( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_inin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-//	uchar n,i; prima del 5/9/03 era cosi'
+-// if( pb_fread(&n,1,1,fp)==0 ) return false;
+-	int n=0,i;
+-	switch(d->stotype2)
+-	{ 
+-	case T_CHAR : { char val; if( ReadCharB(fp,&val,d->format)==0 ) return false; n=val; } break;
+-	case T_UCHAR : { uchar val; if( ReadUCharB(fp,&val,d->format)==0 ) return false; n=val; } break;
+-	case T_SHORT : { short val; if( ReadShortB(fp,&val,d->format)==0 ) return false; n=val; } break;
+-	case T_UINT : { uint val; if( ReadUIntB(fp,&val,d->format)==0 ) return false; n=val; } break;
+-	case T_INT : { int val; if( ReadIntB(fp,&val,d->format)==0 ) return false; n=val; } break;
+-	default: assert(0); break;
+-	}
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2505,8 +2513,8 @@ static bool cb_read_list_inin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_inuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2529,8 +2537,8 @@ static bool cb_read_list_inuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_inus( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2553,8 +2561,8 @@ static bool cb_read_list_inus( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_inui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2577,8 +2585,8 @@ static bool cb_read_list_inui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_infl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2601,8 +2609,8 @@ static bool cb_read_list_infl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_indo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2627,8 +2635,8 @@ static bool cb_read_list_indo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucch( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2651,8 +2659,8 @@ static bool cb_read_list_ucch( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucsh( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2675,8 +2683,8 @@ static bool cb_read_list_ucsh( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2699,8 +2707,8 @@ static bool cb_read_list_ucin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2723,8 +2731,8 @@ static bool cb_read_list_ucuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucus( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2747,8 +2755,8 @@ static bool cb_read_list_ucus( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2771,8 +2779,8 @@ static bool cb_read_list_ucui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucfl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2795,8 +2803,8 @@ static bool cb_read_list_ucfl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ucdo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2822,8 +2830,8 @@ static bool cb_read_list_ucdo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usch( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2846,8 +2854,8 @@ static bool cb_read_list_usch( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_ussh( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2870,8 +2878,8 @@ static bool cb_read_list_ussh( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2894,8 +2902,8 @@ static bool cb_read_list_usin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2918,8 +2926,8 @@ static bool cb_read_list_usuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usus( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2942,8 +2950,8 @@ static bool cb_read_list_usus( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2966,8 +2974,8 @@ static bool cb_read_list_usui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usfl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -2990,8 +2998,8 @@ static bool cb_read_list_usfl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_usdo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3017,8 +3025,8 @@ static bool cb_read_list_usdo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uich( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3041,8 +3049,8 @@ static bool cb_read_list_uich( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uish( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3065,8 +3073,8 @@ static bool cb_read_list_uish( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uiin( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3089,8 +3097,8 @@ static bool cb_read_list_uiin( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uiuc( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3113,8 +3121,8 @@ static bool cb_read_list_uiuc( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uius( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3137,8 +3145,8 @@ static bool cb_read_list_uius( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uiui( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3161,8 +3169,8 @@ static bool cb_read_list_uiui( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uifl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3185,8 +3193,8 @@ static bool cb_read_list_uifl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_uido( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3211,8 +3219,8 @@ static bool cb_read_list_uido( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_flfl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3235,8 +3243,8 @@ static bool cb_read_list_flfl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_fldo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3259,8 +3267,8 @@ static bool cb_read_list_fldo( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_dofl( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3283,8 +3291,8 @@ static bool cb_read_list_dofl( GZFILE fp, void * mem, PropDescriptor * d )
+ 
+ static bool cb_read_list_dodo( GZFILE fp, void * mem, PropDescriptor * d )
+ {
+-	uchar n,i;
+-	if( pb_fread(&n,1,1,fp)==0 ) return false;
++	int n,i;
++	if( !ReadListLengthB(fp,d,n) ) return false;
+ 	char * store;
+ 	StoreInt( ((char *)mem)+d->offset2, d->memtype2, int(n));
+ 	if( !ListFits(d,int(n)) ) return false;
+@@ -3310,6 +3318,10 @@ static bool cb_read_list_dodo( GZFILE fp, void * mem, PropDescriptor * d )
+ void PlyFile::compile( PlyProperty * p )
+ {
+ 	p->desc.format = format;		// copiatura formato
++	// the type of the length of a list, which the binary readers need also for a list they skip
++	// (AddToRead gives it only to the properties it reads, and requires it to be this one)
++	if(p->islist)
++		p->desc.stotype2 = p->tipoindex;
+ 
+ 	if(format==F_ASCII)
+ 	{

@@ -1,0 +1,27 @@
+# Written by scripts/sync-corto.py; do not edit.
+# The files below are the upstream bytes of the commit, with the patches applied.
+# Check: scripts/sync-corto.py --check   (add --source <clone> to re-derive them)
+repository: https://github.com/cnr-isti-vclab/corto
+commit: d240e69306a39417c098475d7002eb16b7264248
+files:
+d44ebc5edaa5e7ce46f091777d19d680f8c4dfa99b39e852f6191ad064a54435  include/corto/bitstream.h
+3eb6b17449b6376eed559a6252ba8b850d76731d088402aa7836f97ee14f9249  include/corto/color_attribute.h
+f4af2fa14e6928dfe851b56d634ca892a2ff55f0b0d3c942c697baeaa4fba727  include/corto/corto.h
+079b6e5fdf3271ff61c9679f70d56e32a2945d26e186b5488be5e525cda33f43  include/corto/cstream.h
+4c93e39fd0abeaca966e8ad22552e286b0a5cd23372b77733a1617e6436119a3  include/corto/decoder.h
+00bb60039d9d466e35fc061ea746341208d8c20495a7bd9e3ed450856ddf6585  include/corto/encoder.h
+91c43808201c86f768d02998e2b90490911fa87f39bc3b8cce66b6d77f08cad1  include/corto/index_attribute.h
+329d353fff9f3d544f9d1bae3a2e740edb747f4ceebb264630ebb305d62c7315  include/corto/normal_attribute.h
+507d5af378d377d82196d9ca2fb939b9efc0216a482c5d8663c487bd6b11f105  include/corto/point.h
+1be0584f3c94c7723d3a40fb3f648530234b2c0c2a5df7574853d7398749ef2c  include/corto/tunstall.h
+e6609bd5d8292491c441e55ca4e65df5a1b2507e051f197b517c4192cc4429c7  include/corto/vertex_attribute.h
+8aa2d1ac93db09144d06faa72d0da27dad85c082cf9102b8ad6b7132a3b0195c  include/corto/zpoint.h
+8f53646645589a93e37616acc62855c5a23b46177ca72c0d1ecd374e1e4e81e9  src/bitstream.cpp
+c05d44e7a02b2c050da368b6ba48532f0ce58928b9ad2e6ab5266ff858a9c054  src/color_attribute.cpp
+3075723381ec01f669b0829733ef75f8eecab0198ea331aac6d15904f5b2b370  src/corto_codec.cpp
+04ddb33932ca419f8e8a23edaec0a65ae5981f4bb2a3ca6305ef4a74e26e0cbc  src/corto_codec.h
+fffae73f3dee7c9e3bea89da1fca17daae7a8c6f89aed163cde03b77afb1f4ff  src/cstream.cpp
+414a265ce45120566699f66cdade3c160857c8b12d917071c2d03aa4209e2d4c  src/decoder.cpp
+8dae873bcaa37ef6e43e8f25c92f7a54368da2cb50cf62bdb982317f22806f4e  src/encoder.cpp
+c841368f3156a291adfec1c20f7af98fa0856e3a79a2d2331844821cd28ef163  src/normal_attribute.cpp
+db150d6bcb0e61867a597a66eba2c058c6895253781116f41b1db957b5802d50  src/tunstall.cpp
