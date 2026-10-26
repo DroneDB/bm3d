@@ -105,24 +105,43 @@ modified, since the namespace and the type names changed).
 |---|---|
 | `nxsbuild/` | `src/build/`; `nexusbuilder.{h,cpp}` is `builder.{h,cpp}` |
 | `nxsedit/extractor.{h,cpp}` | `src/compress/compressor.{h,cpp}` |
-| `common/nexusdata.{h,cpp}` | `src/common/reader.{h,cpp}` |
-| `common/nexusfile.h` | `src/common/file.h` |
-| `common/stdnexusfile.{h,cpp}` | `src/common/stdfile.{h,cpp}` |
+| `common/nexusdata.{h,cpp}`, `common/nexusfile.h`, `common/stdnexusfile.{h,cpp}`, `common/dag.h`, `common/signature.h`, `common/traversal.{h,cpp}` | removed (see "The container" below) |
 | `nxszip/` | removed (see below) |
 | the other files of `common/` | the same path |
 
 Names in the code: the namespace `nx` is `bm3d::detail` (the classes `Builder` and `Compressor`
 live there too; the public API of `include/bm3d/bm3d.h` is in `bm3d`); `NexusBuilder` is
-`Builder`, `NexusData` is `Reader`, `NexusFile` is `File`, `StdNexusFile` is `StdFile`,
-`NexusFormatError` is `FormatError`, `Extractor` is `Compressor`, `NEXUS_PADDING` is
-`BM3D_PADDING`. The classes of the mesh, the kd-tree, the loaders and the image code that were in
-the global namespace stay there until the sources are split into modules. Outside `src/`:
-`tests/support/nexus_file.{h,cpp}` is `container_file.{h,cpp}` and `scripts/nxzread.py` is
-`scripts/format0.py`. The temporary files of a build are `bm3d_cache_*` and `<output>.tmp.bm3d`.
-The licence headers of the imported files are unchanged. The magic number and the header of the
-container are data of format 0 and are not changed.
+`Builder` and `Extractor` is `NodeCompressor`. The classes of the mesh, the kd-tree, the loaders
+and the image code that were in the global namespace stay there until the sources are split into
+modules. Outside `src/`: `tests/support/nexus_file.{h,cpp}` is `bm3d_file.{h,cpp}` and
+`scripts/nxzread.py` is `scripts/format0.py`. The temporary files of a build are `bm3d_cache_*` and
+`<output>.part`. The licence headers of the imported files are unchanged.
+
+### The container
+
+bm3d writes the `.bm3d` format, version 1 (`docs/FORMAT.md`), and no longer the container of Nexus
+(format 0). The files that were the container are replaced by `src/format/`, which is written for
+bm3d (GPL-3.0-or-later, no Nexus code in it):
+
+| Nexus (upstream `src/`) | Now |
+|---|---|
+| `common/nexusdata.{h,cpp}` (`NexusData`: header, tables, `loadRam`, `dropRam`, `intersects`) | `src/format/bm3d_reader.{h,cpp}`: `Bm3dReader` reads and checks the new header and tables; nothing renders or picks, so the viewer-side functions are gone |
+| `common/dag.h` (`Header`, `Node`, `Patch`, `Texture`, `countDagRoots`) | `src/format/bm3d_format.{h,cpp}` (the records of the file, `countRoots`) and `src/build/node.h` (`Node`, the node while it is being built) |
+| `common/signature.h` (`Signature`, `Attribute`, `Element`) | `VertexLayout` and the attribute slots of `src/format/bm3d_format.h` |
+| `common/nexusfile.h`, `common/stdnexusfile.{h,cpp}` (`NexusFile`, `StdNexusFile`) | `ByteSource` of `src/format/bm3d_reader.h`; the writer uses `OutputFile` of `src/common/textfile.h` |
+| `common/traversal.{h,cpp}` (the selection of nodes by size, level, error or triangles that `Extractor` used) | removed; the program never selected a part of a model |
+| `nxsedit/extractor.{h,cpp}` (`Extractor::save`, which wrote format 0 and compressed the nodes) | `src/compress/compressor.{h,cpp}`: only the part that encodes one node with corto (`NodeCompressor`) and the quantisation step of the coordinates; `Builder::save` writes through `Bm3dWriter` |
+
+The builder no longer writes an uncompressed container for the compression to read back: it encodes
+each node as it saves and passes it to the writer. The encoding itself (corto, with the same
+settings and the same step of the coordinates) is the Nexus code, so the streams are byte for byte
+those of the format 0 files (`scripts/dump.py compare` shows it on the reference models).
 
 ## Changes made to the imported files
+
+The files of Nexus that were the container (`reader`, `file`, `stdfile`, `dag`, `signature`,
+`traversal`) are gone, replaced as "The container" above says; the entries below that name them
+describe what was done to them before.
 
 - `src/build/builder.cpp`: the vertex cache optimisation is removed. Its function
   `optimizeNode` begins with `return;` in the imported code, so the optimisation never ran
@@ -132,11 +151,14 @@ container are data of format 0 and are not changed.
   `complex/allocate.h`, `complex/algorithms/` `stat.h`, `clean.h` and `local_optimization/tri_edge_collapse_quadric.h`: the patch `0007`.
 - `third_party/corto/` `include/corto/normal_attribute.h`, `include/corto/cstream.h`,
   `src/bitstream.cpp`: the 5 corto patches above.
-- `src/common/dag.h`: every field of `Node` has a value from the start, and the empty sphere of
-  `Header` and `Node` has its centre at the origin (`emptySphere()`). The sink node that ends the
-  node table set only `first_patch`, so the file got the rest of it as it lay on the stack, and
-  two builds of the same input differed in a few bytes. The file keeps its layout.
-- `src/common/cone.h`: `Cone3s::n` starts at zero, for the same reason (the cone of the sink node).
+- `src/build/node.h` (`dag.h` of Nexus): every field of `Node` has a value from the start, and the
+  empty sphere has its centre at the origin (`emptySphere()`). The sink node that ended the node
+  table set only `first_patch`, so the file got the rest of it as it lay on the stack, and two
+  builds of the same input differed in a few bytes. The sink of the new format is written by the
+  writer: all zeros but its first patch.
+- `src/common/cone.{h,cpp}`: `Cone3s::n` starts at zero, for the same reason (the cone of the sink
+  node), and `Import` writes four zeros when the axis is not longer than 0.001 (the specification
+  says so; a cone has an axis of at least 1 or none, so no cone changes).
 - `src/build/builder.cpp`: the bounding sphere of the header starts from `emptySphere()`
   instead of vcg's empty sphere, whose centre is not set.
 - `src/build/mesh.{h,cpp}`, `src/build/tmesh.{h,cpp}`: the debug export of a mesh to a PLY
@@ -262,14 +284,10 @@ GPL-3.0-or-later; the project as a whole is distributed under version 3 of the G
 - `vertex_cache_optimizer.h` (upstream `nxsbuild`) had no notice and has no known author; it came with the
   2017 import of Nexus from Subversion. It was never imported and never was in the history of
   this repository.
-- `src/common/stdfile.{h,cpp}` were written for the Qt-free fork (by HeDo, on the model of
-  upstream's `nexusfile.h`) and have no header; they are covered by the licence of this
-  repository.
-- `src/build/` `texpyramid.{h,cpp}`, `stlloader.{h,cpp}`, `src/compress/compressor.h` and
-  `src/common/file.h` (upstream `nexusfile.h`) are upstream Nexus files (Federico Ponchio and the
-  Nexus contributors)
-  whose upstream version has no header either; they are covered by Nexus' licence
-  (`licenses/Nexus.LICENSE`).
+- `src/build/` `texpyramid.{h,cpp}` and `stlloader.{h,cpp}` are upstream Nexus files (Federico
+  Ponchio and the Nexus contributors) whose upstream version has no header either; they are
+  covered by Nexus' licence (`licenses/Nexus.LICENSE`). (`src/compress/compressor.h` had none
+  upstream either; it has the notice of Nexus now, as the rest of the file derives from it.)
 - `third_party/corto/` `src/corto_codec.{h,cpp}` and `include/corto/corto.h` have no header; the
   other corto files carry a header by Federico Ponchio that names the GNU Lesser General Public
   License, version 3 or later. corto's repository is under the MIT licence

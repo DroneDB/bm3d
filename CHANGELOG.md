@@ -4,6 +4,55 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **The output is the `.bm3d` format, version 1** (`docs/FORMAT.md`), and `formatVersion()` and
+  `bm3d --version` say 1. The Nexus container (format 0) is no longer written, and `bm3d` reads
+  neither: its magic number is `Nxs ` and this one is `BM3D`. The differences that matter: offsets
+  and lengths are `u64` byte counts and every payload and texture starts at a multiple of 8 (not
+  256), a texture has its exact length, there is no sentinel row in the texture table, the colour
+  is `UNSIGNED_BYTE`, the header says `CORTO_COMPRESSED` and `TEXTURE_WEBP`, and the file ends with
+  a metadata block (one JSON object: `generator`, `buildOptions`, `source` with the name, vertex
+  and face counts and bounds of the input, and the members given with `--metadata`).
+- **Content identity.** The content hash (SHA-256 of every byte of the file but the metadata
+  block, with its length field read as zero; the SHA-256 is `src/format/sha256.cpp`, as no
+  library of the build has one) is what the determinism tests, the new golden tests and any
+  refactor compare. The metadata holds the number of threads, the name of the input and the
+  version of bm3d, so two files of the same model differ in their bytes and not in their hash.
+- `--metadata <file.json>` is stored. A top-level key `generator`, `buildOptions`, `source`, one
+  that starts with `bm3d`, or one given twice, and a block over 1 MiB, are a wrong command line (exit
+  code 64) refused before the build starts. The library has the same in `BuildOptions::metadata`
+  (refused with `ErrorKind::InvalidArgument`) and `metadataError()`.
+- **The counts of a node are the encoder's.** corto drops the triangles with two equal vertex
+  indexes and then the vertices only they used, and moves the end of every group to match. The node
+  record and the patches of the new format are written from the encoder after it has run (before,
+  from the counts the builder gave it, which a decoder then found to differ), and a node whose
+  triangles are all dropped is an error: the format has no nodes of points. The cone of a node is
+  four zeros when its axis is not longer than 0.001.
+- `src/format/` is the one place that knows the file: the records with their sizes asserted and
+  their fields written and read one by one in little endian (`bm3d_format`), `Bm3dWriter` (the
+  header, the index, the payloads, the textures and the metadata, written under `<output>.part` and
+  renamed), `Bm3dReader` (every check of section 11 of the specification in its order, lazy access
+  to nodes and textures, the metadata and the content hash), the metadata block (`metadata`),
+  the JSON checker (moved there from `src/api`) and the SHA-256. The builder saves through the
+  writer, node by node, with no intermediate file: the uncompressed container that the builder
+  wrote for the compression to read back (`<output>.tmp.bm3d`) is gone with the format 0 writer,
+  and so are `dag.h`, `signature.h`, `file.h`, `stdfile`, `reader` and `traversal` of `src/common`.
+  The tests read the files with `Bm3dReader` (`tests/support/bm3d_file`).
+- New tests: unit tests of the records (byte layout, sizes), the writer (the worked example of the
+  specification byte for byte, the round trip), the reader (every error of section 11 with a
+  hand-made bad file, in order; the version rule; the metadata; the content hash), SHA-256 against
+  the standard's vectors, the metadata block, the compressor and the cone; integration tests of the
+  output (every node decodes to its record, the metadata, the refused keys); CLI tests of
+  `--metadata`; and the `golden` label: six small models built by the program whose content hashes
+  are in `tests/golden/hashes.txt`, written to `BM3D_GOLDEN_DIR` (by default `<build>/golden`; the
+  target `bm3d_golden_fixtures` writes them alone) for the other readers of the format. The
+  determinism tests compare content hashes, and bytes between builds with the same thread count.
+- `scripts/dump.py` reads a `.bm3d` file with no code of `src/format/` (every check of section 11,
+  the headers of the corto streams against the index), prints it, and `dump.py compare OLD.nxz
+  NEW.bm3d` compares a format 0 file with the file built from the same input node by node: the
+  index, every corto stream and every texture. `scripts/compare.py` reads either format
+  (`modelfile.py` is what the two readers share; `format0.py` is the reader of the Nexus
+  container, kept for the comparisons).
+
 - Every Nexus name in the code is a bm3d name; the output does not change (the byte gate is the
   same on all eight reference models). The namespace `nx` is `bm3d::detail` (the public API stays
   in `bm3d`), `NexusBuilder` is `Builder`, `NexusData` is `Reader`, `NexusFile` is `File`,

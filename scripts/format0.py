@@ -4,12 +4,15 @@
 """Read the index of a format 0 file (.nxs / .nxz, the container Nexus wrote) and decode its
 node textures.
 
-This is the reader behind scripts/compare.py. It does not decode the geometry (a .nxz keeps it
-compressed); it reads what a structural comparison needs: the header, the node, patch and
-texture tables, and the bytes of the node textures.
+bm3d wrote this container until version 0.2.0 and writes the one of docs/FORMAT.md since (read by
+dump.py). This reader stays for the comparisons with the files the Nexus builder and bm3d 0.2.0
+wrote (scripts/compare.py, and dump.py's comparison of the two containers).
 
-File layout (little endian, as the Nexus builder wrote it; the byte offsets are the ones of the
-structs in src/common/dag.h and signature.h):
+It does not decode the geometry (a .nxz keeps it compressed); it reads what a structural
+comparison needs: the header, the node, patch and texture tables, and the bytes of the node
+textures. What the two formats have in common is in modelfile.py.
+
+File layout (little endian, as the Nexus builder wrote it):
 
   header, 88 bytes
       0 u32 magic 0x4e787320     4 u32 version        8 u64 nvert       16 u64 nface
@@ -24,20 +27,21 @@ structs in src/common/dag.h and signature.h):
   texture table, n_textures x 68 bytes: u32 offset (units of 256 bytes), 16 x f32 matrix;
       the last entry is a sink, so texture t spans offset[t] .. offset[t + 1]
 
-The patches of node n are first_patch[n] .. first_patch[n + 1]. A patch links its node to the
-node that refines it; the leaves link to the sink. Nodes are stored parents before children, so
-a node's level (its depth below the roots) is one more than the deepest parent, computed in
-one pass over the nodes in index order.
+A patch links its node to the node that refines it; the leaves link to the sink.
 """
 import io
+import os
 import struct
+import sys
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from modelfile import ModelFile, ModelFileError, NO_TEXTURE  # noqa: E402,F401
 
 MAGIC = 0x4E787320
 PADDING = 256
 HEADER_SIZE = 88
-NO_TEXTURE = 0xFFFFFFFF
 
 NODE_DTYPE = np.dtype([
     ("offset", "<u4"), ("nvert", "<u2"), ("nface", "<u2"), ("error", "<f4"),
@@ -51,11 +55,11 @@ assert NODE_DTYPE.itemsize == 44 and PATCH_DTYPE.itemsize == 12 and TEXTURE_DTYP
 ATTRIBUTE_TYPES = ("none", "byte", "ubyte", "short", "ushort", "int", "uint", "float", "double")
 
 
-class Format0Error(ValueError):
+class Format0Error(ModelFileError):
     pass
 
 
-class Format0File:
+class Format0File(ModelFile):
     """The tables of one format 0 file; node textures are read from the file on demand."""
 
     def __init__(self, path):
@@ -72,7 +76,7 @@ class Format0File:
                 raise Format0Error("%s: bad magic 0x%08x" % (path, self.magic))
             self.vertex_attributes = tuple(struct.unpack_from("<16B", head, 24))
             self.face_attributes = tuple(struct.unpack_from("<16B", head, 40))
-            (self.flags, self.n_nodes, self.n_patches, self.n_textures) = struct.unpack_from("<IIII", head, 56)
+            (self.flags, self.n_nodes_header, self.n_patches_header, self.n_textures) = struct.unpack_from("<IIII", head, 56)
             self.sphere = np.array(struct.unpack_from("<4f", head, 72), dtype=np.float64)
 
             def table(dtype, count):
@@ -81,19 +85,22 @@ class Format0File:
                     raise Format0Error("%s: truncated index" % path)
                 return np.frombuffer(data, dtype=dtype)
 
-            self.nodes = table(NODE_DTYPE, self.n_nodes)
-            self.patches = table(PATCH_DTYPE, self.n_patches)
+            self.nodes = table(NODE_DTYPE, self.n_nodes_header)
+            self.patches = table(PATCH_DTYPE, self.n_patches_header)
             self.textures = table(TEXTURE_DTYPE, self.n_textures)
-        if self.n_nodes < 1:
-            raise Format0Error("%s: no nodes" % path)
-        self._handle = None
         self._derive()
 
     # --- layout ---------------------------------------------------------------------------
     @property
     def layout(self):
-        """What must be equal in two files built by the same program: magic, version, flags
-        and the vertex and face attribute layout."""
+        """What must be equal in two models: whether the vertices have normals, colours and
+        texture coordinates (the compression of the nodes is not a property of the model)."""
+        return {"normals": self.vertex_attributes[2] != 0, "colors": self.vertex_attributes[4] != 0,
+                "uvs": self.vertex_attributes[6] != 0}
+
+    @property
+    def raw_layout(self):
+        """The magic, version, flags and attribute layout as the header spells them."""
         return {
             "magic": self.magic, "version": self.version, "flags": self.flags,
             "vertex_attributes": [(ATTRIBUTE_TYPES[t] if t < len(ATTRIBUTE_TYPES) else t, n)
@@ -102,92 +109,13 @@ class Format0File:
                                 for t, n in zip(self.face_attributes[0::2], self.face_attributes[1::2])],
         }
 
-    # --- the DAG --------------------------------------------------------------------------
-    def _derive(self):
-        sink = self.n_nodes - 1
-        self.sink = sink
-        real = self.nodes[:sink]
-        first = self.nodes["first_patch"].astype(np.int64)
-        if np.any(np.diff(first) < 0) or (self.n_nodes and first[-1] > self.n_patches):
-            raise Format0Error("%s: patch ranges are not increasing" % self.path)
-        level = np.zeros(sink, dtype=np.int32)
-        leaf = np.ones(sink, dtype=bool)
-        patch_node = self.patches["node"]
-        for n in range(sink):
-            lo, hi = first[n], first[n + 1]
-            if hi > lo:
-                children = patch_node[lo:hi]
-                real_children = children[children < sink]
-                if real_children.size and int(real_children.min()) <= n:
-                    raise Format0Error("%s: node %d links to a node stored before it" % (self.path, n))
-                if real_children.size:
-                    leaf[n] = False
-                    np.maximum.at(level, real_children, level[n] + 1)
-        self.level = level
-        self.leaf = leaf
-        self.real_nodes = real
-
+    # --- textures ---------------------------------------------------------------------------
     @property
-    def n_real_nodes(self):
-        return self.n_nodes - 1
+    def n_real_textures(self):
+        """The texture table ends with a sink, so texture t spans offset[t] .. offset[t + 1]."""
+        return max(0, self.n_textures - 1)
 
-    @property
-    def n_levels(self):
-        return int(self.level.max()) + 1 if self.level.size else 0
-
-    def node_textures(self, node):
-        """Distinct texture indexes the patches of a node use."""
-        lo, hi = int(self.nodes["first_patch"][node]), int(self.nodes["first_patch"][node + 1])
-        seen = []
-        for t in self.patches["texture"][lo:hi]:
-            t = int(t)
-            if t != NO_TEXTURE and t < self.n_textures - 1 and t not in seen:
-                seen.append(t)
-        return seen
-
-    # --- texture bytes --------------------------------------------------------------------
     def texture_span(self, index):
         begin = int(self.textures["offset"][index]) * PADDING
         end = int(self.textures["offset"][index + 1]) * PADDING
         return begin, min(end, self.size)
-
-    def texture_bytes(self, index, limit=None):
-        """The encoded texture (its first `limit` bytes when given)."""
-        if self._handle is None:
-            self._handle = open(self.path, "rb")
-        begin, end = self.texture_span(index)
-        if limit is not None:
-            end = min(end, begin + limit)
-        self._handle.seek(begin)
-        return self._handle.read(max(0, end - begin))
-
-    def texture_image(self, index):
-        """The decoded texture as a PIL image (WebP or JPEG; whatever Pillow reads)."""
-        from PIL import Image
-        return Image.open(io.BytesIO(self.texture_bytes(index)))
-
-    def texture_size(self, index):
-        """(width, height) from the start of the encoded texture, without decoding the pixels.
-
-        WebP keeps its size in the first 30 bytes; a JPEG has it in the frame header that
-        follows its metadata, so the read grows until Pillow finds it."""
-        from PIL import Image, UnidentifiedImageError
-        begin, end = self.texture_span(index)
-        for limit in (4096, 65536, end - begin):
-            try:
-                with Image.open(io.BytesIO(self.texture_bytes(index, limit))) as image:
-                    return image.size
-            except (UnidentifiedImageError, OSError, SyntaxError):
-                if limit >= end - begin:
-                    raise
-
-    def close(self):
-        if self._handle is not None:
-            self._handle.close()
-            self._handle = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        self.close()

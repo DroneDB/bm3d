@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 Digipa
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Structural parity between format 0 files built by a reference program and by a candidate.
+"""Structural parity between the models built by a reference program and by a candidate.
 
-  compare.py --ref a.nxz [--ref b.nxz ...] --cand c.nxz [--json out.json]
+  compare.py --ref a.nxz [--ref b.nxz ...] --cand c.bm3d [--json out.json]
+
+The references are format 0 files (.nxs / .nxz, the container Nexus wrote, read by format0.py) or
+.bm3d files; so is the candidate (dump.py reads those). The comparison is of the model, not of
+the container, so that a candidate in the new format is held to the references the Nexus builder
+made: the layout is what the vertices carry, the totals are the ones of the header and of the
+nodes, and the size is the size of the file.
 
 Exit status 0 when the candidate matches, 1 when it does not (a table says which checks), 2 for
 a file that cannot be read.
@@ -12,7 +18,7 @@ The references are several builds of the same model by the reference program: th
 what "the same" means, because a build is not bit-for-bit repeatable. A candidate value passes
 when it lies in [min, max] of the references widened by a relative tolerance. What is compared:
 
-  layout        magic, version, flags and the vertex and face attribute layout: equal
+  layout        whether the vertices carry normals, colours and texture coordinates: equal
   counts        nodes, patches, textures, levels, leaves: the reference spread, widened by
                 --count-tolerance (default 0 with two or more references, 1% with one)
   totals        vertices and faces (the header and the sum over the nodes), the sum of the node
@@ -44,7 +50,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from format0 import Format0File, Format0Error  # noqa: E402
+from dump import open_model  # noqa: E402
+from modelfile import ModelFileError  # noqa: E402
 
 PSNR_CAP = 100.0
 SSIM_WINDOW = 8
@@ -63,7 +70,7 @@ def texture_pixels(model, node):
 def level_texels(model):
     """Pixels of the node textures, summed per level."""
     texels = [0] * model.n_levels
-    if model.n_textures > 1:
+    if model.n_real_textures > 0:
         for node in range(model.n_real_nodes):
             texels[int(model.level[node])] += texture_pixels(model, node)
     return texels
@@ -75,7 +82,7 @@ def summarise(model):
         "layout": model.layout,
         "nodes": model.n_nodes,
         "patches": model.n_patches,
-        "textures": model.n_textures,
+        "textures": model.n_real_textures,
         "levels": model.n_levels,
         "leaves": int(model.leaf.sum()),
         "vertices": int(model.nvert),
@@ -238,7 +245,7 @@ def match_by_place(ref, cand, nodes, tolerance):
 
 
 def pixel_checks(ref, cand, options):
-    if ref.n_textures <= 1 and cand.n_textures <= 1:
+    if ref.n_real_textures == 0 and cand.n_real_textures == 0:
         return [Check("pixels", "textures", "none", "none", True, "no textures in the reference or the candidate")], {}
     nodes = sample_nodes(ref, options.samples, options.seed)
     matches = match_by_place(ref, cand, nodes, options.place_tolerance)
@@ -304,8 +311,8 @@ def render(checks):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--ref", action="append", required=True, metavar="FILE", help="reference .nxz/.nxs (repeatable)")
-    parser.add_argument("--cand", required=True, metavar="FILE", help="candidate .nxz/.nxs")
+    parser.add_argument("--ref", action="append", required=True, metavar="FILE", help="reference .nxz/.nxs/.bm3d (repeatable)")
+    parser.add_argument("--cand", required=True, metavar="FILE", help="candidate .nxz/.nxs/.bm3d")
     parser.add_argument("--json", metavar="FILE", help="also write the checks as JSON")
     parser.add_argument("--count-tolerance", type=float, default=None,
                         help="relative widening of the reference spread of the counts (default 0; 0.01 with one reference)")
@@ -326,12 +333,12 @@ def build_parser():
 def main(argv=None):
     options = build_parser().parse_args(argv)
     try:
-        refs = [Format0File(path) for path in options.ref]
-        cand = Format0File(options.cand)
+        refs = [open_model(path) for path in options.ref]
+        cand = open_model(options.cand)
         checks = compare_summaries(summarise(cand), [summarise(r) for r in refs], options)
         pixels, detail = pixel_checks(refs[0], cand, options)
         checks.extend(pixels)
-    except (OSError, Format0Error) as error:
+    except (OSError, ModelFileError) as error:
         print("compare.py: %s" % error, file=sys.stderr)
         return 2
     print(render(checks))

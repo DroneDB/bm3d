@@ -5,9 +5,9 @@ bm3d is a builder, a file format and a web viewer for multiresolution 3D models.
 the detail it needs, so a model of many millions of triangles and gigapixels of texture opens in
 a web page.
 
-Status of this version (0.2.0): the builder and its command line are in place. The output is
-still the Nexus container ("format 0"), always corto-compressed. The `.bm3d` format, its
-specification and the web viewer arrive in later releases.
+Status of this version: the builder and its command line are in place, and the output is a `.bm3d`
+file, format version 1, always corto-compressed, specified in [`docs/FORMAT.md`](docs/FORMAT.md).
+The web viewer arrives with the first release of that format.
 
 ## 1. Derived from Nexus
 
@@ -24,8 +24,11 @@ commits.
 
 - No Qt: images, files and paths are handled with the C++ standard library and a small set of
   image libraries.
-- Its own file format, version 1 (not readable by the Nexus tools). Version 0.2.0 still writes
-  the Nexus container.
+- Its own file format, version 1 (`docs/FORMAT.md`; not readable by the Nexus tools, and the magic
+  number says so). Version 0.2.0 and earlier wrote the Nexus container. The new file has offsets
+  in bytes aligned to 8 instead of units of 256, a metadata block (the program and its version,
+  the settings of the build, the input, and any JSON object given with `--metadata`), and a
+  content hash that ignores the metadata, so that two builds of the same input have the same hash.
 - Full-resolution WebP textures, sized by texels instead of capped at 1024 pixels.
 - Hardened loaders for OBJ, PLY and STL.
 - Deterministic output: the same input gives the same bytes.
@@ -100,10 +103,12 @@ workflow runs them.
     bm3d --help
 
 - `--threads N` limits the build to N threads, from 1 to 4096. The default is one thread per core.
-- `--metadata <file.json>` is a JSON object to store in the file. Version 0.2.0 checks it and
-  does not store it yet.
-- `--version` prints `bm3d <version> (format <N>)`; for 0.2.0 that is `bm3d 0.2.0 (format 0)`,
-  where 0 means the Nexus container.
+- `--metadata <file.json>` is a JSON object whose members are stored in the metadata block of the
+  file, after the ones bm3d writes (`generator`, `buildOptions` and `source`), in their order and
+  with their values unchanged. The top-level keys `generator`, `buildOptions`, `source` and any
+  that starts with `bm3d` are reserved, a key cannot be given twice, and the whole block is at
+  most 1 MiB: anything else is a wrong command line (exit code 64), refused before the build starts.
+- `--version` prints `bm3d <version> (format <N>)`, for example `bm3d 1.0.0 (format 1)`.
 - The output is always corto-compressed; there is no option to turn compression off.
 - The input type is chosen by the extension, in any letter case.
 - While it works, bm3d prints a progress line to standard output when it starts and then every
@@ -115,8 +120,11 @@ workflow runs them.
 
 ## 5. Format and viewer
 
-The `.bm3d` format will be described in `docs/FORMAT.md` and the viewer will live in `web/`
-(npm package `bm3d-viewer`), both published with the first release that writes the format.
+The `.bm3d` format is described in [`docs/FORMAT.md`](docs/FORMAT.md): the header, the index, the
+corto payloads and WebP textures, the metadata block, the version rule and the content hash. The
+C++ reader and writer are in `src/format/`; `scripts/dump.py` is a second reader, in Python, that
+prints a file and checks it, and compares it with the Nexus container of the same build. The
+viewer will live in `web/` (npm package `bm3d-viewer`).
 
 ## 6. Licences
 
