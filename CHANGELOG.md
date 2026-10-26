@@ -26,6 +26,13 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   bytes; all seven differed before. The output changes: the meshes
   without texture are simplified in another order, and the pieces of the node textures sit at other
   places (the same pieces: the textures of a node have the same size and, sorted, the same pixels).
+- **The checks of section 11, stated and the same in every reader.** A sphere of the header that
+  is not finite is the new error `bad sphere`, and a node whose `error`, sphere or `tightRadius` is
+  not finite is `bad index`. The rules of `bad index` are a numbered list, checked rule by rule, each
+  over the whole table before the next, so that every reader reports the same rule and the same
+  node or patch; the sink is checked byte by byte (a `-0` in it is an error). `Bm3dReader`,
+  `scripts/dump.py` and the viewer's reader follow it, with tests in each (`scripts/tests/` for
+  the Python reader, run by the CI on the fixtures and on the golden files).
 - Size of the new container against the Nexus one, measured: the benchmark model (`TexturedModel`)
   358 059 008 -> 356 620 936 bytes (-0.40 %), `OfficePlan` 761 587 200 -> 754 435 514 (-0.94 %)
   (`docs/FORMAT.md`, section 14).

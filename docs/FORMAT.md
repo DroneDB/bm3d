@@ -651,8 +651,17 @@ saving  ~=  nodes x (124 + 124 + 52 - 12)  -  (128 - 88)  +  68  -  metadataLeng
 ```
 
 (the 68 is the sentinel row of the Nexus texture table), and without textures about
-`nodes x 112 - 40 - metadataLength`. The size difference measured on the
-benchmark model is recorded in the changelog at the release of version 1.0.0.
+`nodes x 112 - 40 - metadataLength`. Measured with the same builder writing both containers:
+
+| Model | Nexus container | version 1 | Change |
+|---|---:|---:|---:|
+| the benchmark model (a textured photogrammetry mesh, `TexturedModel`) | 358 059 008 | 356 620 936 | -1 438 072 B (-0.40 %) |
+| a large textured model (`OfficePlan`) | 761 587 200 | 754 435 514 | -7 151 686 B (-0.94 %) |
+
+The version 1 files are those of a builder whose order of equal keys (in its sorts, its
+simplification and its texture packing) is no longer the one the standard library gave; that moves
+a few hundred bytes of the compressed payloads and textures (208 bytes on the benchmark model), next
+to the 1.4 MB and 7.2 MB the container saves.
 
 ## 15. Summary of the fixed sizes
 
