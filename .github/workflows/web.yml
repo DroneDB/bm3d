@@ -3,11 +3,13 @@
 #
 # Builds and tests the viewer (web/): corto.wasm from third_party/corto with the pinned emsdk, the
 # bundles with rollup, the tests of the reader and of the decoder in node (vitest), and a render of
-# the fixtures in a headless Chromium (Playwright). It runs when the viewer, the format document or
-# the corto sources change.
+# the fixtures in a headless Chromium (Playwright). It runs when the viewer, the format document, the
+# builder or its tests change.
 #
-# The tests also read every .bm3d file in tests/golden/ when the repository has that folder (the
-# golden files of the command line); BM3D_GOLDEN_DIR names another one.
+# The golden job builds the command line (Linux, GCC, the vcpkg binary cache of the linux-gcc job of
+# ci.yml) and writes its golden files (tests/golden/); the Python reader (scripts/dump.py) reads them,
+# and the web job reads and draws them too, from BM3D_GOLDEN_DIR. So the three readers of the format
+# read what the command line of this commit writes.
 name: Web
 
 on:
@@ -15,17 +17,35 @@ on:
     paths:
       - "web/**"
       - "docs/FORMAT.md"
-      - "third_party/corto/**"
-      - "third_party/corto-patches/**"
-      - "tests/golden/**"
+      - "src/**"
+      - "cli/**"
+      - "include/**"
+      - "third_party/**"
+      - "tests/**"
+      - "scripts/dump.py"
+      - "scripts/modelfile.py"
+      - "scripts/tests/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - ".github/actions/**"
       - ".github/workflows/web.yml"
   pull_request:
     paths:
       - "web/**"
       - "docs/FORMAT.md"
-      - "third_party/corto/**"
-      - "third_party/corto-patches/**"
-      - "tests/golden/**"
+      - "src/**"
+      - "cli/**"
+      - "include/**"
+      - "third_party/**"
+      - "tests/**"
+      - "scripts/dump.py"
+      - "scripts/modelfile.py"
+      - "scripts/tests/**"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "vcpkg.json"
+      - ".github/actions/**"
       - ".github/workflows/web.yml"
 
 permissions:
@@ -35,16 +55,66 @@ concurrency:
   group: web-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Must equal "builtin-baseline" in vcpkg.json (ci.yml checks the pair).
+  VCPKG_COMMIT: 65514b43a035548911e1789071785a9827470cdc
+  VCPKG_DISABLE_METRICS: "1"
+
 jobs:
+  golden:
+    name: golden files of the command line
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        # nasm: libjpeg-turbo's port needs it.
+        run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
+      - name: vcpkg at the pinned commit, with the binary cache of linux-gcc
+        uses: ./.github/actions/vcpkg
+        with:
+          commit: ${{ env.VCPKG_COMMIT }}
+          cache-name: linux-gcc
+      - name: Configure
+        run: cmake --preset release -DBM3D_BUILD_TESTS=ON
+      - name: The golden files
+        env:
+          BM3D_GOLDEN_DIR: ${{ runner.temp }}/golden
+        run: cmake --build build --parallel --target bm3d_golden_fixtures
+      - name: The Python reader reads them
+        env:
+          BM3D_GOLDEN_DIR: ${{ runner.temp }}/golden
+        run: |
+          pip install -r scripts/requirements-tools.txt
+          python -m unittest discover -s scripts/tests -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golden
+          path: ${{ runner.temp }}/golden
+          if-no-files-found: error
+
   web:
     name: web
+    needs: golden
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      BM3D_GOLDEN_DIR: ${{ github.workspace }}/golden
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: golden
+          path: ${{ env.BM3D_GOLDEN_DIR }}
 
       # The emsdk scripts and the compiler are both taken at the tag in corto-wasm/EMSDK_VERSION
       - name: The emsdk version
@@ -83,9 +153,9 @@ jobs:
           for file in dist/bm3d-viewer.js dist/bm3d-viewer.min.js dist/corto-worker.js dist/corto.wasm LICENSE NOTICE README.md; do
             echo "$listing" | grep -qx "package/$file" || { echo "missing from the package: $file"; exit 1; }
           done
-      - name: Tests in node
+      - name: Tests in node (the fixtures and the golden files)
         run: npx vitest run
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Render the fixtures in Chromium
+      - name: Render the fixtures and the golden files in Chromium
         run: npm run test:browser

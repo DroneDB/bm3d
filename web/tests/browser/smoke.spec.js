@@ -4,14 +4,18 @@
 // Renders the fixtures with three.js in a headless Chromium and checks that something was drawn
 // (not a blank canvas), that the model refined (more than its root node was loaded and drawn), that
 // the worker and corto.wasm come from where decoderPath says, and that the cache answers a second
-// visit. The page is served by a small server that answers Range requests.
+// visit. The page is served by a small server that answers Range requests. The golden files of the
+// command line in BM3D_GOLDEN_DIR, when it is set (the CI writes them), are drawn as well.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { startServer } from '../support/server.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url));
+const goldenDir = process.env.BM3D_GOLDEN_DIR;
+const golden = goldenDir && existsSync(goldenDir) ? readdirSync(goldenDir).filter((name) => name.endsWith('.bm3d')).sort() : [];
 const BACKGROUND = [32, 48, 64];
 
 const PAGE = `<!doctype html>
@@ -85,6 +89,7 @@ test.beforeAll(async () => {
 		'/models/terrain.bm3d': { data: read('../fixtures/terrain.bm3d') },
 		'/models/sphere.bm3d': { data: read('../fixtures/sphere.bm3d') },
 	};
+	for (const name of golden) files[`/models/golden/${name}`] = { data: readFileSync(join(goldenDir, name)) };
 	server = await startServer((path) => files[path] || null);
 });
 test.afterAll(() => server.close());
@@ -194,3 +199,15 @@ test('does not cache anything unless it is asked to', async ({ browser }) => {
 		await context.close();
 	}
 });
+
+for (const name of golden) {
+	test(`draws the golden file ${name}`, async ({ page }) => {
+		const errors = await show(page, `golden/${name.replace(/\.bm3d$/, '')}`);
+		const pixels = await page.evaluate(() => window.__pixels());
+		expect(pixels.drawn).toBeGreaterThan(0);
+		expect(errors).toEqual([]);
+		const state = await page.evaluate(() => window.__state);
+		expect(state.errors).toEqual([]);
+		expect(state.glError).toBe(0);
+	});
+}

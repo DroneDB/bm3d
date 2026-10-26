@@ -106,16 +106,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Paths of the vcpkg checkout, its binary cache and the upstream clones
+      - name: Path of the upstream clones
         shell: bash
         run: |
           temp="$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")"
-          {
-            echo "VCPKG_ROOT=$temp/vcpkg"
-            echo "VCPKG_DEFAULT_BINARY_CACHE=$temp/vcpkg-archives"
-            echo "UPSTREAM_DIR=$temp/upstream"
-          } >> "$GITHUB_ENV"
-          mkdir -p "$temp/vcpkg-archives"
+          echo "UPSTREAM_DIR=$temp/upstream" >> "$GITHUB_ENV"
 
       - name: Fetch the pinned upstream commits
         # One commit each, no history: the sources the manifests were made from.
@@ -143,32 +138,13 @@ jobs:
         # nasm: libjpeg-turbo's port needs it on Linux.
         run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
 
-      - name: Restore the vcpkg binary cache
-        id: vcpkg-cache
-        uses: actions/cache/restore@v4
+      - name: vcpkg at the pinned commit, with its binary cache
+        id: vcpkg
+        uses: ./.github/actions/vcpkg
         with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-${{ matrix.name }}-
-            vcpkg-${{ runner.os }}-${{ matrix.cache_from || matrix.name }}-
-
-      - name: Set up vcpkg at the pinned commit
-        shell: bash
-        run: |
-          git init -q "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
-          git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "$VCPKG_COMMIT"
-          git -C "$VCPKG_ROOT" checkout -q FETCH_HEAD
-
-      - name: Bootstrap vcpkg (Linux)
-        if: runner.os == 'Linux'
-        run: $VCPKG_ROOT/bootstrap-vcpkg.sh -disableMetrics
-
-      - name: Bootstrap vcpkg (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: call "%VCPKG_ROOT%\bootstrap-vcpkg.bat" -disableMetrics
+          commit: ${{ env.VCPKG_COMMIT }}
+          cache-name: ${{ matrix.name }}
+          cache-from: ${{ matrix.cache_from }}
 
       - name: Use the MSVC compiler and Ninja
         if: runner.os == 'Windows'
@@ -262,20 +238,8 @@ jobs:
             missing-*.txt
 
       # Last, so that it runs after a failed build or test as well
-      - name: Look for vcpkg binary archives to save
-        id: archives
-        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          if [ -n "$(find "$VCPKG_DEFAULT_BINARY_CACHE" -type f -print -quit)" ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "The vcpkg binary cache is empty: nothing to save"
-          fi
-
       - name: Save the vcpkg binary cache
-        if: always() && steps.archives.outputs.found == 'true'
-        uses: actions/cache/save@v4
+        if: always() && steps.configure.outcome == 'success' && steps.vcpkg.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vcpkg-save
         with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+          key: ${{ steps.vcpkg.outputs.cache-primary-key }}

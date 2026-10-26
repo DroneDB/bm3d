@@ -44,32 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Paths of the vcpkg checkout and its binary cache
-        run: |
-          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
-          echo "VCPKG_DEFAULT_BINARY_CACHE=$RUNNER_TEMP/vcpkg-archives" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/vcpkg-archives"
-
       - name: Install build tools
         # nasm: libjpeg-turbo's port needs it.
         run: sudo apt-get update && sudo apt-get install -y nasm ninja-build pkg-config
 
-      - name: Restore the vcpkg binary cache
-        id: vcpkg-cache
-        uses: actions/cache/restore@v4
+      - name: vcpkg at the pinned commit, with the binary cache of linux-clang
+        id: vcpkg
+        uses: ./.github/actions/vcpkg
         with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ runner.os }}-linux-clang-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
-          restore-keys: |
-            vcpkg-${{ runner.os }}-linux-clang-
-
-      - name: Set up vcpkg at the pinned commit
-        run: |
-          git init -q "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
-          git -C "$VCPKG_ROOT" fetch -q --depth 1 origin "$VCPKG_COMMIT"
-          git -C "$VCPKG_ROOT" checkout -q FETCH_HEAD
-          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          commit: ${{ env.VCPKG_COMMIT }}
+          cache-name: linux-clang
 
       - name: Configure (optimised a little, with debug information, assertions on)
         id: configure
@@ -107,19 +91,8 @@ jobs:
             ${{ env.VCPKG_ROOT }}/buildtrees/**/*.log
 
       # Last, so that it runs after failed tests as well
-      - name: Look for vcpkg binary archives to save
-        id: archives
-        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
-        run: |
-          if [ -n "$(find "$VCPKG_DEFAULT_BINARY_CACHE" -type f -print -quit)" ]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "The vcpkg binary cache is empty: nothing to save"
-          fi
-
       - name: Save the vcpkg binary cache
-        if: always() && steps.archives.outputs.found == 'true'
-        uses: actions/cache/save@v4
+        if: always() && steps.configure.outcome == 'success' && steps.vcpkg.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vcpkg-save
         with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+          key: ${{ steps.vcpkg.outputs.cache-primary-key }}
