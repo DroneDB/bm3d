@@ -116,17 +116,16 @@ modified, since the namespace and the type names changed).
 
 | Upstream path (in `src/`) | Now |
 |---|---|
-| `nxsbuild/` | `src/build/` (the kd-tree, the meshes, the texture atlas and the builder), `src/io/mesh/` (`meshloader`, `objloader`, `plyloader`, `stlloader`, `meshstream`, `trianglesoup`) and `src/io/image/` (`image`; `imageio` is split into `image_decoder`, `tiff_decoder`, `stb_decoder` and `webp_codec`, `imagejpeg` is `jpeg_codec`); `nexusbuilder.{h,cpp}` is `builder.{h,cpp}` |
+| `nxsbuild/` | `src/build/` (the kd-tree, the meshes, the texture atlas and the builder), `src/io/mesh/` (`meshloader`, `objloader`, `plyloader`, `stlloader`, `meshstream`, `trianglesoup`) and `src/io/image/` (`image`; `imageio` is split into `image_decoder`, `tiff_decoder`, `stb_decoder` and `webp_codec`, `imagejpeg` is `jpeg_codec`); `nexusbuilder.{h,cpp}` was `builder.{h,cpp}` and is split: `level_builder` (one level: `processBlock`), `node_texture_baker` and `texel_blanking` (`extractNodeTex`, `blankUndrawnTexels`), `texture_encoder_pool` and `node_texture_store` (the encoding and storing of node textures), `model_dag` and `dag_ops` (the nodes and `NodeBox`, `NVertex`, `reverseDag`, `saturate`, `uniformNormals`), `hierarchy_builder` (`create`), `model_saver` (`save`) and `model_builder` (puts them together); the manifest records `level_builder` as the new place of the file |
 | `nxsedit/extractor.{h,cpp}` | `src/compress/compressor.{h,cpp}` |
 | `common/nexusdata.{h,cpp}`, `common/nexusfile.h`, `common/stdnexusfile.{h,cpp}`, `common/dag.h`, `common/signature.h`, `common/traversal.{h,cpp}` | removed (see "The container" below) |
 | `nxszip/` | removed (see below) |
 | the other files of `common/` | the same path |
 
-Names in the code: the namespace `nx` is `bm3d::detail` (the classes `Builder` and `Compressor`
+Names in the code: the namespace `nx` is `bm3d::detail` (the classes of the builder and `Compressor`
 live there too; the public API of `include/bm3d/bm3d.h` is in `bm3d`); `NexusBuilder` is
-`Builder` and `Extractor` is `NodeCompressor`. The classes of the mesh, the kd-tree, the loaders
-and the image code that were in the global namespace stay there until the sources are split into
-modules. Outside `src/`: `tests/support/nexus_file.{h,cpp}` is `bm3d_file.{h,cpp}` and
+split (see above) and `Extractor` is `NodeCompressor`. The classes of the mesh, the kd-tree and the
+loaders that were in the global namespace stay there. Outside `src/`: `tests/support/nexus_file.{h,cpp}` is `bm3d_file.{h,cpp}` and
 `scripts/nxzread.py` is `scripts/format0.py`. The temporary files of a build are `bm3d_cache_*` and
 `<output>.part`. The licence headers of the imported files are unchanged.
 

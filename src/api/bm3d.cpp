@@ -9,64 +9,25 @@
 
 #include <locale.h>
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <exception>
-#include <iomanip>
-#include <memory>
-#include <new>
-#include <sstream>
 #include <string>
-#include <system_error>
-#include <thread>
 #include <vector>
 
 #include "bm3d/version.h"
+#include "error_mapping.h"
+#include "../build/build_pipeline.h"
 #include "../common/error.h"
-#include "../common/logger.h"
 #include "../common/pathutil.h"
-#include "../build/builder.h"
-#include "../compress/compressor.h"
-#include "../io/mesh/mesh_loader_registry.h"
 #include "../format/bm3d_format.h"
-#include "../format/bm3d_writer.h"
-#include "../format/format_error.h"
 #include "../format/metadata.h"
-#include "kdtree.h"
-#include "../io/mesh/meshstream.h"
 
 namespace bm3d {
 
 namespace {
 
-using detail::Builder;
-using detail::CompressionSettings;
-using detail::describeCurrentException;
-
 static_assert(BM3D_FORMAT_VERSION == detail::kFormatVersion, "the format the library writes is the one src/format implements");
 
 // More than any machine has cores; a larger value is a mistake, not a request
 constexpr int kMaxThreads = 4096;
-
-// The build settings. A model is built the same way whoever asks; only the threads vary.
-constexpr int kNodeFaces = 1 << 14;        // triangles per node
-constexpr int kTopNodeFaces = 4096;        // triangles of the root node
-constexpr int kTextureQuality = 90;        // WebP quality of the node textures
-constexpr int kMaxNodeTextureSide = 1024;  // longest side of a node texture
-constexpr int kRamBufferMb = 16000;        // approximate RAM budget
-constexpr float kScaling = 0.5f;           // simplification ratio per level
-constexpr int kSkipLevels = -1;            // levels that keep the geometry and halve the texture (-1: as the texture needs)
-constexpr float kAdaptive = 0.333f;        // kd-tree adaptive factor
-
-// corto quantization: the coordinate step comes from the error of the nodes
-constexpr float kErrorQ = 0.1f;
-constexpr int kLumaBits = 6;
-constexpr int kChromaBits = 6;
-constexpr int kAlphaBits = 5;
-constexpr int kNormalBits = 10;
-constexpr float kTexStep = 0.25f;  // in pixels
 
 // RAII: set LC_NUMERIC to "C" during this scope and restore previous value.
 class NumericLocaleGuard {
@@ -92,151 +53,6 @@ private:
     std::string oldLocale_;
 };
 
-// The share of a node texture that the texture charts of the node's triangles fill once packed.
-// On a photogrammetry model (224k triangles, 1.6 gigapixels of texture) nodes cut at this share
-// of the largest node texture left 4% of the texels to the downscaling that makes them fit.
-constexpr double NODE_TEXTURE_FILL = 0.35;
-
-// The weight of a texel in the kd-tree, which splits a node when the weight of its texels passes
-// the triangles of a node: a node holds the texels that fill its texture without downscaling, at
-// most kMaxNodeTextureSide on a side.
-float texelWeight(int nodeFaces) {
-    const double side = double(kMaxNodeTextureSide);
-    return float(double(nodeFaces) / (side * side * NODE_TEXTURE_FILL));
-}
-
-// What one attempt at building a model differs in from the next (see buildWithFallbacks)
-struct Attempt {
-    int threads = 1;
-    int nodeFaces = kNodeFaces;
-    bool withTextures = true;
-};
-
-// Runs one step of reading the input (the mesh, its textures) and says whose fault a failure is.
-// The input's as a rule: a file that cannot be opened, parsed or decoded. The machine's when
-// memory runs out (std::bad_alloc) or a scratch file cannot be created, grown, written or mapped
-// (detail::ScratchError, which only the scratch layer throws): the input may well be fine, so
-// that is a failed build. The standard library throws nothing else here that is not about the
-// input: the file system calls of the reading code take an error_code, and what does throw
-// (std::system_error) is the conversion of a name the input holds, a texture name that is not
-// UTF-8, into a path.
-template <typename Read>
-void readInput(Read&& read) {
-    try {
-        read();
-    } catch (const Error&) {
-        throw;  // already classified
-    } catch (const std::bad_alloc&) {
-        throw Error(ErrorKind::BuildFailed, describeCurrentException());
-    } catch (const detail::ScratchError& e) {
-        throw Error(ErrorKind::BuildFailed, e.what());
-    } catch (const detail::Error& e) {
-        throw Error(ErrorKind::InvalidInput, e.what());
-    } catch (...) {
-        throw Error(ErrorKind::InvalidInput, describeCurrentException());
-    }
-}
-
-// The builder computes in floats the squares of the lengths in a model and the products of its
-// edges (the bounding sphere, the cone of the normals, the quadrics of the simplification), and
-// those overflow when the model is some billions of units across (a city is 1e7 millimetres). The
-// bounding sphere of a model beyond that is not a number and the search for it never ended: that
-// is what a file of random bytes read as floats did.
-constexpr double kMaxModelSize = 1e9;
-
-// Reads the input into the out-of-core stream. A file the loaders accept without finding a
-// triangle in it (a text file with an .obj name, say), or whose triangles span more than the
-// builder can measure, is a problem of the input as well.
-void loadInput(StreamSoup& stream, const std::string& input) {
-    readInput([&] {
-        std::string mtl;  // not exposed yet
-        stream.load(std::vector<std::string>{input}, mtl);
-    });
-    if (stream.size() == 0)
-        throw Error(ErrorKind::InvalidInput, "The input holds no triangles: " + input);
-
-    // in double, where the square of the largest float difference still fits
-    double squared = 0;
-    for (int k = 0; k < 3; k++) {
-        const double extent = double(stream.box.max[k]) - double(stream.box.min[k]);
-        squared += extent * extent;
-    }
-    if (!(std::sqrt(squared) <= kMaxModelSize)) {
-        std::ostringstream message;
-        message << "The model is " << std::setprecision(3) << std::sqrt(squared) << " units across (the diagonal of its "
-                << "bounding box); the largest that can be built is " << kMaxModelSize << ": " << input;
-        throw Error(ErrorKind::InvalidInput, message.str());
-    }
-}
-
-// Reads the textures the materials of the input name, which are part of the input: one that is
-// missing or cannot be decoded is invalid input, as an unreadable mesh is
-void loadTextures(Builder& builder, std::vector<LoadTexture>& textures) {
-    readInput([&] {
-        if (!builder.initAtlas(textures))
-            throw detail::Error("Failed to initialize texture atlas");
-    });
-}
-
-// How corto quantises the nodes
-CompressionSettings compressionSettings() {
-    CompressionSettings settings;
-    settings.errorQ = kErrorQ;
-    settings.normalBits = kNormalBits;
-    settings.colorBits[0] = kLumaBits;
-    settings.colorBits[1] = kChromaBits;
-    settings.colorBits[2] = kChromaBits;
-    settings.colorBits[3] = kAlphaBits;
-    settings.texStep = kTexStep;
-    return settings;
-}
-
-// What the builder read of the input
-detail::SourceInfo sourceOf(const std::string& input, StreamSoup& stream) {
-    detail::SourceInfo source;
-    source.name = detail::pathToUtf8(detail::pathFromUtf8(input).filename());
-    source.vertices = stream.vertexCount();
-    source.faces = stream.size();
-    for (int k = 0; k < 3; k++) {
-        source.boundsMin[k] = stream.box.min[k];
-        source.boundsMax[k] = stream.box.max[k];
-    }
-    return source;
-}
-
-// What the metadata block says of the build: the settings that made the file, and what was read
-// of the input. The block is not part of the content identity of the file (docs/FORMAT.md).
-// The block that does not fit in a file is the fault of the extra members, since the rest is a few
-// hundred bytes: it is refused as an invalid argument.
-std::string composeMetadata(const Attempt& attempt, const detail::SourceInfo& source,
-                            const std::vector<JsonMember>& extras) {
-    using detail::BuildOption;
-    const std::vector<BuildOption> options = {
-        BuildOption::whole("threads", attempt.threads),
-        BuildOption::whole("nodeFaces", attempt.nodeFaces),
-        BuildOption::whole("topNodeFaces", kTopNodeFaces),
-        BuildOption::whole("textureQuality", kTextureQuality),
-        BuildOption::whole("maxNodeTextureSide", kMaxNodeTextureSide),
-        BuildOption::fractional("scaling", kScaling),
-        BuildOption::fractional("adaptive", kAdaptive),
-        BuildOption::whole("skipLevels", kSkipLevels),
-        BuildOption::fractional("errorQ", kErrorQ),
-        BuildOption::whole("normalBits", kNormalBits),
-        BuildOption::whole("lumaBits", kLumaBits),
-        BuildOption::whole("chromaBits", kChromaBits),
-        BuildOption::whole("alphaBits", kAlphaBits),
-        BuildOption::fractional("texStep", kTexStep),
-    };
-
-    const std::string metadata = detail::composeMetadata(std::string("bm3d ") + BM3D_VERSION, options, source, extras);
-    try {
-        detail::checkMetadataLength(metadata.size());
-    } catch (const detail::MetadataTooLargeError& e) {
-        throw Error(ErrorKind::InvalidArgument, e.what());
-    }
-    return metadata;
-}
-
 // The members to store, from the text of BuildOptions::metadata. Returns what is wrong with it:
 // not a JSON object, a key that is the program's or repeated, or so large that the block cannot
 // fit in a file whatever the input is (the smallest block the program writes, with these members)
@@ -246,126 +62,7 @@ std::string parseMetadata(const std::string& json, std::vector<JsonMember>& extr
     const std::string problem = detail::parseExtraMetadata(json, extras);
     if (!problem.empty())
         return problem;
-    try {
-        composeMetadata(Attempt(), detail::SourceInfo(), extras);
-    } catch (const Error& e) {
-        return e.what();
-    }
-    return {};
-}
-
-// Builds the model into a .bm3d file with corto-compressed nodes; throws on failure.
-void buildOnce(const std::string& input, const std::string& output, const Attempt& attempt,
-               const std::vector<JsonMember>& extraMetadata, const detail::Logger& logger) {
-    const uint64_t maxMemory = (uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 4;
-
-    // Build a somewhat unique base name for cache files.
-    // Place the out-of-core cache (stream + kd-tree) in the same directory as
-    // the output, which under the DroneDB build pipeline is the per-build temp
-    // folder. This keeps the (potentially multi-GB) scratch on the same large
-    // volume as the result and lets it be reclaimed together with that folder,
-    // instead of defaulting to the system temp dir. VirtualMemory uses an
-    // absolute template prefix as-is.
-    using Clock = std::chrono::steady_clock;
-    const auto now = Clock::now().time_since_epoch().count();
-    const std::string cacheDir = detail::absoluteParentPath(output);
-    const std::string cacheBase = cacheDir + "/bm3d_cache_" + std::to_string(static_cast<unsigned long long>(now));
-
-    // Declared before the builder, so that it outlives it as it always did
-    std::unique_ptr<KDTreeSoup> tree;
-
-    StreamSoup stream(cacheBase + "_stream", detail::MeshLoaderRegistry::standard(), logger);
-    stream.setMaxMemory(maxMemory);
-    loadInput(stream, input);
-
-    uint32_t components = Builder::NORMALS;
-    if (stream.hasColors())
-        components |= Builder::COLORS;
-    if (stream.hasTextures() && attempt.withTextures)
-        components |= Builder::TEXTURES;
-
-    // Do not keep textures if they are not going to be used
-    if (!(components & Builder::TEXTURES)) {
-        stream.textures.clear();
-    }
-
-    // The block is made before the hierarchy, so that one that does not fit is refused at once
-    const std::string metadata = composeMetadata(attempt, sourceOf(input, stream), extraMetadata);
-
-    // Place the builder's out-of-core caches (chunks + per-node texture file)
-    // in the same directory as the output (the per-build temp folder), so they
-    // do not leak into the process working directory and are reclaimed with it.
-    Builder builder(components, cacheDir);
-    builder.skipSimplifyLevels = kSkipLevels;
-    builder.setMaxMemory(maxMemory);
-
-    builder.setScaling(kScaling);
-
-    builder.tex_quality = kTextureQuality;
-    builder.textureThreads = attempt.threads;
-    builder.maxNodeTexSide = kMaxNodeTextureSide;
-
-    loadTextures(builder, stream.textures);
-
-    tree.reset(new KDTreeSoup(cacheBase + "_tree", kAdaptive));
-    tree->setMaxMemory((uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 2);
-    tree->setMaxWeight(attempt.nodeFaces);
-    tree->texelWeight = texelWeight(attempt.nodeFaces);
-    tree->setTrianglesPerBlock(attempt.nodeFaces);
-
-    // Build the hierarchy
-    builder.create(tree.get(), &stream, kTopNodeFaces);
-
-    // The file is written under another name in its folder and given its name only once it is
-    // complete: a save that fails (or a process killed while saving) leaves no half file under
-    // the output name, and does not remove one an earlier build left there.
-    builder.save(output, compressionSettings(), metadata);
-}
-
-// How many times a build whose nodes turn out to have too many vertices is tried again, each
-// time with half as many triangles per node as the time before
-constexpr int kSmallerNodeAttempts = 3;
-
-// Builds the model, falling back to what the input allows; throws on failure. Each attempt
-// that fails leaves nothing behind: it fails while building the hierarchy, and its scratch files
-// and partial outputs go with it (see buildOnce), so the next one starts from scratch.
-//  - A node needs a texture too large to pack: the model is built without textures. Models of
-//    this kind always built that way.
-//  - A node has more vertices than a node holds (a fragmented texture parametrization): the
-//    model is built with smaller nodes. Leaving the node out, which Nexus did, leaves a hole in
-//    the model.
-void buildWithFallbacks(const std::string& input, const std::string& output, int threads,
-                        const std::vector<JsonMember>& extraMetadata, const detail::Logger& logger) {
-    Attempt attempt;
-    attempt.threads = threads > 0 ? threads : int(std::max(1u, std::thread::hardware_concurrency()));
-    int smallerNodeAttempts = 0;
-    for (;;) {
-        try {
-            buildOnce(input, output, attempt, extraMetadata, logger);
-            break;
-        } catch (const detail::TexturePackingError& error) {
-            if (!attempt.withTextures)
-                throw;
-            detail::warn(logger, error.what());
-            attempt.withTextures = false;
-        } catch (const detail::NodeTooLargeError& error) {
-            if (smallerNodeAttempts == kSmallerNodeAttempts)
-                throw detail::Error(std::string(error.what()) + "; nodes of at most " +
-                                std::to_string(attempt.nodeFaces) +
-                                " triangles, the smallest tried (the build started with " +
-                                std::to_string(kNodeFaces) + "), are still too large for this model");
-            detail::warn(logger, error.what());
-            attempt.nodeFaces /= 2;
-            ++smallerNodeAttempts;
-        }
-    }
-
-    if (attempt.nodeFaces != kNodeFaces)
-        detail::warn(logger, "built with nodes of " + std::to_string(attempt.nodeFaces) + " triangles instead of " +
-                                 std::to_string(kNodeFaces) +
-                                 ": the texture parametrization is too fragmented for larger nodes");
-    if (!attempt.withTextures)
-        detail::warn(logger, "textures could not be packed; built without textures");
+    return detail::BuildPipeline(detail::BuildSettings(), detail::Logger()).metadataProblem(extras);
 }
 
 // The input must name an existing file. Turning a path that is not valid UTF-8 into a file
@@ -377,7 +74,7 @@ void requireInput(const std::string& input) {
     } catch (const Error&) {
         throw;
     } catch (...) {
-        throw Error(ErrorKind::InvalidInput, "Input path is not valid: " + describeCurrentException());
+        throw Error(ErrorKind::InvalidInput, "Input path is not valid: " + detail::describeCurrentException());
     }
 }
 
@@ -403,7 +100,7 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
         inputPath = detail::pathToUtf8(input);
         outputPath = detail::pathToUtf8(output);
     } catch (...) {
-        throw Error(ErrorKind::InvalidArgument, "Path is not valid: " + describeCurrentException());
+        throw Error(ErrorKind::InvalidArgument, "Path is not valid: " + detail::describeCurrentException());
     }
 
     requireInput(inputPath);
@@ -412,11 +109,9 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
         // Use "C" numeric locale for this operation only.
         NumericLocaleGuard numericLocaleGuard;
 
-        buildWithFallbacks(inputPath, outputPath, options.threads, extraMetadata, options.logger);
-    } catch (const Error&) {
-        throw;  // already classified
+        detail::BuildPipeline(detail::BuildSettings(), options.logger).build(inputPath, outputPath, options.threads, extraMetadata);
     } catch (...) {
-        throw Error(ErrorKind::BuildFailed, describeCurrentException());
+        detail::rethrowAsApiError();
     }
 }
 

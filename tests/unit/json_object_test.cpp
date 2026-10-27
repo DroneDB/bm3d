@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-#include "json_object.h"
+#include "format/json_object.h"
 
 namespace {
 

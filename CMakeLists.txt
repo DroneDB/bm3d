@@ -117,24 +117,21 @@ endif()
 add_library(bm3d_core STATIC
     third_party/vcg/wrap/ply/plylib.cpp
     src/api/bm3d.cpp
-    src/build/builder.cpp
+    src/api/error_mapping.cpp
+    src/build/build_pipeline.cpp
     src/build/dag_ops.cpp
-    src/io/image/image.cpp
-    src/io/image/image_decoder.cpp
-    src/io/image/jpeg_codec.cpp
-    src/io/image/stb_decoder.cpp
-    src/io/image/tiff_decoder.cpp
-    src/io/image/webp_codec.cpp
+    src/build/fallback_policy.cpp
+    src/build/hierarchy_builder.cpp
+    src/build/input_reader.cpp
     src/build/kdtree.cpp
-    src/build/model_dag.cpp
-    src/build/node_texture_store.cpp
+    src/build/level_builder.cpp
     src/build/mesh.cpp
-    src/io/mesh/mesh_loader_registry.cpp
-    src/io/mesh/meshloader.cpp
-    src/io/mesh/meshstream.cpp
-    src/io/mesh/objloader.cpp
-    src/io/mesh/plyloader.cpp
-    src/io/mesh/stlloader.cpp
+    src/build/model_builder.cpp
+    src/build/model_dag.cpp
+    src/build/model_saver.cpp
+    src/build/node_texture_baker.cpp
+    src/build/node_texture_store.cpp
+    src/build/texel_blanking.cpp
     src/build/texpyramid.cpp
     src/build/texture_encoder_pool.cpp
     src/build/tmesh.cpp
@@ -149,22 +146,33 @@ add_library(bm3d_core STATIC
     src/format/bm3d_writer.cpp
     src/format/json_object.cpp
     src/format/metadata.cpp
-    src/format/sha256.cpp)
+    src/format/sha256.cpp
+    src/io/image/image.cpp
+    src/io/image/image_decoder.cpp
+    src/io/image/jpeg_codec.cpp
+    src/io/image/stb_decoder.cpp
+    src/io/image/tiff_decoder.cpp
+    src/io/image/webp_codec.cpp
+    src/io/mesh/mesh_loader_registry.cpp
+    src/io/mesh/meshloader.cpp
+    src/io/mesh/meshstream.cpp
+    src/io/mesh/objloader.cpp
+    src/io/mesh/plyloader.cpp
+    src/io/mesh/stlloader.cpp)
 add_library(bm3d::bm3d ALIAS bm3d_core)
 set_target_properties(bm3d_core PROPERTIES
     EXPORT_NAME bm3d
     POSITION_INDEPENDENT_CODE ON)
 
-# The public header is all a user of the library sees. The imported sources include each other by
-# relative paths, and src/api includes the ones of src/build by their bare names.
+# The public header is all a user of the library sees. The sources include each other by relative
+# paths; src is on the path for the generated header and for the tests.
 target_include_directories(bm3d_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}/generated"
-        src
-        src/build)
+        src)
 # std::filesystem and the VCGLib headers need C++17
 target_compile_features(bm3d_core PUBLIC cxx_std_17)
 # The sources and the VCGLib headers hold UTF-8 text: MSVC reads them as UTF-8, not in the code

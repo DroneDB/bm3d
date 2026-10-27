@@ -80,20 +80,21 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/compressor_test.cpp
     unit/dag_ops_test.cpp
     unit/equal_keys_test.cpp
+    unit/error_mapping_test.cpp
+    unit/fallback_policy_test.cpp
     unit/format_records_test.cpp
     unit/format_writer_reader_test.cpp
     unit/image_codecs_test.cpp
+    unit/input_reader_test.cpp
     unit/json_object_test.cpp
     unit/mesh_loader_registry_test.cpp
     unit/metadata_test.cpp
     unit/scratch_errors_test.cpp
     unit/sha256_test.cpp
     unit/simplification_test.cpp
+    unit/texel_blanking_test.cpp
     unit/texture_encoder_pool_test.cpp
     unit/version_test.cpp)
-# The JSON checker is internal to the program: its header is not part of the library's interface.
-# The headers of the builder include each other by their bare names.
-target_include_directories(bm3d_unit_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/format ${PROJECT_SOURCE_DIR}/src/build)
 target_link_libraries(bm3d_unit_tests PRIVATE bm3d_corto bm3d_vcg)
 
 bm3d_add_tests(bm3d_integration_tests integration
@@ -105,8 +106,6 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/simplified_levels_test.cpp
     integration/texture_formats_test.cpp
     integration/texture_resolution_test.cpp)
-# The decoders are internal to the program: the texture tests read pictures with them directly
-target_include_directories(bm3d_integration_tests PRIVATE ${PROJECT_SOURCE_DIR}/src/build)
 
 bm3d_add_tests(bm3d_cli_tests cli
     cli/cli_test.cpp

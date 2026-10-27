@@ -27,8 +27,8 @@ nxsbuild/meshloader.cpp  io/mesh/meshloader.cpp
 nxsbuild/meshloader.h  io/mesh/meshloader.h
 nxsbuild/meshstream.cpp  io/mesh/meshstream.cpp
 nxsbuild/meshstream.h  io/mesh/meshstream.h
-nxsbuild/nexusbuilder.cpp  build/builder.cpp
-nxsbuild/nexusbuilder.h  build/builder.h
+nxsbuild/nexusbuilder.cpp  build/level_builder.cpp
+nxsbuild/nexusbuilder.h  build/level_builder.h
 nxsbuild/objloader.cpp  io/mesh/objloader.cpp
 nxsbuild/objloader.h  io/mesh/objloader.h
 nxsbuild/partition.h  build/partition.h
