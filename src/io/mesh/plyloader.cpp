@@ -25,7 +25,6 @@ for more details.
 using namespace vcg;
 using namespace vcg::ply;
 
-#include <iostream>
 using namespace std;
 
 //Ugly ply stuff from vcg.

@@ -24,7 +24,6 @@ for more details.
 #include "nodepatches.h"
 #include "shortedge.h"
 
-#include <iostream>
 
 using namespace std;
 

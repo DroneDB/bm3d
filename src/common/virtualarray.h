@@ -26,7 +26,6 @@ for more details.
 
 #include <vector>
 #include <deque>
-#include <iostream>
 
 /*
   blocks are 64 bit memory aligned!

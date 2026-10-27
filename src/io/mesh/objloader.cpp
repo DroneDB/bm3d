@@ -20,7 +20,6 @@ for more details.
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 
 #include "../../common/error.h"
 #include "../../common/pathutil.h"

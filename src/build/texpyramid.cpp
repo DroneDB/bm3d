@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <assert.h>
 #include <math.h>
-#include <iostream>
 #include "../common/error.h"
 #include "../common/pathutil.h"
 #include "../io/image/image_decoder.h"
