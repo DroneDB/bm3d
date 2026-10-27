@@ -4,6 +4,21 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **`scripts/compare.py` compares without the order.** The reference models were built with the order
+  of equal keys of the library of the reference program, and bm3d has an order of its own, so the same
+  model has its nodes cut, its levels filled and its texture pieces placed a little differently.
+  `--order-independent` (the default when the candidate is a `.bm3d` file and every reference a
+  format 0 file; `--exact-order` asks for the old comparison) takes what that moves little: the
+  counts of nodes, patches, textures and leaves within 1 % and the levels equal, the vertices and
+  faces within 1 %, the sums of the errors within 3 % (each level 10 %), the radius of the sphere
+  and the error of the root within 5 % and the centre within 30 % of the radius, the texels within
+  2 % in all and 25 % in each level, the size within 3 %, and the textures by their colours without
+  their places (the PSNR of the sorted pixels of the nodes matched by place, 40 dB for 98 % of
+  them). The tolerances are the ones the six reference models needed (the table in the script
+  gives the largest deviation measured for each); the bounding sphere of the header is made by
+  adding the vertices of the root one by one, so its centre moved by up to 22 % of the radius
+  between the two orders. All six models pass with `bm3d --threads 8` and `--threads 1` but for the
+  file size of `brighton_beach.obj`, which keeps the colours of its vertices.
 - **A model of a single node keeps the precision of its input.** The coordinates are quantised to one
   step for the file, a tenth of half the smallest of the error of the root and the errors of the
   leaves. The error of a root is replaced by its radius, and in a model of a single node the node is
