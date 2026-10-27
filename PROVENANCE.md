@@ -116,7 +116,7 @@ modified, since the namespace and the type names changed).
 
 | Upstream path (in `src/`) | Now |
 |---|---|
-| `nxsbuild/` | `src/build/` (the kd-tree, the meshes, the texture atlas and the builder), `src/io/mesh/` (`meshloader`, `objloader`, `plyloader`, `stlloader`, `meshstream`, `trianglesoup`) and `src/io/image/` (`image`, `imageio`, `imagejpeg`); `nexusbuilder.{h,cpp}` is `builder.{h,cpp}` |
+| `nxsbuild/` | `src/build/` (the kd-tree, the meshes, the texture atlas and the builder), `src/io/mesh/` (`meshloader`, `objloader`, `plyloader`, `stlloader`, `meshstream`, `trianglesoup`) and `src/io/image/` (`image`; `imageio` is split into `image_decoder`, `tiff_decoder`, `stb_decoder` and `webp_codec`, `imagejpeg` is `jpeg_codec`); `nexusbuilder.{h,cpp}` is `builder.{h,cpp}` |
 | `nxsedit/extractor.{h,cpp}` | `src/compress/compressor.{h,cpp}` |
 | `common/nexusdata.{h,cpp}`, `common/nexusfile.h`, `common/stdnexusfile.{h,cpp}`, `common/dag.h`, `common/signature.h`, `common/traversal.{h,cpp}` | removed (see "The container" below) |
 | `nxszip/` | removed (see below) |

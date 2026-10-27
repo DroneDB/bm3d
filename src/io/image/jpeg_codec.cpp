@@ -14,11 +14,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
-#include "imageio.h"
+#include "jpeg_codec.h"
 
 #include <csetjmp>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 extern "C" {
 #include <jpeglib.h>
@@ -174,19 +175,20 @@ bool encodeInto(const Image &image, int quality, bool optimize, bool progressive
 
 } //namespace
 
-Image decodeJpeg(const unsigned char *data, size_t size, std::string &error) {
-	Image image;
-	if(!decodeInto(data, size, image, error))
-		return Image();
-	return image;
+bool JpegDecoder::matches(const unsigned char *data, size_t size) const {
+	return size >= 3 && std::memcmp(data, "\xff\xd8\xff", 3) == 0;
 }
 
-std::vector<unsigned char> encodeJpeg(const Image &image, int quality, bool optimize, bool progressive) {
+bool JpegDecoder::decode(const unsigned char *data, size_t size, Image &image, std::string &error) const {
+	return decodeInto(data, size, image, error);
+}
+
+std::vector<unsigned char> JpegEncoder::encode(const Image &image) const {
 	if(image.isNull())
 		throw Error("there is no image to encode");
 	std::vector<unsigned char> jpeg;
 	std::string error;
-	if(!encodeInto(image, quality, optimize, progressive, jpeg, error))
+	if(!encodeInto(image, quality_, optimize_, progressive_, jpeg, error))
 		throw Error("could not encode a JPEG image: " + error);
 	return jpeg;
 }

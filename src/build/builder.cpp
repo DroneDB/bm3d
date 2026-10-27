@@ -28,7 +28,7 @@ for more details.
 #include "../common/error.h"
 #include "../common/pathutil.h"
 #include "../format/bm3d_writer.h"
-#include "../io/image/imageio.h"
+#include "../io/image/webp_codec.h"
 
 #include <vcg/math/similarity2.h>
 #include <vcg/space/rect_packer.h>
@@ -619,7 +619,7 @@ void Builder::appendNodeTex(size_t texture, const std::vector<unsigned char> &en
 }
 
 std::vector<unsigned char> Builder::encodeNodeTex(const Image &image) const {
-	return encodeWebp(image, tex_quality);
+	return WebpEncoder(tex_quality).encode(image);
 }
 
 //the most vertices a node may have: a node indexes its vertices with 16 bits (at most 65535), and

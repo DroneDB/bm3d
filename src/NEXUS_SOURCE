@@ -16,9 +16,9 @@ common/stdnexusfile.cpp  common/stdfile.cpp
 common/stdnexusfile.h  common/stdfile.h
 nxsbuild/image.cpp  io/image/image.cpp
 nxsbuild/image.h  io/image/image.h
-nxsbuild/imageio.cpp  io/image/imageio.cpp
-nxsbuild/imageio.h  io/image/imageio.h
-nxsbuild/imagejpeg.cpp  io/image/imagejpeg.cpp
+nxsbuild/imageio.cpp  io/image/image_decoder.cpp
+nxsbuild/imageio.h  io/image/image_decoder.h
+nxsbuild/imagejpeg.cpp  io/image/jpeg_codec.cpp
 nxsbuild/kdtree.cpp  build/kdtree.cpp
 nxsbuild/kdtree.h  build/kdtree.h
 nxsbuild/mesh.cpp  build/mesh.cpp

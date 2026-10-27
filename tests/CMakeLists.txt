@@ -81,6 +81,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/equal_keys_test.cpp
     unit/format_records_test.cpp
     unit/format_writer_reader_test.cpp
+    unit/image_codecs_test.cpp
     unit/json_object_test.cpp
     unit/mesh_loader_registry_test.cpp
     unit/metadata_test.cpp

@@ -19,7 +19,7 @@
 #include <gtest/gtest.h>
 
 #include "bm3d/bm3d.h"
-#include "io/image/imageio.h"
+#include "io/image/image_decoder.h"
 #include "model_files.h"
 #include "bm3d_file.h"
 #include "pictures.h"

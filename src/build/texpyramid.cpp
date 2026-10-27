@@ -4,7 +4,8 @@
 #include <iostream>
 #include "../common/error.h"
 #include "../common/pathutil.h"
-#include "../io/image/imageio.h"
+#include "../io/image/image_decoder.h"
+#include "../io/image/jpeg_codec.h"
 #include "texpyramid.h"
 
 using namespace bm3d::detail;
@@ -218,8 +219,8 @@ Image TexAtlas::getImg(Index index) {
 
 	//expensive decode without lock
 	std::string error;
-	Image img = decodeJpeg(bytes.data(), bytes.size(), error);
-	if(img.isNull() || uint32_t(img.width()) != d.w || uint32_t(img.height()) != d.h)
+	Image img;
+	if(!bm3d::detail::JpegDecoder().decode(bytes.data(), bytes.size(), img, error) || uint32_t(img.width()) != d.w || uint32_t(img.height()) != d.h)
 		throw bm3d::detail::Error("could not read back a texture tile: " + error);
 
 	{
@@ -279,7 +280,7 @@ void TexAtlas::pruneCacheLocked() {
 			d.w = it->second.image.width();
 			d.h = it->second.image.height();
 			//TODO: this could be made not under the lock as well
-			const std::vector<unsigned char> jpeg = encodeJpeg(it->second.image, quality, false, false);
+			const std::vector<unsigned char> jpeg = bm3d::detail::JpegEncoder(quality).encode(it->second.image);
 			d.offset = storage.append(jpeg.data(), jpeg.size());
 			d.size = jpeg.size();
 			disk[index] = d;
