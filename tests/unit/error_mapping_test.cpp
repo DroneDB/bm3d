@@ -62,9 +62,10 @@ TEST(ErrorMapping, aPlainErrorOfTheBuildIsABuildFailed) {
 }
 
 TEST(ErrorMapping, otherExceptionsAreABuildFailedWithTheirText) {
+    // the text of bad_alloc is the standard library's own ("std::bad_alloc", "bad allocation")
     const bm3d::Error memory = mapped(std::bad_alloc());
     EXPECT_EQ(memory.kind(), bm3d::ErrorKind::BuildFailed);
-    EXPECT_NE(std::string(memory.what()).find("bad_alloc"), std::string::npos);
+    EXPECT_EQ(std::string(memory.what()), std::string("Exception: ") + std::bad_alloc().what());
     const bm3d::Error other = mapped(std::runtime_error("boom"));
     EXPECT_EQ(other.kind(), bm3d::ErrorKind::BuildFailed);
     EXPECT_STREQ(other.what(), "Exception: boom");
