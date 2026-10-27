@@ -2,10 +2,14 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## Unreleased
+## 1.1.0
 
-The builder is reorganised; the files it writes are the same (the content hash of every reference
-model is unchanged), and the command line and the API keep their meaning.
+An internal restructuring of the builder: its sources are in modules, the builder is split into
+classes that each do one thing, the loaders and image decoders are found through registries, the
+retries are a policy, and errors are told apart by type. The files it writes are the same (the
+content hash of every reference model is unchanged), the command line and the API keep their
+meaning, and the API gains an optional logger for the warnings. The viewer is unchanged; its
+version follows the release.
 
 - **Sources in modules.** `src/format`, `src/build`, `src/io/mesh`, `src/io/image`, `src/compress`,
   `src/common` and `src/api`. The builder is split into `ModelDag` and `DagOps` (the graph of nodes
