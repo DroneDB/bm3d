@@ -24,9 +24,11 @@ const PAGE = `<!doctype html>
 <body style="margin:0"><script type="module">
 import * as THREE from 'three';
 
+// The state exists before the first await: the load event does not wait for the import below, so the
+// test can read the state while the viewer is still being fetched
+const state = (window.__state = { loaded: false, updates: 0, errors: [], frames: 0 });
 const query = new URLSearchParams(location.search);
 const { Bm3dObject } = await import(query.get('bundle') === 'min' ? '/dist/bm3d-viewer.min.js' : '/dist/bm3d-viewer.js');
-const state = (window.__state = { loaded: false, updates: 0, errors: [], frames: 0 });
 const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
 renderer.setSize(400, 300);
 document.body.append(renderer.domElement);
@@ -97,14 +99,25 @@ test.beforeEach(() => {
 	server.requests.length = 0;
 });
 
-/** Opens the page for a model and waits until `nodes` nodes are on the GPU and drawn. */
-async function show(page, model, { nodes = 1, extra = '' } = {}) {
+/** Opens the page for a model; returns the errors the page reports from then on. */
+async function open(page, model, extra = '') {
 	const errors = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
 	await page.goto(`${server.url}/?model=${encodeURIComponent(`/models/${model}.bm3d`)}${extra}`);
+	return errors;
+}
+
+/** Waits until `nodes` nodes of the open page's model are on the GPU and drawn. */
+async function waitUntilDrawn(page, nodes = 1) {
 	await page.waitForFunction((n) => window.__state.loaded && window.__state.ready >= n && window.__state.frames > 3, nodes, { timeout: 30000 });
 	await page.waitForTimeout(500); // let the requests that the last frames asked for arrive and be drawn
+}
+
+/** Opens the page for a model and waits until `nodes` nodes are on the GPU and drawn. */
+async function show(page, model, { nodes = 1, extra = '' } = {}) {
+	const errors = await open(page, model, extra);
+	await waitUntilDrawn(page, nodes);
 	return errors;
 }
 
@@ -131,6 +144,22 @@ test('the minified bundle draws as well', async ({ page }) => {
 	const pixels = await page.evaluate(() => window.__pixels());
 	expect(pixels.drawn / pixels.total).toBeGreaterThan(0.1);
 	expect(pixels.colors).toBeGreaterThan(20);
+	expect(errors).toEqual([]);
+});
+
+test('has its state while the viewer is still being fetched', async ({ page }) => {
+	// The page imports the viewer with a dynamic import, which the load event does not wait for. Hold the
+	// viewer back: the page has loaded (goto returned) and the test can already wait on its state
+	let release;
+	const held = new Promise((done) => (release = done));
+	await page.route('**/dist/bm3d-viewer.js', async (route) => {
+		await held;
+		await route.continue();
+	});
+	const errors = await open(page, 'sphere');
+	expect(await page.evaluate(() => typeof window.__state)).toBe('object');
+	release();
+	await waitUntilDrawn(page);
 	expect(errors).toEqual([]);
 });
 
