@@ -2,6 +2,31 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## Unreleased
+
+The builder is reorganised; the files it writes are the same (the content hash of every reference
+model is unchanged), and the command line and the API keep their meaning.
+
+- **Sources in modules.** `src/format`, `src/build`, `src/io/mesh`, `src/io/image`, `src/compress`,
+  `src/common` and `src/api`. The builder is split into `ModelDag` and `DagOps` (the graph of nodes
+  and what is done to it once the levels are made), `NodeTextureBaker`, `NodeTextureStore` and
+  `TextureEncoderPool` (the textures of the nodes, encoded on several threads and written in order),
+  `LevelBuilder`, `HierarchyBuilder`, `ModelSaver`, `ModelBuilder` and `BuildPipeline`, which holds
+  the retries as a `FallbackPolicy`. The classes take their settings in their constructors.
+- **Loaders and image decoders are found through registries.** `MeshLoaderRegistry` maps the
+  extension of a file to its loader (OBJ, PLY, STL); `ImageDecoderRegistry` asks the decoders in
+  order and each recognises its format by the first bytes of the file; `ImageEncoder` is the
+  interface of the WebP (node textures) and JPEG (tiles of the texture pyramid) encoders.
+- **Errors are told apart by type.** The scratch layer throws `ScratchError`, so that a scratch file
+  that cannot be created or written is a failed build, and the reading of the input turns the
+  other errors of the loaders into `InputError`; the API no longer looks for the names of scratch
+  files in the message. The C string that corto throws is turned into an `Error` where corto is
+  called.
+- **`BuildOptions::logger`.** The warnings of a build (bytes after the triangles of a binary STL,
+  textures that could not be packed, nodes made smaller) are given to this function, without the
+  `Warning: ` prefix. The library writes nothing to the standard streams; the program prints them
+  to standard error as before, with the same text.
+
 ## 1.0.0
 
 The first release that writes the `.bm3d` format, version 1 (`docs/FORMAT.md`), and the first that
