@@ -5,16 +5,17 @@ bm3d is a builder, a file format and a web viewer for multiresolution 3D models.
 the detail it needs, so a model of many millions of triangles and gigapixels of texture opens in
 a web page.
 
-Status of this version: the builder and its command line are in place, and the output is a `.bm3d`
-file, format version 1, always corto-compressed, specified in [`docs/FORMAT.md`](docs/FORMAT.md).
-The web viewer arrives with the first release of that format.
+Status of this version (1.0.0): the builder and its command line write a `.bm3d` file, format
+version 1, always corto-compressed, specified in [`docs/FORMAT.md`](docs/FORMAT.md), and the web
+viewer (`bm3d-viewer`, in `web/`) reads it. Programs for Linux and Windows, the viewer package and
+the source are attached to each [release](https://github.com/DroneDB/bm3d/releases).
 
 ## 1. Derived from Nexus
 
 bm3d is derived from [Nexus](https://github.com/cnr-isti-vclab/nexus) by Federico Ponchio and
 the Visual Computing Lab, ISTI-CNR, and uses [VCGLib](https://github.com/cnr-isti-vclab/vcglib)
 by Paolo Cignoni and the Visual Computing Lab, ISTI-CNR, and
-[corto](https://github.com/cnr-isti-vclab/corto) by Federico Ponchio. The web viewer will be
+[corto](https://github.com/cnr-isti-vclab/corto) by Federico Ponchio. The web viewer is
 based on the MIT-licensed JavaScript of Nexus. We thank the authors: the multiresolution
 structure, the mesh compression and the library underneath are their work. The starting point
 is the DroneDB fork of Nexus, which `PROVENANCE.md` describes together with the exact upstream
@@ -25,7 +26,7 @@ commits.
 - No Qt: images, files and paths are handled with the C++ standard library and a small set of
   image libraries.
 - Its own file format, version 1 (`docs/FORMAT.md`; not readable by the Nexus tools, and the magic
-  number says so). Version 0.2.0 and earlier wrote the Nexus container. The new file has offsets
+  number says so). Version 0.2.0 and earlier wrote the Nexus container; 1.0.0 is the first release that writes this one. The new file has offsets
   in bytes aligned to 8 instead of units of 256, a metadata block (the program and its version,
   the settings of the build, the input, and any JSON object given with `--metadata`), and a
   content hash that ignores the metadata, so that two builds of the same input have the same hash.
@@ -125,15 +126,25 @@ workflow runs them.
 The `.bm3d` format is described in [`docs/FORMAT.md`](docs/FORMAT.md): the header, the index, the
 corto payloads and WebP textures, the metadata block, the version rule and the content hash. The
 C++ reader and writer are in `src/format/`; `scripts/dump.py` is a second reader, in Python, that
-prints a file and checks it, and compares it with the Nexus container of the same build. The
-viewer will live in `web/` (npm package `bm3d-viewer`).
+prints a file and checks it, and compares it with the Nexus container of the same build.
+
+The viewer is the npm package `bm3d-viewer` in `web/` (ES modules, three.js 0.160 or later as a peer
+dependency; MIT). It is not on npm: it is the file `bm3d-viewer-<version>.tgz` of each release, which
+carries the bundles, the corto decoder (`corto-worker.js`, `corto.wasm`) and its licences. Install it
+from the release:
+
+    npm install https://github.com/DroneDB/bm3d/releases/download/v1.0.0/bm3d-viewer-1.0.0.tgz
+
+then `import { Bm3dObject } from 'bm3d-viewer'` and give it the URL of a `.bm3d` file; the server
+must answer HTTP Range requests. The options (where the decoder is served from, the cache) and the
+build of the package are in [`web/README.md`](web/README.md).
 
 ## 6. Licences
 
 The C++ code is distributed under GPL-3.0 (`LICENSE`): the files written for bm3d are
 GPL-3.0-or-later, and the two that derive from DroneDB's libnexus (`src/api/bm3d.cpp`,
 `cli/main.cpp`) are GPL-3.0-only, as libnexus is. The Nexus, VCGLib and corto sources it contains
-keep their own headers and licences (`licenses/`, `NOTICE`). The web viewer will be MIT. Where each file
+keep their own headers and licences (`licenses/`, `NOTICE`). The web viewer is MIT (`web/LICENSE`). Where each file
 comes from is in `PROVENANCE.md`. The imported sources can be checked against their upstream
 commits with `scripts/sync-vcg.py --check`, `scripts/sync-corto.py --check` and
 `scripts/import-nexus.py --check`.

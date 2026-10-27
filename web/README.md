@@ -13,6 +13,13 @@ refined as the camera comes closer. It derives from the JavaScript viewer of
 The package is ES modules only. It is released as a tarball (`bm3d-viewer-<version>.tgz`) attached to
 the GitHub release of bm3d, not on npm.
 
+```
+npm install three https://github.com/DroneDB/bm3d/releases/download/v1.0.0/bm3d-viewer-1.0.0.tgz
+```
+
+`three` (0.160 or later) is a peer dependency. The release lists the SHA-256 of the tarball in
+`SHA256SUMS`.
+
 ## Use
 
 ```js

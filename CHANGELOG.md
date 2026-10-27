@@ -2,7 +2,17 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## Unreleased
+## 1.0.0
+
+The first release that writes the `.bm3d` format, version 1 (`docs/FORMAT.md`), and the first that
+ships the viewer, the npm package `bm3d-viewer` (a tarball attached to the release). The headline
+changes since 0.2.0: the new file format with its metadata block and content hash; the viewer, which
+reads it with HTTP Range requests and decodes it in a worker with corto as WebAssembly; every Nexus
+name in the code replaced by a bm3d one; the same bytes on every platform and the same content hash
+with any number of threads (golden files checked on Linux and Windows); a simplification that keeps
+a node on its model and the precision of a small model; and release archives for Linux and Windows
+with the licences of what they link. The file of a model is 0.4 % (`TexturedModel`) to 0.9 % (`OfficePlan`) smaller than
+the Nexus container of the same input.
 
 - **`scripts/compare.py` compares without the order.** The reference models were built with the order
   of equal keys of the library of the reference program, and bm3d has an order of its own, so the same
@@ -79,9 +89,12 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   node or patch; the sink is checked byte by byte (a `-0` in it is an error). `Bm3dReader`,
   `scripts/dump.py` and the viewer's reader follow it, with tests in each (`scripts/tests/` for
   the Python reader, run by the CI on the fixtures and on the golden files).
-- Size of the new container against the Nexus one, measured: the benchmark model (`TexturedModel`)
-  358 059 008 -> 356 620 936 bytes (-0.40 %), `OfficePlan` 761 587 200 -> 754 435 514 (-0.94 %)
-  (`docs/FORMAT.md`, section 14).
+- Size of the new container against the Nexus one, measured with `--threads 8` on the file of bm3d
+  0.2.0 as of the commit that renamed the code (`dd62d72`, the last program that wrote format 0)
+  and the file of this version: the benchmark model (`TexturedModel`) 358 059 008 -> 356 635 232
+  bytes (-0.40 %), `OfficePlan` 761 587 200 -> 754 451 498 (-0.94 %), about 288 bytes less for each
+  node and texture (`docs/FORMAT.md`, section 14). The figures compare the two files: the builder
+  also changed between the two programs (the entries above).
 - **Viewer.** The default `decoderPath` is found from `import.meta.url` when a decoder starts, not
   with `new URL('.', import.meta.url)`, which webpack takes for a file to bundle and stops on
   ("Can't resolve '.'"); a test bundles the package with rollup and the rule of those bundlers.

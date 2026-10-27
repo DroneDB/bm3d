@@ -651,17 +651,19 @@ saving  ~=  nodes x (124 + 124 + 52 - 12)  -  (128 - 88)  +  68  -  metadataLeng
 ```
 
 (the 68 is the sentinel row of the Nexus texture table), and without textures about
-`nodes x 112 - 40 - metadataLength`. Measured with the same builder writing both containers:
+`nodes x 112 - 40 - metadataLength`. Measured on the output of the two programs, each built with `--threads 8`:
 
 | Model | Nexus container | version 1 | Change |
 |---|---:|---:|---:|
-| the benchmark model (a textured photogrammetry mesh, `TexturedModel`) | 358 059 008 | 356 620 936 | -1 438 072 B (-0.40 %) |
-| a large textured model (`OfficePlan`) | 761 587 200 | 754 435 514 | -7 151 686 B (-0.94 %) |
+| the benchmark model (a textured photogrammetry mesh, `TexturedModel`) | 358 059 008 | 356 635 232 | -1 423 776 B (-0.40 %) |
+| a large textured model (`OfficePlan`) | 761 587 200 | 754 451 498 | -7 135 702 B (-0.94 %) |
 
-The version 1 files are those of a builder whose order of equal keys (in its sorts, its
-simplification and its texture packing) is no longer the one the standard library gave; that moves
-a few hundred bytes of the compressed payloads and textures (208 bytes on the benchmark model), next
-to the 1.4 MB and 7.2 MB the container saves.
+The Nexus container is the file of bm3d 0.2.0 as of the commit that renamed the code (`dd62d72`), the
+last program that wrote it; the version 1 file is that of bm3d 1.0.0. The builder changed between the
+two (an order of its own for equal keys in its sorts, its simplification and its texture packing, and a
+vertex that stays near the edge it replaces), which moves the compressed payloads and the textures by a
+few hundred bytes up to a few kilobytes: the figures compare the two files, not the container alone.
+They agree with the estimate above, which is about 288 bytes for each node and texture.
 
 ## 15. Summary of the fixed sizes
 
