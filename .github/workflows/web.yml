@@ -141,6 +141,14 @@ jobs:
       - name: Tests in node (the fixtures and the golden files)
         working-directory: web
         run: npx vitest run
+      - name: Drop the Microsoft apt repository of the runner image
+        # Playwright's --with-deps runs "apt-get update", which exits with 100 when any configured
+        # repository fails to refresh; packages.microsoft.com answered 403 on a run. Nothing here
+        # installs from it (Chromium's system libraries all come from Ubuntu), so the update only
+        # reads the Ubuntu repositories and no longer depends on a third-party host.
+        run: |
+          grep -rl 'packages.microsoft.com' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
+            | xargs -r sudo rm -v
       - name: Install Chromium
         working-directory: web
         run: npx playwright install --with-deps chromium
