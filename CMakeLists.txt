@@ -123,6 +123,7 @@ add_library(bm3d_core STATIC
     src/io/image/imagejpeg.cpp
     src/build/kdtree.cpp
     src/build/mesh.cpp
+    src/io/mesh/mesh_loader_registry.cpp
     src/io/mesh/meshloader.cpp
     src/io/mesh/meshstream.cpp
     src/io/mesh/objloader.cpp

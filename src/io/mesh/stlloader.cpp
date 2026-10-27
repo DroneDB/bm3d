@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <system_error>
 
 #include "../../common/error.h"
@@ -69,7 +68,7 @@ void clear(Triangle &triangle) {
 
 }
 
-STLLoader::STLLoader(const std::string &filename): filename(filename) {
+STLLoader::STLLoader(const std::string &filename, const bm3d::detail::Logger &logger): filename(filename) {
 
 	has_colors = has_normals = has_textures = false;
 
@@ -93,8 +92,8 @@ STLLoader::STLLoader(const std::string &filename): filename(filename) {
 		ascii = looksAscii(probe.data(), probe.size());
 		binary = !ascii && hasCount && size > binarySize(count);
 		if(binary)
-			std::cerr << "Warning: stl file " << filename << " holds " << size - binarySize(count) << " bytes after its "
-			          << count << " triangles; they are ignored" << std::endl;
+			bm3d::detail::warn(logger, "stl file " + filename + " holds " + std::to_string(size - binarySize(count)) +
+			                   " bytes after its " + std::to_string(count) + " triangles; they are ignored");
 	}
 
 	if(ascii) {

@@ -6,6 +6,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 
@@ -45,6 +46,11 @@ struct BuildOptions {
     // or the same key twice, is refused before anything is built (ErrorKind::InvalidArgument), as
     // is one that makes the block longer than 1 MiB.
     std::string metadata;
+    // Called with the text of each warning (UTF-8, no prefix and no line end) as the build goes:
+    // the input is built in a way that differs from the usual (textures left out, smaller nodes,
+    // bytes of the input that are ignored). It is called on the thread that called build().
+    // Empty: the warnings are dropped. The library writes nothing to the standard streams.
+    std::function<void(const std::string& message)> logger;
 };
 
 // Builds the model in `input` (.obj, .ply or .stl, with the textures its materials name) into

@@ -46,11 +46,15 @@ public:
 	//for each of the triangles that has it, and defines three for each)
 	virtual uint64_t vertexCount() const = 0;
 	
-	std::vector<LoadTexture> texture_filenames;
-	int texOffset; //when returning triangles add texOffset to refer to the correct texture in stream.
+	//the textures the materials of the file name, once the loader has been made
+	const std::vector<LoadTexture> &textureFilenames() const { return texture_filenames; }
+	//the index in the stream of the first texture of this loader: the triangles it returns refer
+	//to its textures by their index plus this
+	void setTextureOffset(int offset) { texOffset = offset; }
 
-	
 protected:
+	std::vector<LoadTexture> texture_filenames;
+	int texOffset = 0;
 	bool has_colors;
 	bool has_normals;
 	bool has_textures;

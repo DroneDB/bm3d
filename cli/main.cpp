@@ -239,6 +239,9 @@ int run(const std::vector<std::string>& args) {
     const std::string& input = paths[0];
     const std::string& output = paths[1];
 
+    // The warnings of the build go to the standard error stream, one line each
+    options.logger = [](const std::string& message) { std::cerr << "Warning: " << message << std::endl; };
+
     try {
         Heartbeat heartbeat(input, heartbeatInterval());
         bm3d::build(pathFromUtf8(input), pathFromUtf8(output), options);

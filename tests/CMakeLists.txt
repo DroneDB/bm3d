@@ -82,6 +82,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/format_records_test.cpp
     unit/format_writer_reader_test.cpp
     unit/json_object_test.cpp
+    unit/mesh_loader_registry_test.cpp
     unit/metadata_test.cpp
     unit/scratch_errors_test.cpp
     unit/sha256_test.cpp
@@ -96,6 +97,7 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/build_failure_test.cpp
     integration/format_output_test.cpp
     integration/leaf_precision_test.cpp
+    integration/logger_test.cpp
     integration/mesh_formats_test.cpp
     integration/simplified_levels_test.cpp
     integration/texture_formats_test.cpp

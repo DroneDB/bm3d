@@ -25,6 +25,7 @@ for more details.
 
 #include "trianglesoup.h"
 #include "meshloader.h"
+#include "mesh_loader_registry.h"
 
 /* triangles are organized in levels, each one with half the triangle of the lower one
    we have a buffer for each level, when filled it gets written to disk.
@@ -44,8 +45,11 @@ public:
 	uint64_t vertexCount() const { return vertex_count; }
 
 	//cachePrefix: where the loaders that need a scratch file put it (see VirtualMemory), the prefix
-	//of the stream's own scratch file
-	explicit Stream(const std::string &cachePrefix);
+	//of the stream's own scratch file. The files are read with the loaders of `registry`, which
+	//must outlive the stream; logger gets their warnings.
+	explicit Stream(const std::string &cachePrefix,
+	                const bm3d::detail::MeshLoaderRegistry &registry = bm3d::detail::MeshLoaderRegistry::standard(),
+	                const bm3d::detail::Logger &logger = bm3d::detail::Logger());
 	virtual ~Stream() {}
 	void load(const std::vector<std::string> &paths, const std::string &material);
 	void load(MeshLoader *loader); //texture filenames must have the correct (relative or absolute) path!
@@ -64,6 +68,8 @@ protected:
 	std::vector<uint64_t> order;          //order of the block for streaming
 
 	std::string cache_prefix;
+	const bm3d::detail::MeshLoaderRegistry &registry;
+	bm3d::detail::Logger logger;
 	uint64_t vertex_count = 0;
 	uint64_t current_triangle;   //used both for loading and streaming
 	uint64_t current_block;
@@ -82,7 +88,9 @@ protected:
 
 class StreamSoup: public Stream, public VirtualTriangleSoup {
 public:
-	StreamSoup(const std::string &prefix);
+	StreamSoup(const std::string &prefix,
+	           const bm3d::detail::MeshLoaderRegistry &registry = bm3d::detail::MeshLoaderRegistry::standard(),
+	           const bm3d::detail::Logger &logger = bm3d::detail::Logger());
 
 	void pushTriangle(Triangle &triangle);
 	//return a block of triangles. The buffer is valid until next call to getTriangles. Return null when finished

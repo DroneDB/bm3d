@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <exception>
 #include <iomanip>
-#include <iostream>
 #include <memory>
 #include <new>
 #include <sstream>
@@ -26,9 +25,11 @@
 
 #include "bm3d/version.h"
 #include "../common/error.h"
+#include "../common/logger.h"
 #include "../common/pathutil.h"
 #include "../build/builder.h"
 #include "../compress/compressor.h"
+#include "../io/mesh/mesh_loader_registry.h"
 #include "../format/bm3d_format.h"
 #include "../format/bm3d_writer.h"
 #include "../format/format_error.h"
@@ -255,7 +256,7 @@ std::string parseMetadata(const std::string& json, std::vector<JsonMember>& extr
 
 // Builds the model into a .bm3d file with corto-compressed nodes; throws on failure.
 void buildOnce(const std::string& input, const std::string& output, const Attempt& attempt,
-               const std::vector<JsonMember>& extraMetadata) {
+               const std::vector<JsonMember>& extraMetadata, const detail::Logger& logger) {
     const uint64_t maxMemory = (uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 4;
 
     // Build a somewhat unique base name for cache files.
@@ -273,7 +274,7 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     // Declared before the builder, so that it outlives it as it always did
     std::unique_ptr<KDTreeSoup> tree;
 
-    StreamSoup stream(cacheBase + "_stream");
+    StreamSoup stream(cacheBase + "_stream", detail::MeshLoaderRegistry::standard(), logger);
     stream.setMaxMemory(maxMemory);
     loadInput(stream, input);
 
@@ -334,18 +335,18 @@ constexpr int kSmallerNodeAttempts = 3;
 //    model is built with smaller nodes. Leaving the node out, which Nexus did, leaves a hole in
 //    the model.
 void buildWithFallbacks(const std::string& input, const std::string& output, int threads,
-                        const std::vector<JsonMember>& extraMetadata) {
+                        const std::vector<JsonMember>& extraMetadata, const detail::Logger& logger) {
     Attempt attempt;
     attempt.threads = threads > 0 ? threads : int(std::max(1u, std::thread::hardware_concurrency()));
     int smallerNodeAttempts = 0;
     for (;;) {
         try {
-            buildOnce(input, output, attempt, extraMetadata);
+            buildOnce(input, output, attempt, extraMetadata, logger);
             break;
         } catch (const detail::TexturePackingError& error) {
             if (!attempt.withTextures)
                 throw;
-            std::cerr << "Warning: " << error.what() << std::endl;
+            detail::warn(logger, error.what());
             attempt.withTextures = false;
         } catch (const detail::NodeTooLargeError& error) {
             if (smallerNodeAttempts == kSmallerNodeAttempts)
@@ -353,17 +354,18 @@ void buildWithFallbacks(const std::string& input, const std::string& output, int
                                 std::to_string(attempt.nodeFaces) +
                                 " triangles, the smallest tried (the build started with " +
                                 std::to_string(kNodeFaces) + "), are still too large for this model");
-            std::cerr << "Warning: " << error.what() << std::endl;
+            detail::warn(logger, error.what());
             attempt.nodeFaces /= 2;
             ++smallerNodeAttempts;
         }
     }
 
     if (attempt.nodeFaces != kNodeFaces)
-        std::cerr << "Warning: built with nodes of " << attempt.nodeFaces << " triangles instead of " << kNodeFaces
-                  << ": the texture parametrization is too fragmented for larger nodes" << std::endl;
+        detail::warn(logger, "built with nodes of " + std::to_string(attempt.nodeFaces) + " triangles instead of " +
+                                 std::to_string(kNodeFaces) +
+                                 ": the texture parametrization is too fragmented for larger nodes");
     if (!attempt.withTextures)
-        std::cerr << "Warning: textures could not be packed; built without textures" << std::endl;
+        detail::warn(logger, "textures could not be packed; built without textures");
 }
 
 // The input must name an existing file. Turning a path that is not valid UTF-8 into a file
@@ -410,7 +412,7 @@ void build(const std::filesystem::path& input, const std::filesystem::path& outp
         // Use "C" numeric locale for this operation only.
         NumericLocaleGuard numericLocaleGuard;
 
-        buildWithFallbacks(inputPath, outputPath, options.threads, extraMetadata);
+        buildWithFallbacks(inputPath, outputPath, options.threads, extraMetadata, options.logger);
     } catch (const Error&) {
         throw;  // already classified
     } catch (...) {

@@ -19,9 +19,6 @@ for more details.
 
 #include "meshstream.h"
 #include "meshloader.h"
-#include "plyloader.h"
-#include "objloader.h"
-#include "stlloader.h"
 #include "../../common/error.h"
 #include "../../common/pathutil.h"
 
@@ -30,26 +27,26 @@ for more details.
 
 using namespace std;
 
-Stream::Stream(const std::string &cachePrefix):
+Stream::Stream(const std::string &cachePrefix, const bm3d::detail::MeshLoaderRegistry &loaders,
+               const bm3d::detail::Logger &log):
 	has_colors(false),
 	has_normals(false),
 	has_textures(false),
 	cache_prefix(cachePrefix),
+	registry(loaders),
+	logger(log),
 	current_triangle(0),
 	current_block(0) {
 }
 
-//The loader for the format of a file, told by the extension of its name (any case). The formats are
-//the ones bm3d reads: anything else is refused, naming them.
+//The loader for the format of a file, told by the extension of its name (any case); anything the
+//registry does not know is refused, naming the formats it does.
 std::unique_ptr<MeshLoader> Stream::getLoader(const std::string &file, const std::string &material) {
-	if(bm3d::detail::endsWithNoCase(file, ".ply"))
-		return std::unique_ptr<MeshLoader>(new PlyLoader(file, cache_prefix + "_plyvertex"));
-	if(bm3d::detail::endsWithNoCase(file, ".obj"))
-		return std::unique_ptr<MeshLoader>(new ObjLoader(file, material));
-	if(bm3d::detail::endsWithNoCase(file, ".stl"))
-		return std::unique_ptr<MeshLoader>(new STLLoader(file));
-	throw bm3d::detail::Error("unsupported input file " + file + ": the formats read are obj, ply and stl, told by the "
-	                "extension of the name");
+	bm3d::detail::MeshLoaderContext context;
+	context.materialLibrary = material;
+	context.scratchPrefix = cache_prefix + "_plyvertex";
+	context.logger = logger;
+	return registry.create(file, context);
 }
 
 void Stream::load(MeshLoader *loader) {
@@ -60,7 +57,7 @@ void Stream::load(MeshLoader *loader) {
 	has_textures &= loader->hasTextures();
 
 	if(has_textures) {
-		for(auto tex: loader->texture_filenames) {
+		for(auto tex: loader->textureFilenames()) {
 			textures.push_back(tex);
 		}
 	}
@@ -115,14 +112,15 @@ void Stream::computeOrder() {
 
 //SOUP
 
-StreamSoup::StreamSoup(const std::string &prefix):
-	Stream(prefix),
+StreamSoup::StreamSoup(const std::string &prefix, const bm3d::detail::MeshLoaderRegistry &registry,
+                       const bm3d::detail::Logger &logger):
+	Stream(prefix, registry, logger),
 	VirtualTriangleSoup(prefix) {
 }
 
 void StreamSoup::loadMesh(MeshLoader *loader) {
 	loader->setMaxMemory(maxMemory());
-	loader->texOffset = textures.size();
+	loader->setTextureOffset(textures.size());
 	//get 128Mb of data
 	uint32_t length = (1<<20); //times 52 bytes.
 	std::unique_ptr<Triangle[]> triangles(new Triangle[length]);

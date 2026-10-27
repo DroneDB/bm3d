@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "meshloader.h"
+#include "../../common/logger.h"
 #include "../../common/textfile.h"
 
 //Reads an STL file, binary or ASCII. Which one it is does not depend on how it starts, since a
@@ -30,7 +31,8 @@
 //bytes are ignored.
 class STLLoader: public MeshLoader {
 public:
-	STLLoader(const std::string &filename);
+	//logger receives the warning for a file with bytes after its triangles
+	STLLoader(const std::string &filename, const bm3d::detail::Logger &logger = bm3d::detail::Logger());
 
 	void setMaxMemory(uint64_t /*max_memory*/) { /* ignore, here no memory needed */ }
 	uint64_t vertexCount() const override { return 3 * current_triangle; }
