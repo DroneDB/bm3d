@@ -42,6 +42,7 @@ namespace {
 
 using detail::Builder;
 using detail::CompressionSettings;
+using detail::describeCurrentException;
 
 static_assert(BM3D_FORMAT_VERSION == detail::kFormatVersion, "the format the library writes is the one src/format implements");
 
@@ -65,22 +66,6 @@ constexpr int kChromaBits = 6;
 constexpr int kAlphaBits = 5;
 constexpr int kNormalBits = 10;
 constexpr float kTexStep = 0.25f;  // in pixels
-
-// The text of the exception being handled; call it from a catch block. Besides the standard
-// exceptions there is corto, the mesh codec, which throws its errors as C strings.
-std::string describeCurrentException() {
-    try {
-        throw;
-    } catch (const detail::Error& e) {
-        return e.what();
-    } catch (const std::exception& e) {
-        return std::string("Exception: ") + e.what();
-    } catch (const char* message) {
-        return message;
-    } catch (...) {
-        return "Unknown exception";
-    }
-}
 
 // RAII: set LC_NUMERIC to "C" during this scope and restore previous value.
 class NumericLocaleGuard {
@@ -126,67 +111,26 @@ struct Attempt {
     bool withTextures = true;
 };
 
-// The name the OBJ loader gives its vertex cache. It has no folder, so VirtualMemory puts the
-// file in the system temporary folder, not next to the output like the other scratch files.
-constexpr const char* kObjVertexCacheName = "cache_plyvertex";
-
-// The scratch files that reading the input writes, and how to tell their failures from those of
-// the input. The builder code reports a scratch file it cannot create, grow or map with the same
-// detail::Error as a mesh it cannot parse, and the message names the file (see MappedFile). The
-// scratch files are named after the prefixes added here (one unique to the build, the fixed
-// names of the OBJ loader and of the texture atlas), which no file of the input carries, so a
-// message that names one is a failure of the machine: a disk or a temporary folder that cannot
-// take the file, an address space that cannot map it.
-class ScratchFiles {
-public:
-    ScratchFiles() {
-        // A temporary folder that cannot be found fails the OBJ loader with the very error that
-        // detail::temporaryDirectory gives here, which is kept to be recognised
-        try {
-            prefixes_.push_back(detail::joinPath(detail::temporaryDirectory(), kObjVertexCacheName));
-        } catch (const detail::Error& e) {
-            noTemporaryFolder_ = e.what();
-        }
-    }
-
-    // A file named `prefix` followed by anything; an empty prefix names no file
-    void add(const std::string& prefix) {
-        if (!prefix.empty())
-            prefixes_.push_back(prefix);
-    }
-
-    // Whether `message`, the text of an detail::Error, reports a failure of one of these files
-    bool reportedIn(const std::string& message) const {
-        if (!noTemporaryFolder_.empty() && message == noTemporaryFolder_)
-            return true;
-        for (const std::string& prefix : prefixes_)
-            if (message.find(prefix) != std::string::npos)
-                return true;
-        return false;
-    }
-
-private:
-    std::vector<std::string> prefixes_;
-    std::string noTemporaryFolder_;
-};
-
 // Runs one step of reading the input (the mesh, its textures) and says whose fault a failure is.
 // The input's as a rule: a file that cannot be opened, parsed or decoded. The machine's when
-// memory runs out (std::bad_alloc) or a scratch file in `scratch` cannot be written: the input
-// may well be fine, so that is a failed build. The standard library throws nothing else here
-// that is not about the input: the file system calls of the reading code take an error_code,
-// and what does throw (std::system_error) is the conversion of a name the input holds, a texture
-// name that is not UTF-8, into a path.
+// memory runs out (std::bad_alloc) or a scratch file cannot be created, grown, written or mapped
+// (detail::ScratchError, which only the scratch layer throws): the input may well be fine, so
+// that is a failed build. The standard library throws nothing else here that is not about the
+// input: the file system calls of the reading code take an error_code, and what does throw
+// (std::system_error) is the conversion of a name the input holds, a texture name that is not
+// UTF-8, into a path.
 template <typename Read>
-void readInput(const ScratchFiles& scratch, Read&& read) {
+void readInput(Read&& read) {
     try {
         read();
     } catch (const Error&) {
         throw;  // already classified
     } catch (const std::bad_alloc&) {
         throw Error(ErrorKind::BuildFailed, describeCurrentException());
+    } catch (const detail::ScratchError& e) {
+        throw Error(ErrorKind::BuildFailed, e.what());
     } catch (const detail::Error& e) {
-        throw Error(scratch.reportedIn(e.what()) ? ErrorKind::BuildFailed : ErrorKind::InvalidInput, e.what());
+        throw Error(ErrorKind::InvalidInput, e.what());
     } catch (...) {
         throw Error(ErrorKind::InvalidInput, describeCurrentException());
     }
@@ -202,8 +146,8 @@ constexpr double kMaxModelSize = 1e9;
 // Reads the input into the out-of-core stream. A file the loaders accept without finding a
 // triangle in it (a text file with an .obj name, say), or whose triangles span more than the
 // builder can measure, is a problem of the input as well.
-void loadInput(StreamSoup& stream, const std::string& input, const ScratchFiles& scratch) {
-    readInput(scratch, [&] {
+void loadInput(StreamSoup& stream, const std::string& input) {
+    readInput([&] {
         std::string mtl;  // not exposed yet
         stream.load(std::vector<std::string>{input}, mtl);
     });
@@ -226,8 +170,8 @@ void loadInput(StreamSoup& stream, const std::string& input, const ScratchFiles&
 
 // Reads the textures the materials of the input name, which are part of the input: one that is
 // missing or cannot be decoded is invalid input, as an unreadable mesh is
-void loadTextures(Builder& builder, std::vector<LoadTexture>& textures, const ScratchFiles& scratch) {
-    readInput(scratch, [&] {
+void loadTextures(Builder& builder, std::vector<LoadTexture>& textures) {
+    readInput([&] {
         if (!builder.initAtlas(textures))
             throw detail::Error("Failed to initialize texture atlas");
     });
@@ -329,13 +273,9 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     // Declared before the builder, so that it outlives it as it always did
     std::unique_ptr<KDTreeSoup> tree;
 
-    // Every scratch file of the stream and of the PLY loader is named after cacheBase
-    ScratchFiles scratch;
-    scratch.add(cacheBase);
-
     StreamSoup stream(cacheBase + "_stream");
     stream.setMaxMemory(maxMemory);
-    loadInput(stream, input, scratch);
+    loadInput(stream, input);
 
     uint32_t components = Builder::NORMALS;
     if (stream.hasColors())
@@ -364,9 +304,7 @@ void buildOnce(const std::string& input, const std::string& output, const Attemp
     builder.textureThreads = attempt.threads;
     builder.maxNodeTexSide = kMaxNodeTextureSide;
 
-    // The atlas keeps the texture tiles that do not fit in memory in a scratch file of its own
-    scratch.add(builder.atlas.storage_prefix);
-    loadTextures(builder, stream.textures, scratch);
+    loadTextures(builder, stream.textures);
 
     tree.reset(new KDTreeSoup(cacheBase + "_tree", kAdaptive));
     tree->setMaxMemory((uint64_t(1) << 20) * static_cast<uint64_t>(kRamBufferMb) / 2);

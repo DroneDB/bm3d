@@ -173,7 +173,7 @@ void MappedFile::createTemporary(const std::string &prefix) {
 		}
 		const DWORD code = GetLastError();
 		if(code != ERROR_FILE_EXISTS && code != ERROR_ALREADY_EXISTS)
-			throw Error("unable to create temporary file " + path + ": " + systemError());
+			throw ScratchError("unable to create temporary file " + path + ": " + systemError());
 #else
 		const int fd = ::open(native, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 		if(fd != -1) {
@@ -185,23 +185,23 @@ void MappedFile::createTemporary(const std::string &prefix) {
 			return;
 		}
 		if(errno != EEXIST)
-			throw Error("unable to create temporary file " + path + ": " + systemError());
+			throw ScratchError("unable to create temporary file " + path + ": " + systemError());
 #endif
 	}
-	throw Error("unable to create a temporary file named " + prefix + ".*");
+	throw ScratchError("unable to create a temporary file named " + prefix + ".*");
 }
 
 void MappedFile::resize(uint64_t size) {
 	if(!writable_ || !isOpen())
-		throw Error("cannot resize " + path_ + ": not open for writing");
+		throw ScratchError("cannot resize " + path_ + ": not open for writing");
 #ifdef _WIN32
 	LARGE_INTEGER position;
 	position.QuadPart = LONGLONG(size);
 	if(!SetFilePointerEx(handle_, position, nullptr, FILE_BEGIN) || !SetEndOfFile(handle_))
-		throw Error("could not resize file " + path_ + ": " + systemError());
+		throw ScratchError("could not resize file " + path_ + ": " + systemError());
 #else
 	if(ftruncate(fd_, off_t(size)) != 0)
-		throw Error("could not resize file " + path_ + ": " + systemError());
+		throw ScratchError("could not resize file " + path_ + ": " + systemError());
 #endif
 	size_ = size;
 }

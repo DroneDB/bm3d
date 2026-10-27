@@ -78,26 +78,32 @@ EncodedNode NodeCompressor::compress(const unsigned char *memory, uint32_t nvert
 	}
 	const uint16_t *faces = reinterpret_cast<const uint16_t *>(next);
 
-	crt::Encoder encoder(nvert, nface);
-	for(uint32_t end: patchEnds)
-		encoder.addGroup(end);
+	//corto reports an error by throwing a C string: this is its only call site, and the one place
+	//that turns that into an Error
+	try {
+		crt::Encoder encoder(nvert, nface);
+		for(uint32_t end: patchEnds)
+			encoder.addGroup(end);
 
-	encoder.addPositions(coords, faces, static_cast<float>(std::ldexp(1.0, coordinateExponent_)));
-	if(normals)
-		encoder.addNormals(normals, settings_.normalBits, crt::NormalAttr::ESTIMATED);
-	if(colors)
-		encoder.addColors(colors, settings_.colorBits[0], settings_.colorBits[1], settings_.colorBits[2], settings_.colorBits[3]);
-	if(uvs)
-		encoder.addUvs(uvs, settings_.texStep/512);
-	encoder.encode();
+		encoder.addPositions(coords, faces, static_cast<float>(std::ldexp(1.0, coordinateExponent_)));
+		if(normals)
+			encoder.addNormals(normals, settings_.normalBits, crt::NormalAttr::ESTIMATED);
+		if(colors)
+			encoder.addColors(colors, settings_.colorBits[0], settings_.colorBits[1], settings_.colorBits[2], settings_.colorBits[3]);
+		if(uvs)
+			encoder.addUvs(uvs, settings_.texStep/512);
+		encoder.encode();
 
-	EncodedNode out;
-	out.stream.assign(encoder.stream.data(), encoder.stream.data() + encoder.stream.size());
-	out.vertexCount = static_cast<uint16_t>(encoder.nvert);
-	out.faceCount = static_cast<uint16_t>(encoder.nface);
-	for(const crt::Group &group: encoder.index.groups)
-		out.groupEnds.push_back(group.end);
-	return out;
+		EncodedNode out;
+		out.stream.assign(encoder.stream.data(), encoder.stream.data() + encoder.stream.size());
+		out.vertexCount = static_cast<uint16_t>(encoder.nvert);
+		out.faceCount = static_cast<uint16_t>(encoder.nface);
+		for(const crt::Group &group: encoder.index.groups)
+			out.groupEnds.push_back(group.end);
+		return out;
+	} catch(const char *message) {
+		throw Error(message);
+	}
 }
 
 } //namespace

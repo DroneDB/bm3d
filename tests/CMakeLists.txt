@@ -83,6 +83,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/format_writer_reader_test.cpp
     unit/json_object_test.cpp
     unit/metadata_test.cpp
+    unit/scratch_errors_test.cpp
     unit/sha256_test.cpp
     unit/simplification_test.cpp
     unit/version_test.cpp)

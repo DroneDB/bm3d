@@ -55,7 +55,7 @@ unsigned char *VirtualMemory::getBlock(uint64_t index, bool prevent_unload) {
 			makeRoom();
 		mapBlock(index);
 		if(!cache[index])
-			throw bm3d::detail::Error("virtual memory error mapping block: " + file.lastError());
+			throw bm3d::detail::ScratchError("virtual memory error mapping block: " + file.lastError());
 
 		mapped.push_front(index);
 	}

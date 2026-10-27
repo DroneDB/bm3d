@@ -36,7 +36,7 @@ void ScratchFile::create(const std::string &prefix) {
 
 void ScratchFile::reserve(uint64_t size) {
 	if(!file_.isOpen())
-		throw Error("the scratch file is not open");
+		throw ScratchError("the scratch file is not open");
 	if(size > file_.size())
 		file_.resize(std::max(size, file_.size() + GrowthStep));
 }
@@ -48,7 +48,7 @@ uint64_t ScratchFile::append(const void *data, size_t length) {
 	reserve(offset + length);
 	unsigned char *where = file_.map(offset, length);
 	if(!where)
-		throw Error("could not write the scratch file: " + file_.lastError());
+		throw ScratchError("could not write the scratch file: " + file_.lastError());
 	std::memcpy(where, data, length);
 	file_.unmap(where);
 	size_ += length;
@@ -57,7 +57,7 @@ uint64_t ScratchFile::append(const void *data, size_t length) {
 
 void ScratchFile::padTo(uint64_t size) {
 	if(size < size_)
-		throw Error("the scratch file cannot be shortened");
+		throw ScratchError("the scratch file cannot be shortened");
 	//what is not written yet reads as zeros
 	reserve(size);
 	size_ = size;
@@ -67,10 +67,10 @@ void ScratchFile::read(uint64_t offset, void *where, size_t length) {
 	if(length == 0)
 		return;
 	if(offset + length > size_)
-		throw Error("reading past the end of the scratch file");
+		throw ScratchError("reading past the end of the scratch file");
 	const unsigned char *mapped = file_.map(offset, length);
 	if(!mapped)
-		throw Error("could not read the scratch file: " + file_.lastError());
+		throw ScratchError("could not read the scratch file: " + file_.lastError());
 	std::memcpy(where, mapped, length);
 	file_.unmap(mapped);
 }

@@ -177,7 +177,7 @@ inline std::string temporaryDirectory() {
 	std::error_code ec;
 	const auto dir = std::filesystem::temp_directory_path(ec);
 	if(ec)
-		throw Error("could not find the temporary directory: " + ec.message());
+		throw ScratchError("could not find the temporary directory: " + ec.message());
 	return pathToUtf8(dir);
 }
 

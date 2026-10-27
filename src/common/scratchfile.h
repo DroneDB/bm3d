@@ -27,7 +27,7 @@ namespace bm3d::detail {
 
 //Scratch space on disk for data that is written once, at the end, and read back later: a
 //temporary file (see MappedFile::createTemporary) that only grows. Nothing stays mapped
-//between two calls, so the file can be extended at any time. Every failure throws Error.
+//between two calls, so the file can be extended at any time. Every failure throws ScratchError.
 class ScratchFile {
 public:
 	//creates the file next to prefix; an absolute prefix is used as it is

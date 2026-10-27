@@ -43,13 +43,13 @@ public:
 	void openReadOnly(const std::string &path);
 	//creates a new file named after prefix (a ".XXXXXX"-like random suffix is appended); a prefix
 	//without a folder lives in the working directory, so callers pass an absolute one.
-	//Throws Error when no file can be created.
+	//Throws ScratchError when no file can be created.
 	void createTemporary(const std::string &prefix);
 	bool isOpen() const;
 
 	const std::string &path() const { return path_; }
 	uint64_t size() const { return size_; }
-	//sets the file size, zero-filling when it grows; throws Error. The file must have
+	//sets the file size, zero-filling when it grows; throws ScratchError. The file must have
 	//no mapped range that the new size would cut off (on Windows: no mapped range at all).
 	void resize(uint64_t size);
 
