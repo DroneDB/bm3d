@@ -19,7 +19,7 @@ for more details.
 #define BM3D_TRIANGLESOUP_H
 
 #include <vcg/space/point3.h>
-#include "../common/virtualarray.h"
+#include "../../common/virtualarray.h"
 
 //16  bytes
 struct Vertex {

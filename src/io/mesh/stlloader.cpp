@@ -5,9 +5,9 @@
 #include <iostream>
 #include <system_error>
 
-#include "../common/error.h"
-#include "../common/pathutil.h"
-#include "../common/textparse.h"
+#include "../../common/error.h"
+#include "../../common/pathutil.h"
+#include "../../common/textparse.h"
 #include "finite.h"
 
 namespace {

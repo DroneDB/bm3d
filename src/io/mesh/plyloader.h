@@ -21,7 +21,7 @@ for more details.
 #include <memory>
 
 #include "meshloader.h"
-#include "../common/virtualarray.h"
+#include "../../common/virtualarray.h"
 
 
 #include <wrap/ply/plylib.h>

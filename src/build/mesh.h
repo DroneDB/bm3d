@@ -3,7 +3,7 @@
 
 #include <vcg/space/point3.h>
 #include <vcg/space/color4.h>
-#include "trianglesoup.h"
+#include "../io/mesh/trianglesoup.h"
 #include <string>
 
 // stuff to define the mesh

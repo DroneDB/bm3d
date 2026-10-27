@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "meshloader.h"
-#include "../common/textfile.h"
+#include "../../common/textfile.h"
 
 //Reads an STL file, binary or ASCII. Which one it is does not depend on how it starts, since a
 //binary file may begin with "solid" in its header, as many programs write it:

@@ -20,7 +20,7 @@ for more details.
 
 #include <vcg/space/box3.h>
 #include "partition.h"
-#include "meshloader.h"
+#include "../io/mesh/meshloader.h"
 #include <vector>
 
 class Stream;

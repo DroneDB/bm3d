@@ -34,7 +34,7 @@
 #include "../format/format_error.h"
 #include "../format/metadata.h"
 #include "kdtree.h"
-#include "meshstream.h"
+#include "../io/mesh/meshstream.h"
 
 namespace bm3d {
 

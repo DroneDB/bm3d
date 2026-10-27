@@ -22,9 +22,9 @@ for more details.
 #include <cstring>
 #include <iostream>
 
-#include "../common/error.h"
-#include "../common/pathutil.h"
-#include "../common/textparse.h"
+#include "../../common/error.h"
+#include "../../common/pathutil.h"
+#include "../../common/textparse.h"
 #include "finite.h"
 
 using namespace bm3d::detail;

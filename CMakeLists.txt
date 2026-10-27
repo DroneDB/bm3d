@@ -118,16 +118,16 @@ add_library(bm3d_core STATIC
     third_party/vcg/wrap/ply/plylib.cpp
     src/api/bm3d.cpp
     src/build/builder.cpp
-    src/build/image.cpp
-    src/build/imageio.cpp
-    src/build/imagejpeg.cpp
+    src/io/image/image.cpp
+    src/io/image/imageio.cpp
+    src/io/image/imagejpeg.cpp
     src/build/kdtree.cpp
     src/build/mesh.cpp
-    src/build/meshloader.cpp
-    src/build/meshstream.cpp
-    src/build/objloader.cpp
-    src/build/plyloader.cpp
-    src/build/stlloader.cpp
+    src/io/mesh/meshloader.cpp
+    src/io/mesh/meshstream.cpp
+    src/io/mesh/objloader.cpp
+    src/io/mesh/plyloader.cpp
+    src/io/mesh/stlloader.cpp
     src/build/texpyramid.cpp
     src/build/tmesh.cpp
     src/common/cone.cpp

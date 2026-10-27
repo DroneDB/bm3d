@@ -22,13 +22,13 @@ for more details.
 
 #include "builder.h"
 #include "kdtree.h"
-#include "meshstream.h"
+#include "../io/mesh/meshstream.h"
 #include "mesh.h"
 #include "tmesh.h"
 #include "../common/error.h"
 #include "../common/pathutil.h"
 #include "../format/bm3d_writer.h"
-#include "imageio.h"
+#include "../io/image/imageio.h"
 
 #include <vcg/math/similarity2.h>
 #include <vcg/space/rect_packer.h>

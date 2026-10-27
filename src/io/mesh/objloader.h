@@ -19,8 +19,8 @@ for more details.
 #define BM3D_OBJLOADER_H
 
 #include "meshloader.h"
-#include "../common/textfile.h"
-#include "../common/virtualarray.h"
+#include "../../common/textfile.h"
+#include "../../common/virtualarray.h"
 
 #include <string>
 #include <unordered_map>

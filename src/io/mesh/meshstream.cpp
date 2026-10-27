@@ -22,8 +22,8 @@ for more details.
 #include "plyloader.h"
 #include "objloader.h"
 #include "stlloader.h"
-#include "../common/error.h"
-#include "../common/pathutil.h"
+#include "../../common/error.h"
+#include "../../common/pathutil.h"
 
 
 #include <iostream>

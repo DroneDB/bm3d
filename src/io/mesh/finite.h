@@ -14,7 +14,7 @@
 #include <cmath>
 #include <string>
 
-#include "../common/error.h"
+#include "../../common/error.h"
 
 namespace bm3d::detail {
 

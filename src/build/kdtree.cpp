@@ -19,7 +19,7 @@ for more details.
 #include "../common/error.h"
 
 #include "kdtree.h"
-#include "meshstream.h"
+#include "../io/mesh/meshstream.h"
 #include "mesh.h"
 #include "tmesh.h"
 

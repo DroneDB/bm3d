@@ -19,7 +19,7 @@ for more details.
 
 #include <algorithm>
 
-#include "../common/pathutil.h"
+#include "../../common/pathutil.h"
 
 void MeshLoader::sanitizeTextureFilepath(std::string &textureFilepath) {
   std::replace( textureFilepath.begin(), textureFilepath.end(), '\\', '/' );

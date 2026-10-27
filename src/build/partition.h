@@ -19,7 +19,7 @@ for more details.
 #define BM3D_PARTITION_H
 
 #include <vcg/space/point3.h>
-#include "trianglesoup.h"
+#include "../io/mesh/trianglesoup.h"
 #include <vector>
 
 class StreamSoup;

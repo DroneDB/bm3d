@@ -24,7 +24,7 @@ extern "C" {
 #include <jpeglib.h>
 }
 
-#include "../common/error.h"
+#include "../../common/error.h"
 
 namespace bm3d::detail {
 

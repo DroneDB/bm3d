@@ -4,7 +4,7 @@
 #include <iostream>
 #include "../common/error.h"
 #include "../common/pathutil.h"
-#include "imageio.h"
+#include "../io/image/imageio.h"
 #include "texpyramid.h"
 
 using namespace bm3d::detail;

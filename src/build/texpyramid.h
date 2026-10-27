@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 #include "../common/scratchfile.h"
-#include "image.h"
-#include "meshloader.h"
+#include "../io/image/image.h"
+#include "../io/mesh/meshloader.h"
 
 namespace bm3d::detail {
 

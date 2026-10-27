@@ -18,9 +18,9 @@ for more details.
 #include "plyloader.h"
 #include <math.h>
 #include <algorithm>
-#include "../common/error.h"
-#include "../common/pathutil.h"
-#include "../common/textparse.h"
+#include "../../common/error.h"
+#include "../../common/pathutil.h"
+#include "../../common/textparse.h"
 #include "finite.h"
 using namespace vcg;
 using namespace vcg::ply;

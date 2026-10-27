@@ -43,8 +43,8 @@ for more details.
 #define STBI_ONLY_TGA
 #include <stb_image.h>
 
-#include "../common/error.h"
-#include "../common/mappedfile.h"
+#include "../../common/error.h"
+#include "../../common/mappedfile.h"
 
 namespace bm3d::detail {
 
