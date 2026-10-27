@@ -872,11 +872,18 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 	for(uint32_t i = 0; i < nroots; i++)
 		modelSphere.Add(nodes[i].tightSphere());
 
-	//the step of the coordinates comes from the errors of the root and of the leaves
+	//The step of the coordinates comes from the errors of the root and of the leaves, and from the
+	//edges of the leaves. The error of a model of a single node is its radius (the node is the root
+	//and the leaf), which says nothing of how fine its triangles are: a step of its tenth was the
+	//length of an edge of a sphere of 5000 triangles, and the silhouette was jagged. A leaf holds
+	//the triangles of the input, so its step follows the length of its short edges, which
+	//keeps small features such as the chamfer of a part.
 	std::vector<float> leafErrors;
 	for(uint32_t i = 0; i < sink; i++)
-		if(patches[nodes[i].first_patch].node == sink)
+		if(patches[nodes[i].first_patch].node == sink) {
 			leafErrors.push_back(nodes[i].error);
+			leafErrors.push_back(nodes[i].shortEdge);
+		}
 	const float step = coordinateStep(compression.errorQ, nodes[0].error, leafErrors);
 	const NodeCompressor compressor(layout, compression, coordinateExponent(step));
 

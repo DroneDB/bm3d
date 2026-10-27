@@ -4,6 +4,22 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **The leaves keep the precision of the input.** The coordinates are quantised to one step for the
+  file, a tenth of half the smallest of the error of the root and the errors of the leaves. In a
+  model of a single node the node is the root and the leaf and its error is its radius, so the step
+  was a twentieth of the radius: for the sphere of 5808 triangles of the golden files, rounded to
+  2^-4 (0.0625), about the length of an edge (0.07), and 264 of its triangles came out flipped or flat.
+  The step now also follows the short edges of the leaves, the length a tenth of the edges of a leaf do
+  not exceed (not the mean, which a chamfer along a long edge does not move), so that no step is
+  coarser than before and a part with small features keeps them. The sphere is now 2^-8, with no
+  triangle turned by more than 25 degrees from the surface and no vertex off by more than 0.0068
+  (0.1 mean edge); the chamfers (0.07) of a block keep their corners within 0.007. Sizes against the
+  step before: the sphere 12 982 -> 11 022 bytes (the estimated normals are better predicted from
+  better positions), the binary and ASCII STL reference models 46 122 -> 47 194 and 46 117 -> 47 181 (+2.3 %),
+  `brighton.ply` 4 112 979 -> 4 363 395 (+6.1 %), `brighton_beach.obj` 24 357 -> 25 957 (+6.6 %),
+  `OfficePlan` 754 606 146 -> 756 024 770 (+0.19 %); `TexturedModel`, `moulin` and the model with
+  spaces in its name, whose steps were already finer, do not change. The hashes of five golden files
+  and the viewer's sphere change with it.
 - **A simplified node stays on the model.** The vertex that replaces the two ends of an edge was put
   at the minimum of the sum of their quadrics even where the planes of the quadric are nearly parallel
   (a flat or gently curved part with the noise of the input), where the minimum is far from the edge

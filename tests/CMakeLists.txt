@@ -94,6 +94,7 @@ target_link_libraries(bm3d_unit_tests PRIVATE bm3d_corto bm3d_vcg)
 bm3d_add_tests(bm3d_integration_tests integration
     integration/build_failure_test.cpp
     integration/format_output_test.cpp
+    integration/leaf_precision_test.cpp
     integration/mesh_formats_test.cpp
     integration/simplified_levels_test.cpp
     integration/texture_formats_test.cpp

@@ -22,6 +22,7 @@ for more details.
 
 #include "mesh.h"
 #include "nodepatches.h"
+#include "shortedge.h"
 #include <iostream>
 
 using namespace std;
@@ -161,6 +162,7 @@ bm3d::detail::Node Mesh::getNode()
 	node.nface = face.size();
 	node.nvert = vert.size();
 	node.error = -1;
+	node.shortEdge = bm3d::detail::shortEdgeLength(*this);
 	node.first_patch = -1;
 	node.sphere = boundingSphere();
 	node.tight_radius = node.sphere.Radius();

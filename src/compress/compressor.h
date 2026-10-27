@@ -35,8 +35,8 @@ struct CompressionSettings {
 	float texStep = 0.25f; //in pixels
 };
 
-//The coordinate step of the model: errorQ times half the smallest error among the root (the node 0)
-//and the leaves
+//The coordinate step of the model: errorQ times half the smallest of the error of the root (the node 0)
+//and the errors of the leaves, which the caller gives together with the length of their edges
 float coordinateStep(float errorQ, float rootError, const std::vector<float> &leafErrors);
 
 //The exponent of the coordinate step: log2(step) rounded toward zero (a step of 0.3 gives -1, one of

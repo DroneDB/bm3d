@@ -27,6 +27,7 @@ struct Node {
 	uint16_t nvert = 0;
 	uint16_t nface = 0;
 	float error = 0;
+	float shortEdge = 0;       //the length a tenth of the edges of the triangles of the node, as built, do not exceed (shortedge.h)
 	Cone3s cone;               //cone of normals
 	vcg::Sphere3f sphere = emptySphere(); //saturated sphere (extraction)
 	float tight_radius = 0;    //tight sphere (frustum culling)
