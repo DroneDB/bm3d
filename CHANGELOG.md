@@ -2,6 +2,15 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## 1.1.1 (not released)
+
+- **The Windows program is long path aware.** `bm3d.exe` carries a manifest (`cli/bm3d.manifest`)
+  that declares `longPathAware`, so the file functions of the system, and the C and C++ library
+  functions built on them, take a path of 260 characters or more. It has an effect where Windows
+  allows long paths (`LongPathsEnabled` = 1 under
+  `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`); the builder's own files already used the
+  `\\?\` form of the path whatever the setting. Output and behaviour elsewhere are the same.
+
 ## 1.1.0
 
 An internal restructuring of the builder: its sources are in modules, the builder is split into

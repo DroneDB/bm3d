@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Embedded in bm3d.exe by CMake (CMakeLists.txt), which merges it with the manifest the linker
+     makes. longPathAware lets the Win32 file functions, and the C and C++ library functions built
+     on them, take a path of 260 characters or more; it has an effect where the system allows long
+     paths (LongPathsEnabled=1 in HKLM\SYSTEM\CurrentControlSet\Control\FileSystem). -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

@@ -109,6 +109,7 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/texture_resolution_test.cpp)
 
 bm3d_add_tests(bm3d_cli_tests cli
+    cli/cli_manifest_test.cpp
     cli/cli_test.cpp
     cli/cli_paths_test.cpp)
 # The program under test is built first and found by the path CMake gives it

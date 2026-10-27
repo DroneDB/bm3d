@@ -206,6 +206,9 @@ target_compile_options(bm3d PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 if(MSVC)
     # The program reads one environment variable for its tests
     target_compile_definitions(bm3d PRIVATE _CRT_SECURE_NO_WARNINGS)
+    # A .manifest among the sources is merged with the manifest the linker makes and embedded in
+    # the program: it declares the program long path aware (the file says what that is for)
+    target_sources(bm3d PRIVATE cli/bm3d.manifest)
 endif()
 
 # --- Installation: the program only, unless the development files are asked for
