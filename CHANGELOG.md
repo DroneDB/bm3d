@@ -4,33 +4,37 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
-- **The leaves keep the precision of the input.** The coordinates are quantised to one step for the
-  file, a tenth of half the smallest of the error of the root and the errors of the leaves. In a
-  model of a single node the node is the root and the leaf and its error is its radius, so the step
-  was a twentieth of the radius: for the sphere of 5808 triangles of the golden files, rounded to
-  2^-4 (0.0625), about the length of an edge (0.07), and 264 of its triangles came out flipped or flat.
-  The step now also follows the short edges of the leaves, the length a tenth of the edges of a leaf do
-  not exceed (not the mean, which a chamfer along a long edge does not move), so that no step is
-  coarser than before and a part with small features keeps them. The sphere is now 2^-8, with no
-  triangle turned by more than 25 degrees from the surface and no vertex off by more than 0.0068
-  (0.1 mean edge); the chamfers (0.07) of a block keep their corners within 0.007. Sizes against the
-  step before: the sphere 12 982 -> 11 022 bytes (the estimated normals are better predicted from
-  better positions), the binary and ASCII STL reference models 46 122 -> 47 194 and 46 117 -> 47 181 (+2.3 %),
-  `brighton.ply` 4 112 979 -> 4 363 395 (+6.1 %), `brighton_beach.obj` 24 357 -> 25 957 (+6.6 %),
-  `OfficePlan` 754 606 146 -> 756 024 770 (+0.19 %); `TexturedModel`, `moulin` and the model with
-  spaces in its name, whose steps were already finer, do not change. The hashes of five golden files
-  and the viewer's sphere change with it.
+- **A model of a single node keeps the precision of its input.** The coordinates are quantised to one
+  step for the file, a tenth of half the smallest of the error of the root and the errors of the
+  leaves. The error of a root is replaced by its radius, and in a model of a single node the node is
+  the root and the leaf, so the step was a twentieth of the radius: for the sphere of 5808 triangles
+  of the golden files, rounded to 2^-4 (0.0625), about the length of an edge (0.07), and 264 of its
+  triangles came out flipped or flat. The step of a leaf that is a root now comes from the length a
+  tenth of the edges of its triangles do not exceed (not the mean, which a chamfer along a long edge
+  does not move), so that a part with small features keeps them; the leaves of a larger model keep
+  the error they had. The sphere is now 2^-8, with no triangle turned by more than 25 degrees from
+  the surface and no vertex off by more than 0.0068 (0.1 mean edge); the chamfers (0.07) of a block
+  keep their corners within 0.007. Sizes: the sphere 12 982 -> 11 022 bytes (the estimated normals
+  are better predicted from better positions), `brighton_beach.obj` 24 357 -> 25 957 (+6.6 %); the
+  other reference models are of several nodes and do not change. The golden hashes of the four
+  models of a single node (`wave`, `degenerate`, `book`, `sphere`), and with them the viewer's
+  sphere, change; the one of the surface of several nodes (`grid`) changes with the placement of
+  the vertices (the entry below).
 - **A simplified node stays on the model.** The vertex that replaces the two ends of an edge was put
   at the minimum of the sum of their quadrics even where the planes of the quadric are nearly parallel
   (a flat or gently curved part with the noise of the input), where the minimum is far from the edge
   on a part of the plane that is not there. On `OfficePlan` 30 900 collapses of edges a few thousandths
-  long put the vertex up to 5 away, with texture coordinates outside the picture just as
-  far, and a node had a vertex at z = -6.4 where the input does not go under -2.5. The minimum is now
-  used only when it lies in the box of the two ends made larger by the length of the edge (the texture
-  coordinates by theirs); otherwise the vertex takes the end or the middle where the quadric is the
-  smallest (VCGLib patch `0011`). The plain collapse also used a minimum that was reported as not
-  found without being set. After the change the vertices of every node of `OfficePlan` are within
-  0.06 of the box of the input (0.3 % of its diagonal; z from -2.50 to 6.30, the input -2.50 to 6.24).
+  long put the vertex more than twice the length of the edge outside the box of its ends (one 1.5 away
+  from an edge 0.002 long), and a node had a vertex at z = -6.4 where the input does not go under -2.5.
+  The minimum is now used only when its position lies in the box of the two ends made larger by the
+  length of the edge; otherwise the vertex takes the end or the middle where the quadric is the
+  smallest (VCGLib patch `0011`). The texture coordinates are not checked: the minimum of a texture
+  chart is often far from its ends (an edge across a seam, a wall), and the end or the middle that
+  replaced it made the pieces of the node textures long and thin, with 4.6 times the texels in the
+  coarser levels of one of the reference models. The plain collapse also used a minimum that was
+  reported as not found without being set. After the change the vertices of every node of `OfficePlan`
+  are within 0.07 of the box of the input (0.4 % of its diagonal; z from -2.50 to 6.25, the input
+  -2.50 to 6.24).
 - **The same bytes on every platform.** Programs built with libstdc++ and with the library of MSVC
   wrote different files for the same input, because several orders were left to the standard
   library where keys are equal. Each now has an order of its own: the triangles of a node are sorted

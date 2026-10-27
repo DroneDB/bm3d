@@ -465,22 +465,20 @@ class TriEdgeCollapseQuadricTex: public vcg::tri::TriEdgeCollapse< TriMeshType, 
       return this->_priority;
     }
 
-    // whether the n values of a place from the offset on, the position (3 values) or the texture
-    // coordinates (2 values from 3), are near the edge (see IsNearEdge)
-    static bool IsNearEdgeFrom(int offset, int n, const double vv[5], const double v0[5], const double v1[5])
+    // whether the position of a place (its 3 first values) is near the edge (see IsNearEdge)
+    static bool IsPositionNearEdge(const double vv[5], const double v0[5], const double v1[5])
     {
-      double squared = 0;
-      for(int i = offset; i < offset + n; ++i) squared += (v0[i]-v1[i])*(v0[i]-v1[i]);
-      return math::IsNearEdge(vv+offset, v0+offset, v1+offset, n, std::sqrt(squared));
+      const double length = std::sqrt((v0[0]-v1[0])*(v0[0]-v1[0]) + (v0[1]-v1[1])*(v0[1]-v1[1]) + (v0[2]-v1[2])*(v0[2]-v1[2]));
+      return math::IsNearEdge(vv, v0, v1, 3, length);
     }
 
     inline void ComputeMinimal(double vv[5],const double v0[5],const double v1[5], const Quadric5<double> qsum,BaseParameterClass *_pp)
     {
       tri::TriEdgeCollapseQuadricTexParameter *pp =(tri::TriEdgeCollapseQuadricTexParameter *)_pp;
       bool rt=qsum.Minimum(vv);
-      // a minimum far from the edge, in the position or in the texture coordinates, is not used
+      // a minimum whose position is far from the edge is not used
       if(rt)
-        rt = IsNearEdgeFrom(0, 3, vv, v0, v1) && IsNearEdgeFrom(3, 2, vv, v0, v1);
+        rt = IsPositionNearEdge(vv, v0, v1);
       // if the computation of the minimum fails we choose between the two edge points and the middle one.
       // Switch to this branch also in the case of not using the optimal placement.
         if(!rt || !pp->OptimalPlacement )
@@ -531,9 +529,6 @@ class TriEdgeCollapseQuadricTex: public vcg::tri::TriEdgeCollapse< TriMeshType, 
     {
     tri::TriEdgeCollapseQuadricTexParameter *pp =(tri::TriEdgeCollapseQuadricTexParameter *)_pp;
       bool rt=qsum.MinimumWithGeoContraints(vv,geo);
-      // the texture coordinates of a minimum far from the edge are not used
-      if(rt)
-        rt = IsNearEdgeFrom(3, 2, vv, v0, v1);
       // if the computation of the minimum fails we choose between the two edge points and the middle one.
       // Switch to this branch also in the case of not using the optimal placement.
       if(!rt || !pp->OptimalPlacement) {

@@ -42,8 +42,8 @@ TEST(EdgePlacement, theBoxIsLargerOnEverySideByTheLengthOfTheEdge) {
     }
 }
 
-// Only the first n coordinates count: a texture coordinate is checked on its own, with the length
-// of the edge in texture coordinates
+// Only the first n coordinates count (a place of 5 values, the position and the texture coordinates,
+// is checked on its first 3)
 TEST(EdgePlacement, onlyTheCoordinatesAskedForAreChecked) {
     const double a[5] = {0, 0, 0, 0.5, 0.5}, b[5] = {1, 0, 0, 0.5, 0.5};
     const double farInTexture[5] = {0.5, 0, 0, 3, 0.5};
@@ -156,7 +156,7 @@ TEST(EdgePlacement, theMinimumNearTheEdgeIsUsed) {
 // Three triangles of an indoor model (an office plan of a few hundred thousand triangles), at a place where it is flat
 // to a hundredth of a millimetre and the quadric of the edge from corner 0 (0.775144, 0.220605) to
 // corner 1 (0.774373, 0.220605), 0.0008 long, has its minimum at y = 0.2229, three times the length of
-// the edge away, with a texture coordinate that is outside the ones of its ends
+// the edge away
 struct TexturedCorner {
     float position[3];
     float texture[2];
@@ -211,10 +211,6 @@ TEST(EdgePlacement, theMinimumOfAnEdgeOfAModelWithTextureStaysNearTheEdge) {
     EXPECT_LE(minimum1[0], 0.775143623 + length);
     EXPECT_NEAR(minimum1[1], 0.220605403, length);
     EXPECT_NEAR(minimum1[2], 4.92450237, length);
-    // the texture coordinates of the two ends are 0.1875 and 0.25, and 0 and 0, 0.0625 apart
-    EXPECT_GE(minimum1[3], 0.1875 - 0.0625 - 1e-6);
-    EXPECT_LE(minimum1[3], 0.25 + 0.0625 + 1e-6);
-    EXPECT_NEAR(minimum1[4], 0.0, 1e-6);
 }
 
 }  // namespace

@@ -100,9 +100,8 @@ inline void SolveFullPivot3x3(const double A[3][3], const double b[3], double x[
  * are nearly parallel (a flat or a gently curved region, planes that differ by the noise of the
  * input) the system is solvable to the precision of the residual and still puts the minimum far
  * from the edge, on a part of the plane that is not there, and the surface grows a spike outside
- * the model (or a texture coordinate falls outside the picture). A place that is not near the edge
- * is not used: the caller takes the best of the ends and the middle. A coordinate that is not a
- * number is outside.
+ * the model. A place that is not near the edge is not used: the caller takes the best of the ends
+ * and the middle. A coordinate that is not a number is outside.
  */
 const double EdgePlacementSlack = 1.0;  // as a fraction of the length of the edge
 
