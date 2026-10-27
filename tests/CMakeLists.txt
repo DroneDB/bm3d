@@ -78,6 +78,7 @@ endfunction()
 bm3d_add_tests(bm3d_unit_tests unit
     unit/build_options_test.cpp
     unit/compressor_test.cpp
+    unit/dag_ops_test.cpp
     unit/equal_keys_test.cpp
     unit/format_records_test.cpp
     unit/format_writer_reader_test.cpp

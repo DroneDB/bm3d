@@ -118,6 +118,7 @@ add_library(bm3d_core STATIC
     third_party/vcg/wrap/ply/plylib.cpp
     src/api/bm3d.cpp
     src/build/builder.cpp
+    src/build/dag_ops.cpp
     src/io/image/image.cpp
     src/io/image/image_decoder.cpp
     src/io/image/jpeg_codec.cpp
@@ -125,6 +126,7 @@ add_library(bm3d_core STATIC
     src/io/image/tiff_decoder.cpp
     src/io/image/webp_codec.cpp
     src/build/kdtree.cpp
+    src/build/model_dag.cpp
     src/build/mesh.cpp
     src/io/mesh/mesh_loader_registry.cpp
     src/io/mesh/meshloader.cpp

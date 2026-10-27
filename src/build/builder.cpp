@@ -21,6 +21,7 @@ for more details.
 #include <filesystem>
 
 #include "builder.h"
+#include "dag_ops.h"
 #include "kdtree.h"
 #include "../io/mesh/meshstream.h"
 #include "mesh.h"
@@ -38,33 +39,6 @@ using namespace std;
 
 namespace bm3d::detail {
 
-NodeBox::NodeBox(KDTree *tree, uint32_t block) {
-	for(int k = 0; k < 3; k++)
-		axes[k] = tree->axes[k];
-	box = tree->block_boxes[block];
-}
-
-bool NodeBox::isIn(vcg::Point3f &p) {
-	return KDTree::isIn(axes, box, p);
-}
-
-vector<bool> NodeBox::markBorders(Node &node, vcg::Point3f *p, uint16_t *f) {
-	vector<bool> border(node.nvert, false);
-	for(int i = 0; i < node.nface; i++) {
-		bool outside = false;
-		for(int k = 0; k < 3; k++) {
-			uint16_t index = f[i*3 + k];
-			outside |= !isIn(p[index]);
-		}
-		if(outside)
-			for(int k = 0; k < 3; k++) {
-				uint16_t index = f[i*3 + k];
-				border[index] = true;
-			}
-	}
-	return border;
-}
-
 // Build a temporary-file template for the builder's out-of-core caches. When
 // cacheDir is non-empty the caches are created there (an absolute path is
 // honoured by VirtualMemory and ScratchFile), keeping multi-GB scratch on the
@@ -75,13 +49,17 @@ static std::string cacheTemplate(const std::string &cacheDir, const char *name) 
 	return cacheDir.empty() ? std::string(name) : (cacheDir + "/" + name);
 }
 
-Builder::Builder(uint32_t components, const std::string &cacheDir):
-	chunks(cacheTemplate(cacheDir, "cache_chunks")), scaling(0.5),
-	tex_quality(92) {
+static VertexLayout layoutOf(uint32_t components) {
+	VertexLayout layout;
+	layout.normals = components & Builder::NORMALS;
+	layout.colors = components & Builder::COLORS;
+	layout.texCoords = components & Builder::TEXTURES;
+	return layout;
+}
 
-	layout.normals = components & NORMALS;
-	layout.colors = components & COLORS;
-	layout.texCoords = components & TEXTURES;
+Builder::Builder(uint32_t components, const std::string &cacheDir):
+	dag(layoutOf(components), cacheTemplate(cacheDir, "cache_chunks")), scaling(0.5),
+	tex_quality(92) {
 
 	nodeTex.create(cacheTemplate(cacheDir, "cache_tex"));
 	//the texture tiles that do not fit in memory are kept next to the other caches too
@@ -105,10 +83,6 @@ bool Builder::initAtlas(std::vector<LoadTexture> &textures) {
 }
 
 void Builder::create(KDTreeSoup *tree, StreamSoup *stream, unsigned int top_node_size) {
-	Node sink;
-	sink.first_patch = 0;
-	nodes.push_back(sink);
-
 	//the triangles are weighed by the texels they cover at every level, not only at the first:
 	//the stream forgets the textures once it has been read, so the tree keeps them, with the
 	//texel area of the current level relative to the input
@@ -129,9 +103,9 @@ void Builder::create(KDTreeSoup *tree, StreamSoup *stream, unsigned int top_node
 		if(skipSimplifyLevels < 0)
 			skipSimplifyLevels = textureBoundLevels(tree);
 
-		const size_t nodesBefore = nodes.size();
+		const size_t nodesBefore = dag.nodes().size();
 		createMeshLevel(tree, stream, level, textureScale);
-		levelNodes = nodes.size() - nodesBefore;
+		levelNodes = dag.nodes().size() - nodesBefore;
 		level++;
 		//a level that keeps the triangles of the level below only makes the texture coarser: it
 		//halves its side, as a mipmap does. A level of simplified triangles keeps the texels of
@@ -152,11 +126,12 @@ void Builder::create(KDTreeSoup *tree, StreamSoup *stream, unsigned int top_node
 	finishNodeTex();
 
 	//only the sink: every block was empty (no valid triangles or points in the input)
-	if(nodes.size() < 2)
+	if(dag.nodes().size() < 2)
 		throw Error("no valid geometry in the input: the multiresolution dag would be empty");
 
-	reverseDag();
-	saturate();
+	DagOps ops(dag);
+	ops.reverse();
+	ops.saturate();
 }
 
 class UnionFind {
@@ -653,7 +628,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 	if(!hasTextures()) {
 		//no need to mutex the input, it won't change anything.
 		input->lock(mesh1, block);
-		mesh_size = mesh1.serializedSize(layout);
+		mesh_size = mesh1.serializedSize(dag.layout());
 
 	} else {
 		input->lock(mesh, block);
@@ -664,7 +639,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 			tmp.face[i].node = mesh.face[i].node;
 			tmp.face[i].tex = mesh.face[i].tex;
 		}
-		tmp.splitSeams(layout);
+		tmp.splitSeams(dag.layout());
 		//an error, not a node left out: skipping the block would leave a hole in the model, at
 		//this level and at every coarser one built from it
 		if(tmp.vert.size() > MAX_NODE_VERTICES)
@@ -674,7 +649,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 			                            " a node holds (the texture parametrization is too fragmented)");
 
 		//save node in the temporary structure
-		mesh_size = tmp.serializedSize(layout);
+		mesh_size = tmp.serializedSize(dag.layout());
 	}
 	std::vector<unsigned char> storage(mesh_size);
 	unsigned char *buffer = storage.data();
@@ -684,7 +659,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 	float error;
 	float pixelXedge;
 	if(!hasTextures()) {
-		mesh1.serialize(buffer, layout, node_patches);
+		mesh1.serialize(buffer, dag.layout(), node_patches);
 
 
 	} else {
@@ -692,7 +667,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 		Image nodetex = extractNodeTex(tmp, level, skipSimplifyLevels <= 0, error, pixelXedge);
 		if(nodetex.isNull())
 			throw Error("could not create the texture of a node");
-		tmp.serialize(buffer, layout, node_patches);
+		tmp.serialize(buffer, dag.layout(), node_patches);
 
 		textures.push_back(TextureRecord());
 		const size_t texture = textures.size()-1;
@@ -708,10 +683,10 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 	uint32_t chunk;
 	//done serializing, move the data to the chunk.
 	{
-		chunk = chunks.addChunk(mesh_size);
-		unsigned char *chunk_buffer = chunks.getChunk(chunk);
+		chunk = dag.chunks().addChunk(mesh_size);
+		unsigned char *chunk_buffer = dag.chunks().getChunk(chunk);
 		memcpy(chunk_buffer, buffer, mesh_size);
-		chunks.dropChunk(chunk); //no neede anymore
+		dag.chunks().dropChunk(chunk); //no neede anymore
 	}
 
 
@@ -750,23 +725,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 	}
 
 
-	uint32_t current_node;
-	{
-		//patches will be reverted later, but the local order is important because of triangleOffset
-		uint32_t patch_offset = patches.size();
-		std::reverse(node_patches.begin(), node_patches.end());
-		patches.insert(patches.end(), node_patches.begin(), node_patches.end());
-
-		current_node = nodes.size();
-		node.chunk = chunk;           //which chunk belongs to which node
-		node.error = error;
-
-
-		node.first_patch = patch_offset;
-
-		nodes.push_back(node);
-		boxes.push_back(NodeBox(input, block));
-	}
+	const uint32_t current_node = dag.addNode(node, chunk, error, node_patches, NodeBox(input, block));
 
 
 	//Simplify and stream the meshes
@@ -803,74 +762,23 @@ void Builder::createMeshLevel(KDTreeSoup *input, StreamSoup *output, int level, 
 }
 
 
-void Builder::saturate() {
-	//we do not have the 'backlinks' so we make a depth first traversal
-	//TODO! BIG assumption: the nodes are ordered such that child comes always after parent
-	for(int node = nodes.size()-2; node >= 0; node--)
-		saturateNode(node);
-
-	//nodes.front().error = nodes.front().sphere.Radius()/2;
-	nodes.back().error = 0;
-}
-
-void Builder::testSaturation() {
-
-	//test saturation:
-	for(unsigned int n = 0; n < nodes.size()-1; n++) {
-		Node &node = nodes[n];
-		vcg::Sphere3f &sphere = node.sphere;
-		for(unsigned int p = node.first_patch; p < node.last_patch(); p++) {
-			PatchRecord &patch = patches[p];
-			Node &child = nodes[patch.node];
-			vcg::Sphere3f s = child.sphere;
-			float dist = (sphere.Center() - s.Center()).Norm();
-			float R = sphere.Radius();
-			float r = s.Radius();
-			assert(sphere.IsIn(child.sphere));
-			assert(child.error < node.error);
-		}
-	}
-}
-
-void Builder::reverseDag() {
-
-	std::reverse(nodes.begin(), nodes.end());
-	std::reverse(boxes.begin(), boxes.end());
-	std::reverse(patches.begin(), patches.end());
-
-	//first reversal: but we point now to the last_patch, not the first
-	for(unsigned int i = 0; i < nodes.size(); i++)
-		nodes[i].first_patch = patches.size() -1 - nodes[i].first_patch;
-
-	//get the previous node last +1 to become the first
-	for(unsigned int i = nodes.size()-1; i >= 1; i--)
-		nodes[i].first_patch = nodes[i-1].first_patch +1;
-	nodes[0].first_patch  = 0;
-
-	//and reversed the order of the nodes.
-	for(unsigned int i = 0; i < patches.size(); i++) {
-		patches[i].node = nodes.size() - 1 - patches[i].node;
-	}
-}
-
-
 void Builder::save(const std::string &filename, const CompressionSettings &compression, const std::string &metadata) {
 
-	if(layout.normals)
-		uniformNormals();
+	if(dag.layout().normals)
+		DagOps(dag).uniformNormals();
 
 	//find roots and adjust error
-	const uint32_t nodeCount = nodes.size();
+	const uint32_t nodeCount = dag.nodes().size();
 	const uint32_t sink = nodeCount - 1;
 	const uint32_t nroots = countRoots(nodeCount,
-		[&](uint32_t n) { return nodes[n].first_patch; },
-		[&](uint32_t p) { return patches[p].node; });
+		[&](uint32_t n) { return dag.nodes()[n].first_patch; },
+		[&](uint32_t p) { return dag.patches()[p].node; });
 	for(uint32_t j = 0; j < nroots; j++)
-		nodes[j].error = nodes[j].tight_radius;
+		dag.nodes()[j].error = dag.nodes()[j].tight_radius;
 
 	vcg::Sphere3f modelSphere = emptySphere();
 	for(uint32_t i = 0; i < nroots; i++)
-		modelSphere.Add(nodes[i].tightSphere());
+		modelSphere.Add(dag.nodes()[i].tightSphere());
 
 	//The step of the coordinates comes from the errors of the root and of the leaves. The error of a
 	//root was just replaced by its radius: when the root is also a leaf (a model of a single node) its
@@ -880,21 +788,21 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 	//(the leaves of a larger model have an error that comes from the length of their edges).
 	std::vector<float> leafErrors;
 	for(uint32_t i = 0; i < sink; i++)
-		if(patches[nodes[i].first_patch].node == sink)
-			leafErrors.push_back(i < nroots ? nodes[i].shortEdge : nodes[i].error);
-	const float step = coordinateStep(compression.errorQ, nodes[0].error, leafErrors);
-	const NodeCompressor compressor(layout, compression, coordinateExponent(step));
+		if(dag.patches()[dag.nodes()[i].first_patch].node == sink)
+			leafErrors.push_back(i < nroots ? dag.nodes()[i].shortEdge : dag.nodes()[i].error);
+	const float step = coordinateStep(compression.errorQ, dag.nodes()[0].error, leafErrors);
+	const NodeCompressor compressor(dag.layout(), compression, coordinateExponent(step));
 
-	Bm3dWriter writer(filename, layout, {sink, static_cast<uint32_t>(patches.size()), static_cast<uint32_t>(textures.size())});
+	Bm3dWriter writer(filename, dag.layout(), {sink, static_cast<uint32_t>(dag.patches().size()), static_cast<uint32_t>(textures.size())});
 
 	//NODES
 	for(uint32_t i = 0; i < sink; i++) {
-		const Node &node = nodes[i];
+		const Node &node = dag.nodes()[i];
 		std::vector<uint32_t> patchEnds;
-		for(uint32_t p = node.first_patch; p < nodes[i + 1].first_patch; p++)
-			patchEnds.push_back(patches[p].triangleOffset);
+		for(uint32_t p = node.first_patch; p < dag.nodes()[i + 1].first_patch; p++)
+			patchEnds.push_back(dag.patches()[p].triangleOffset);
 
-		const unsigned char *memory = chunks.getChunk(node.chunk);
+		const unsigned char *memory = dag.chunks().getChunk(node.chunk);
 		const EncodedNode encoded = compressor.compress(memory, node.nvert, node.nface, patchEnds);
 
 		//the counts and the ends of the patches are the encoder's: it dropped the degenerate triangles
@@ -909,7 +817,7 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 		record.sphere.radius = node.sphere.Radius();
 		record.tightRadius = node.tight_radius;
 
-		std::vector<PatchRecord> nodePatches(patches.begin() + node.first_patch, patches.begin() + nodes[i + 1].first_patch);
+		std::vector<PatchRecord> nodePatches(dag.patches().begin() + node.first_patch, dag.patches().begin() + dag.nodes()[i + 1].first_patch);
 		if(nodePatches.size() != encoded.groupEnds.size())
 			throw Error("the encoder of node " + std::to_string(i) + " returned " + std::to_string(encoded.groupEnds.size()) +
 			            " groups for " + std::to_string(nodePatches.size()) + " patches");
@@ -934,174 +842,5 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 	writer.finish(sphere, metadata);
 }
 
-
-//include sphere of the children and ensure error s bigger.
-void Builder::saturateNode(uint32_t n) {
-	const float epsilon = 1.01f;
-
-	Node &node = nodes[n];
-	for(uint32_t i = node.first_patch; i < node.last_patch(); i++) {
-		PatchRecord &patch = patches[i];
-		if(patch.node == nodes.size()-1) //sink, get out
-			return;
-
-		Node &child = nodes[patch.node];
-		if(node.error <= child.error)
-			node.error = child.error*epsilon;
-
-		//we cannot just add the sphere, because it moves the center and the tight radius will be wrong
-		if(!node.sphere.IsIn(child.sphere)) {
-			float dist = (child.sphere.Center() - node.sphere.Center()).Norm();
-			dist += child.sphere.Radius();
-			if(dist > node.sphere.Radius())
-				node.sphere.Radius() = dist;
-		}
-	}
-	node.sphere.Radius() *= epsilon;
-}
-
-/* extracts vertices in origin which intersects destination box */
-void Builder::appendBorderVertices(uint32_t origin, uint32_t destination, std::vector<NVertex> &vertices) {
-	Node &node = nodes[origin];
-	uint32_t chunk = node.chunk;
-
-
-	//if origin != destination do not flush cache, it would invalidate pointers.
-	unsigned char *buffer = chunks.getChunk(chunk, origin != destination);
-
-	vcg::Point3f *point = (vcg::Point3f *)buffer;
-	int size = sizeof(vcg::Point3f) + layout.texCoords*sizeof(vcg::Point2f);
-	vcg::Point3s *normal = (vcg::Point3s *)(buffer + size * node.nvert);
-	uint16_t *face = (uint16_t *)(buffer + decodedVertexBytes(layout)*node.nvert);
-
-	NodeBox &nodebox = boxes[origin];
-
-	vector<bool> border = nodebox.markBorders(node, point, face);
-	for(int i = 0; i < node.nvert; i++) {
-		if(border[i])
-			vertices.push_back(NVertex(origin, i, point[i], normal + i));
-	}
-}
-
-
-void Builder::uniformNormals() {
-	//cout << "Unifying normals\n";
-	/*
-	level 0: for each node in the lowest level:
-			load the neighboroughs
-			find common vertices (use lock to find the vertices)
-			average normals
-
-	level > 0: for every other node (goind backwards)
-			load child nodes
-			find common vertices (use lock, it's way faster!)
-			copy normal
-	*/
-
-	std::vector<NVertex> vertices;
-
-	uint32_t sink = nodes.size()-1;
-	for(int t = sink-1; t > 0; t--) {
-		Node &target = nodes[t];
-
-		vcg::Box3f box = boxes[t].box;
-		//box.Offset(box.Diag()/100);
-		box.Offset(box.Diag()/10);
-
-		vertices.clear();
-		appendBorderVertices(t, t, vertices);
-
-		bool last_level = (patches[target.first_patch].node == sink);
-
-		if(last_level) {//find neighboroughs among the same level
-
-			for(int n = t-1; n >= 0; n--) {
-				Node &node = nodes[n];
-				if(patches[node.first_patch].node != sink) continue;
-				if(!box.Collide(boxes[n].box)) continue;
-
-				appendBorderVertices(n, t, vertices);
-			}
-
-		} else { //again among childrens.
-
-			for(unsigned int p = target.first_patch; p < target.last_patch(); p++) {
-				unsigned int n = patches[p].node;
-
-				appendBorderVertices(n, t, vertices);
-			}
-		}
-
-		if(!vertices.size()) { //this is possible, there might be no border at all.
-			continue;
-		}
-
-		sort(vertices.begin(), vertices.end());
-
-		unsigned int start = 0;
-		while(start < vertices.size()) {
-			NVertex &v = vertices[start];
-
-			unsigned int last = start+1;
-			while(last < vertices.size() && vertices[last].point == v.point)
-				last++;
-
-			if(last_level && last - start > 1) { //average all normals
-				vcg::Point3f normalf(0, 0, 0);
-				for(unsigned int k = start; k < last; k++) {
-					for(int l = 0; l < 3; l++)
-						normalf[l] += (*vertices[k].normal)[l];
-				}
-				normalf.Normalize();
-				//convert back to shorts
-				vcg::Point3s normals;
-				for(int l = 0; l < 3; l++)
-					normals[l] = (short)(normalf[l]*32766);
-
-				for(unsigned int k = start; k < last; k++)
-					*vertices[k].normal = normals;
-
-			} else //just copy from first one (coming from lower level due to sorting
-				for(unsigned int k = start; k < last; k++)
-					*vertices[k].normal =*v.normal;
-
-			start = last;
-		}
-
-
-		/*		for(unsigned int k = 0; k < vertices.size(); k++) {
-			NVertex &v = vertices[k];
-			if(v.point != previous) {
-				//uniform normals;
-				if(k - last > 1) {   //more than 1 vertex to unify
-
-					if(last_level) {     //average all normals of the coincident points.
-
-						vcg::Point3f normalf(0, 0, 0);
-
-						for(unsigned int j = last; j < k; j++)
-							for(int l = 0; l < 3; l++)
-								normalf[l] += (*vertices[j].normal)[l];
-						normalf.Normalize();
-
-						//convert back to shorts
-						vcg::Point3s normals;
-						for(int l = 0; l < 3; l++)
-							normals[l] = (short)(normalf[l]*32766);
-
-						for(unsigned int j = last; j < k; j++)
-							*vertices[j].normal = normals;
-
-					} else { //just copy the first one (it's from the lowest level, due to sort)
-						if(vertices[k-1].node == t) //unless this vertex do not belongs to t.
-							*vertices[k-1].normal = *vertices[last].normal;
-					}
-				}
-				previous = v.point;
-				last = k;
-			}
-		}*/
-	}
-}
 
 } //namespace

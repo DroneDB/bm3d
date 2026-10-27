@@ -29,6 +29,7 @@ for more details.
 #include "../common/virtualarray.h"
 #include "../compress/compressor.h"
 #include "../format/bm3d_format.h"
+#include "model_dag.h"
 #include "node.h"
 #include "texpyramid.h"
 
@@ -42,40 +43,6 @@ class TMesh;
 
 namespace bm3d::detail {
 
-//Structures used for normalization
-struct NodeBox {
-	vcg::Point3f axes[3];
-	vcg::Box3f box;
-
-	NodeBox() {}
-	NodeBox(KDTree *tree, uint32_t block);
-	bool isIn(vcg::Point3f &p);
-	std::vector<bool> markBorders(Node &node, vcg::Point3f *p, uint16_t *f);
-};
-
-class NVertex {
-public:
-	NVertex(uint32_t b, uint32_t i, vcg::Point3f p, vcg::Point3s *n):
-		node(b), index(i), point(p), normal(n) {}
-	uint32_t node;
-	uint32_t index;
-	vcg::Point3f point;
-	vcg::Point3s *normal;
-
-	//A total order: by point, then the highest node first (the leafest node), then by index, so that
-	//no two vertices compare equal. With equal points and nodes left equal, the order the sort gave
-	//them was the library's own (libstdc++ and MSVC differ), and it decides which normal is copied
-	//and in what order the normals of a point are added up.
-	bool operator<(const NVertex &v) const {
-		if(point != v.point)
-			return point < v.point;
-		if(node != v.node)
-			return node > v.node;
-		return index < v.index;
-	}
-};
-
-
 class Builder {
 public:
 	enum Components { NORMALS = 1, COLORS = 2, TEXTURES = 4 };
@@ -85,9 +52,9 @@ public:
 	// be cleaned up as a unit. When empty, historical defaults are used.
 	Builder(uint32_t components, const std::string &cacheDir = std::string());
 
-	bool hasNormals() { return layout.normals; }
-	bool hasColors() { return layout.colors; }
-	bool hasTextures() const { return layout.texCoords; }
+	bool hasNormals() { return dag.layout().normals; }
+	bool hasColors() { return dag.layout().colors; }
+	bool hasTextures() const { return dag.layout().texCoords; }
 
 	void initAtlas(std::vector<Image>& textures);
 	bool initAtlas(std::vector<LoadTexture>& textures);
@@ -98,25 +65,17 @@ public:
 
 	void setMaxMemory(uint64_t m) {
 		max_memory = m;
-		chunks.setMaxMemory(m);
+		dag.setMaxMemory(m);
 		atlas.cache_max = m;
 	}
 	void setScaling(float s) { scaling = s; atlas.scale = sqrt(scaling); }
 
-	void saturate();
-
-	void reverseDag();
 	//Writes the model to the file `filename`, nodes compressed with corto as the settings say;
 	//metadata is the JSON object of the metadata block (see Bm3dWriter::finish). The file is
 	//written under another name and renamed when it is complete.
 	void save(const std::string &filename, const CompressionSettings &compression, const std::string &metadata);
 
-	VirtualChunks chunks;
-	std::vector<NodeBox> boxes; //a box for each node
-
-	VertexLayout layout;
-	std::vector<Node> nodes;
-	std::vector<PatchRecord> patches;
+	ModelDag dag;
 	std::vector<TextureRecord> textures; //where the image of each node is in nodeTex
 
 	TexAtlas atlas;
@@ -149,12 +108,6 @@ public:
 	void appendNodeTex(size_t texture, const std::vector<unsigned char> &encoded);
 	//writes the node textures still being encoded
 	void finishNodeTex();
-	void invertNodes(); //
-	void saturateNode(uint32_t n);
-	void uniformNormals();
-	void appendBorderVertices(uint32_t origin, uint32_t destination, std::vector<NVertex> &vertices);
-
-	void testSaturation();
 };
 
 } //namespace

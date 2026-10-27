@@ -17,7 +17,7 @@
 #include <corto/tunstall.h>
 #include <vcg/space/rect_packer.h>
 
-#include "build/builder.h"
+#include "build/dag_ops.h"
 #include "build/mesh.h"
 #include "build/nodepatches.h"
 
