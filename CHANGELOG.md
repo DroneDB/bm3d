@@ -2,7 +2,9 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## 1.1.1 (not released)
+## 1.1.1
+
+The Windows program declares itself long path aware. The files it writes are the same, and the viewer is unchanged; its version follows the release.
 
 - **The Windows program is long path aware.** `bm3d.exe` carries a manifest (`cli/bm3d.manifest`)
   that declares `longPathAware`, so the file functions of the system, and the C and C++ library
