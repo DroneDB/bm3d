@@ -22,6 +22,7 @@ for more details.
 #include "../../common/textfile.h"
 #include "../../common/virtualarray.h"
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>

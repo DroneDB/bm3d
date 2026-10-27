@@ -1,8 +1,10 @@
 #ifndef BM3D_MESH_H
 #define BM3D_MESH_H
 
-#include <vcg/space/point3.h>
+#include <cstdint>
 #include <vcg/space/color4.h>
+#include <vcg/space/point3.h>
+#include <vector>
 #include "../io/mesh/trianglesoup.h"
 #include <string>
 

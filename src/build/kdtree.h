@@ -18,6 +18,8 @@ for more details.
 #ifndef BM3D_KDTREE_H
 #define BM3D_KDTREE_H
 
+#include <cstdint>
+#include <string>
 #include <vcg/space/box3.h>
 #include "partition.h"
 #include "../io/mesh/meshloader.h"

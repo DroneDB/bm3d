@@ -40,8 +40,9 @@ SourceInfo sourceOf(const std::string &input, StreamSoup *stream) {
 
 } //namespace
 
-BuildPipeline::BuildPipeline(const BuildSettings &settings, const Logger &logger, const MeshLoaderRegistry &loaders):
-	settings_(settings), logger_(logger), loaders_(loaders) {
+BuildPipeline::BuildPipeline(const BuildSettings &settings, const Logger &logger, const MeshLoaderRegistry &loaders,
+                             const TryFunction &makeTry):
+	settings_(settings), logger_(logger), loaders_(loaders), makeTry_(makeTry) {
 }
 
 std::string BuildPipeline::composeMetadata(const Attempt &attempt, const std::string &input, StreamSoup *stream,
@@ -146,9 +147,12 @@ void BuildPipeline::build(const std::string &input, const std::string &output, i
 	attempt.threads = threads > 0 ? threads : int(std::max(1u, std::thread::hardware_concurrency()));
 	attempt.nodeFaces = settings_.nodeFaces;
 	const FallbackPolicy policy(attempt);
+	const TryFunction makeTry = makeTry_ ? makeTry_ : TryFunction([&](const Attempt &next) {
+		buildOnce(input, output, next, extraMetadata);
+	});
 	for(;;) {
 		try {
-			buildOnce(input, output, attempt, extraMetadata);
+			makeTry(attempt);
 			break;
 		} catch(const TexturePackingError &error) {
 			const auto retry = policy.after(attempt, error);

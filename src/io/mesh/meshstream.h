@@ -18,10 +18,11 @@ for more details.
 #ifndef BM3D_MESHSTREAM_H
 #define BM3D_MESHSTREAM_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 #include <vcg/space/box3.h>
+#include <vector>
 
 #include "trianglesoup.h"
 #include "meshloader.h"

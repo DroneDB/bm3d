@@ -18,7 +18,10 @@ for more details.
 #ifndef BM3D_TRIANGLESOUP_H
 #define BM3D_TRIANGLESOUP_H
 
+#include <cstdint>
+#include <string>
 #include <vcg/space/point3.h>
+#include <vector>
 #include "../../common/virtualarray.h"
 
 //16  bytes

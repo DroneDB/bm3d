@@ -17,6 +17,7 @@ for more details.
 #ifndef BM3D_TEXTFILE_H
 #define BM3D_TEXTFILE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <string>

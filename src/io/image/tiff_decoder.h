@@ -4,6 +4,9 @@
 #ifndef BM3D_TIFF_DECODER_H
 #define BM3D_TIFF_DECODER_H
 
+#include <cstddef>
+#include <string>
+
 #include "image_decoder.h"
 
 namespace bm3d::detail {

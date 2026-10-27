@@ -18,6 +18,8 @@ for more details.
 #ifndef BM3D_PARTITION_H
 #define BM3D_PARTITION_H
 
+#include <cstdint>
+#include <string>
 #include <vcg/space/point3.h>
 #include "../io/mesh/trianglesoup.h"
 #include <vector>

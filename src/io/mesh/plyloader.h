@@ -18,7 +18,9 @@ for more details.
 #ifndef BM3D_PLYLOADER_H
 #define BM3D_PLYLOADER_H
 
+#include <cstdint>
 #include <memory>
+#include <string>
 
 #include "meshloader.h"
 #include "../../common/virtualarray.h"

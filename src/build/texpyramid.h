@@ -1,6 +1,7 @@
 #ifndef TEXPYRAMID_H
 #define TEXPYRAMID_H
 
+#include <cstdint>
 #include <list>
 #include <map>
 #include <mutex>

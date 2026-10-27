@@ -7,6 +7,7 @@
 #ifndef BM3D_BUILD_PIPELINE_H
 #define BM3D_BUILD_PIPELINE_H
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -26,9 +27,15 @@ namespace bm3d::detail {
 //memory or scratch space that ran out (ScratchError, std::bad_alloc).
 class BuildPipeline {
 public:
+	//One try at the build, given the settings of the try. It throws what a try that fails throws.
+	using TryFunction = std::function<void(const Attempt &)>;
+
 	//logger gets the warnings (see Logger). The loaders of `loaders` read the input; it must outlive the pipeline.
+	//makeTry: what makes a try, for a test of the retries that has no input which fails in the way
+	//wanted; the pipeline builds the model itself when it is empty.
 	BuildPipeline(const BuildSettings &settings, const Logger &logger,
-	              const MeshLoaderRegistry &loaders = MeshLoaderRegistry::standard());
+	              const MeshLoaderRegistry &loaders = MeshLoaderRegistry::standard(),
+	              const TryFunction &makeTry = TryFunction());
 
 	//Builds the model in the file `input` into the file `output`. threads: the threads the build may
 	//keep busy, 0 for one per core. extraMetadata: the members to store in the metadata block after
@@ -56,6 +63,7 @@ private:
 	BuildSettings settings_;
 	Logger logger_;
 	const MeshLoaderRegistry &loaders_;
+	TryFunction makeTry_;
 };
 
 } //namespace

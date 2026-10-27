@@ -1,6 +1,7 @@
 #ifndef STLLOADER_H
 #define STLLOADER_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>

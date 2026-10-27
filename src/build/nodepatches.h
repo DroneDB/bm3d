@@ -8,6 +8,7 @@
 #define BM3D_NODEPATCHES_H
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

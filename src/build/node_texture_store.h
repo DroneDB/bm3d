@@ -8,6 +8,7 @@
 #define BM3D_NODE_TEXTURE_STORE_H
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include "../common/scratchfile.h"

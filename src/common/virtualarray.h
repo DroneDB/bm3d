@@ -19,6 +19,7 @@ for more details.
 #define BM3D_VIRTUALARRAY_H
 
 #include <assert.h>
+#include <cstdint>
 
 #include <string>
 

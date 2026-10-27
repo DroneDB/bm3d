@@ -17,6 +17,7 @@ for more details.
 #ifndef BM3D_PATHUTIL_H
 #define BM3D_PATHUTIL_H
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <system_error>

@@ -4,6 +4,10 @@
 #ifndef BM3D_JPEG_CODEC_H
 #define BM3D_JPEG_CODEC_H
 
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "image_decoder.h"
 #include "image_encoder.h"
 
