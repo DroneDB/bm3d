@@ -89,6 +89,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/scratch_errors_test.cpp
     unit/sha256_test.cpp
     unit/simplification_test.cpp
+    unit/texture_encoder_pool_test.cpp
     unit/version_test.cpp)
 # The JSON checker is internal to the program: its header is not part of the library's interface.
 # The headers of the builder include each other by their bare names.

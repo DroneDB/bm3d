@@ -18,8 +18,7 @@ for more details.
 #ifndef BM3D_BUILDER_H
 #define BM3D_BUILDER_H
 
-#include <deque>
-#include <future>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -30,6 +29,9 @@ for more details.
 #include "../compress/compressor.h"
 #include "../format/bm3d_format.h"
 #include "model_dag.h"
+#include "node_texture_store.h"
+#include "texture_encoder_pool.h"
+#include "../io/image/webp_codec.h"
 #include "node.h"
 #include "texpyramid.h"
 
@@ -76,14 +78,13 @@ public:
 	void save(const std::string &filename, const CompressionSettings &compression, const std::string &metadata);
 
 	ModelDag dag;
-	std::vector<TextureRecord> textures; //where the image of each node is in nodeTex
+	NodeTextureStore nodeTextures; //the encoded image of each node
 
 	TexAtlas atlas;
-	ScratchFile nodeTex; //texure images for each node stored here.
 	uint64_t max_memory;
 
 	float scaling;
-	int tex_quality; //the quality of the WebP node textures
+	int tex_quality; //the quality of the WebP node textures (set before the first node is made)
 	//the longest side of a node texture, in pixels: a node whose texture would be larger gets it
 	//downscaled to this size. 0 keeps every node texture at the resolution of its source
 	int maxNodeTexSide = 0;
@@ -97,17 +98,19 @@ public:
 
 	Image extractNodeTex(TMesh &mesh, int level, bool simplified, float &error, float &pixelXedge);
 	int textureBoundLevels(KDTreeSoup *tree) const;
-	std::vector<unsigned char> encodeNodeTex(const Image &image) const;
 	//The threads the build keeps busy: the one that builds the nodes, and textureThreads - 1 more
 	//that encode node textures meanwhile. 1 encodes on the building thread. The textures are
-	//written to nodeTex in their order whatever the number of threads.
+	//written to nodeTextures in their order whatever the number of threads.
 	int textureThreads = 1;
-	std::deque<std::pair<size_t, std::future<std::vector<unsigned char>>>> pendingTex;
 	void storeNodeTex(size_t texture, const Image &image);
-	void appendOldestNodeTex();
-	void appendNodeTex(size_t texture, const std::vector<unsigned char> &encoded);
 	//writes the node textures still being encoded
 	void finishNodeTex();
+
+private:
+	//made when the first node texture is stored, from tex_quality and textureThreads; the pool is
+	//destroyed before the encoder it uses
+	std::unique_ptr<WebpEncoder> textureEncoder;
+	std::unique_ptr<TextureEncoderPool> texturePool;
 };
 
 } //namespace

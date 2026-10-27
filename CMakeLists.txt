@@ -127,6 +127,7 @@ add_library(bm3d_core STATIC
     src/io/image/webp_codec.cpp
     src/build/kdtree.cpp
     src/build/model_dag.cpp
+    src/build/node_texture_store.cpp
     src/build/mesh.cpp
     src/io/mesh/mesh_loader_registry.cpp
     src/io/mesh/meshloader.cpp
@@ -135,6 +136,7 @@ add_library(bm3d_core STATIC
     src/io/mesh/plyloader.cpp
     src/io/mesh/stlloader.cpp
     src/build/texpyramid.cpp
+    src/build/texture_encoder_pool.cpp
     src/build/tmesh.cpp
     src/common/cone.cpp
     src/common/mappedfile.cpp

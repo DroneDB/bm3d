@@ -58,10 +58,10 @@ static VertexLayout layoutOf(uint32_t components) {
 }
 
 Builder::Builder(uint32_t components, const std::string &cacheDir):
-	dag(layoutOf(components), cacheTemplate(cacheDir, "cache_chunks")), scaling(0.5),
+	dag(layoutOf(components), cacheTemplate(cacheDir, "cache_chunks")),
+	nodeTextures(cacheTemplate(cacheDir, "cache_tex")), scaling(0.5),
 	tex_quality(92) {
 
-	nodeTex.create(cacheTemplate(cacheDir, "cache_tex"));
 	//the texture tiles that do not fit in memory are kept next to the other caches too
 	if(!cacheDir.empty())
 		atlas.storage_prefix = cacheTemplate(cacheDir, "cache_atlas");
@@ -565,36 +565,18 @@ Image Builder::extractNodeTex(TMesh &mesh, int level, bool simplified, float &er
 }
 
 void Builder::storeNodeTex(size_t texture, const Image &image) {
-	if(textureThreads <= 1) {
-		appendNodeTex(texture, encodeNodeTex(image));
-		return;
+	if(!texturePool) {
+		textureEncoder.reset(new WebpEncoder(tex_quality));
+		texturePool.reset(new TextureEncoderPool(*textureEncoder, textureThreads, [this](size_t texture, const std::vector<unsigned char> &encoded) {
+			nodeTextures.store(texture, encoded);
+		}));
 	}
-	//the building thread is one of the textureThreads
-	while(pendingTex.size() >= size_t(textureThreads - 1))
-		appendOldestNodeTex();
-	//the image shares its pixels with the copy the task holds, and nothing writes them any more
-	pendingTex.emplace_back(texture, std::async(std::launch::async, [this, image]() { return encodeNodeTex(image); }));
-}
-
-void Builder::appendOldestNodeTex() {
-	const size_t texture = pendingTex.front().first;
-	const std::vector<unsigned char> encoded = pendingTex.front().second.get();
-	pendingTex.pop_front();
-	appendNodeTex(texture, encoded);
+	texturePool->submit(texture, image);
 }
 
 void Builder::finishNodeTex() {
-	while(!pendingTex.empty())
-		appendOldestNodeTex();
-}
-
-void Builder::appendNodeTex(size_t texture, const std::vector<unsigned char> &encoded) {
-	textures[texture].offset = nodeTex.append(encoded.data(), encoded.size());
-	textures[texture].length = encoded.size();
-}
-
-std::vector<unsigned char> Builder::encodeNodeTex(const Image &image) const {
-	return WebpEncoder(tex_quality).encode(image);
+	if(texturePool)
+		texturePool->finish();
 }
 
 //the most vertices a node may have: a node indexes its vertices with 16 bits (at most 65535), and
@@ -669,8 +651,7 @@ void Builder::processBlock(KDTreeSoup *input, StreamSoup *output, unsigned int b
 			throw Error("could not create the texture of a node");
 		tmp.serialize(buffer, dag.layout(), node_patches);
 
-		textures.push_back(TextureRecord());
-		const size_t texture = textures.size()-1;
+		const size_t texture = nodeTextures.reserve();
 		for(PatchRecord &patch: node_patches)
 			patch.texture = texture;
 		storeNodeTex(texture, nodetex);
@@ -793,7 +774,7 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 	const float step = coordinateStep(compression.errorQ, dag.nodes()[0].error, leafErrors);
 	const NodeCompressor compressor(dag.layout(), compression, coordinateExponent(step));
 
-	Bm3dWriter writer(filename, dag.layout(), {sink, static_cast<uint32_t>(dag.patches().size()), static_cast<uint32_t>(textures.size())});
+	Bm3dWriter writer(filename, dag.layout(), {sink, static_cast<uint32_t>(dag.patches().size()), static_cast<uint32_t>(nodeTextures.count())});
 
 	//NODES
 	for(uint32_t i = 0; i < sink; i++) {
@@ -829,9 +810,8 @@ void Builder::save(const std::string &filename, const CompressionSettings &compr
 
 	//TEXTURES
 	std::vector<unsigned char> image;
-	for(const TextureRecord &texture: textures) {
-		image.resize(texture.length);
-		nodeTex.read(texture.offset, image.data(), image.size());
+	for(size_t texture = 0; texture < nodeTextures.count(); texture++) {
+		nodeTextures.read(texture, image);
 		writer.addTexture(image.data(), image.size());
 	}
 
