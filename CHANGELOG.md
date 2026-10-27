@@ -4,6 +4,17 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## Unreleased
 
+- **A simplified node stays on the model.** The vertex that replaces the two ends of an edge was put
+  at the minimum of the sum of their quadrics even where the planes of the quadric are nearly parallel
+  (a flat or gently curved part with the noise of the input), where the minimum is far from the edge
+  on a part of the plane that is not there. On `OfficePlan` 30 900 collapses of edges a few thousandths
+  long put the vertex up to 5 away, with texture coordinates outside the picture just as
+  far, and a node had a vertex at z = -6.4 where the input does not go under -2.5. The minimum is now
+  used only when it lies in the box of the two ends made larger by the length of the edge (the texture
+  coordinates by theirs); otherwise the vertex takes the end or the middle where the quadric is the
+  smallest (VCGLib patch `0011`). The plain collapse also used a minimum that was reported as not
+  found without being set. After the change the vertices of every node of `OfficePlan` are within
+  0.06 of the box of the input (0.3 % of its diagonal; z from -2.50 to 6.30, the input -2.50 to 6.24).
 - **The same bytes on every platform.** Programs built with libstdc++ and with the library of MSVC
   wrote different files for the same input, because several orders were left to the standard
   library where keys are equal. Each now has an order of its own: the triangles of a node are sorted

@@ -167,9 +167,21 @@ public:
         QuadricType q=QH::Qd(this->pos.V(0));
         q+=QH::Qd(this->pos.V(1));
         
-        Point3<QuadricType::ScalarType> x;
-        q.Minimum(x);
-        newPos = CoordType::Construct(x);  
+        // The minimum is used only if the system has one and it is near the edge (see IsNearEdge);
+        // otherwise the vertex goes to the end or to the middle where the quadric is the smallest.
+        const Point3d a = Point3d::Construct(this->pos.V(0)->P());
+        const Point3d b = Point3d::Construct(this->pos.V(1)->P());
+        Point3d x;
+        if(q.Minimum(x) && math::IsNearEdge(&x[0], &a[0], &b[0], 3, (a-b).Norm()))
+          newPos = CoordType::Construct(x);
+        else
+        {
+          const Point3d mid = (a+b)/2.0;
+          const double qMid = q.Apply(mid), q0 = q.Apply(a), q1 = q.Apply(b);
+          if(q0 < qMid && q0 <= q1) newPos = this->pos.V(0)->P();
+          else if(q1 < qMid) newPos = this->pos.V(1)->P();
+          else newPos = CoordType::Construct(mid);
+        }
       }      
     }
     this->optimalPos = newPos;

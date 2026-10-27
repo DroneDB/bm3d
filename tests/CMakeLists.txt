@@ -84,6 +84,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/json_object_test.cpp
     unit/metadata_test.cpp
     unit/sha256_test.cpp
+    unit/simplification_test.cpp
     unit/version_test.cpp)
 # The JSON checker is internal to the program: its header is not part of the library's interface.
 # The headers of the builder include each other by their bare names.
@@ -94,6 +95,7 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/build_failure_test.cpp
     integration/format_output_test.cpp
     integration/mesh_formats_test.cpp
+    integration/simplified_levels_test.cpp
     integration/texture_formats_test.cpp
     integration/texture_resolution_test.cpp)
 # The decoders are internal to the program: the texture tests read pictures with them directly

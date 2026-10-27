@@ -92,8 +92,35 @@ inline void SolveFullPivot3x3(const double A[3][3], const double b[3], double x[
   for(int i = 0; i < rank; ++i) x[unknown[i]] = c[i];
 }
 
+/* Whether the minimum of a quadric is a place the vertex of a collapse can go to: every one of the
+ * n coordinates of place lies in the box of the edge (the box of its two ends, a and b) made
+ * larger on every side by EdgePlacementSlack times the length of the edge (the length of the part
+ * of the edge in these n coordinates) and by the rounding of a float of the ends. The minimum is
+ * exact only when the planes of the quadric meet at one point that is well determined; where they
+ * are nearly parallel (a flat or a gently curved region, planes that differ by the noise of the
+ * input) the system is solvable to the precision of the residual and still puts the minimum far
+ * from the edge, on a part of the plane that is not there, and the surface grows a spike outside
+ * the model (or a texture coordinate falls outside the picture). A place that is not near the edge
+ * is not used: the caller takes the best of the ends and the middle. A coordinate that is not a
+ * number is outside.
+ */
+const double EdgePlacementSlack = 1.0;  // as a fraction of the length of the edge
+
+inline bool IsNearEdge(const double *place, const double *a, const double *b, int n, double length)
+{
+  const double rounding = 16 * double(std::numeric_limits<float>::epsilon());
+  for(int i = 0; i < n; ++i)
+  {
+    const double slack = EdgePlacementSlack * length + rounding * std::max(std::fabs(a[i]), std::fabs(b[i]));
+    const double low = std::min(a[i], b[i]) - slack;
+    const double high = std::max(a[i], b[i]) + slack;
+    if(!(place[i] >= low && place[i] <= high)) return false;
+  }
+  return true;
+}
+
 /*
- *  This class encode a quadric function 
+ *  This class encode a quadric function
  *  f(x) = xAx +bx + c
  *  where A is a symmetric 3x3 matrix, b a vector and c a scalar constant.  
  */ 

@@ -1,0 +1,135 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Tue, 27 Oct 2026 03:10:00 +0100
+Subject: [PATCH] The place of a collapse stays near the edge it collapses
+
+The vertex that replaces the two ends of an edge was put at the minimum of the sum of their
+quadrics, whatever that was. Where the planes of the quadric are nearly parallel (a flat or gently
+curved part of a model, whose planes differ by the noise of the input) the system is solvable to
+the precision of its residual and its solution is far from the edge, on a part of the plane that is
+not there: on an office model of 224000 triangles a collapse of an edge 0.002 long put the vertex
+1.5 away, 30000 collapses did so, and the model grew spikes (a node with a vertex at z = -6.4 where
+the input has none under -2.5), with texture coordinates that fell outside the picture just as far.
+The minimum of the quadric with the position (Quadric) or with the position and the texture
+coordinates (Quadric5) is now used only when each of its coordinates lies in the box of the two
+ends made larger by the length of the edge on every side (IsNearEdge; the texture coordinates
+are checked on their own, with their own length), and otherwise the vertex takes the end or the
+middle where the quadric is the smallest, as the textured collapse did when the system had no
+solution. The plain collapse used the coordinates of a minimum that was reported as not found
+without being set: it takes the best of the ends and the middle in that case as well.
+---
+ .../local_optimization/tri_edge_collapse_quadric.h | 18 +++++++++++---
+ .../tri_edge_collapse_quadric_tex.h                | 15 +++++++++++
+ vcg/math/quadric.h                                 | 29 +++++++++++++++++++++-
+ 3 files changed, 58 insertions(+), 4 deletions(-)
+
+diff --git a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+index 4e76be2..46b9d9d 100644
+--- a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
++++ b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric.h
+@@ -167,9 +167,21 @@ public:
+         QuadricType q=QH::Qd(this->pos.V(0));
+         q+=QH::Qd(this->pos.V(1));
+         
+-        Point3<QuadricType::ScalarType> x;
+-        q.Minimum(x);
+-        newPos = CoordType::Construct(x);  
++        // The minimum is used only if the system has one and it is near the edge (see IsNearEdge);
++        // otherwise the vertex goes to the end or to the middle where the quadric is the smallest.
++        const Point3d a = Point3d::Construct(this->pos.V(0)->P());
++        const Point3d b = Point3d::Construct(this->pos.V(1)->P());
++        Point3d x;
++        if(q.Minimum(x) && math::IsNearEdge(&x[0], &a[0], &b[0], 3, (a-b).Norm()))
++          newPos = CoordType::Construct(x);
++        else
++        {
++          const Point3d mid = (a+b)/2.0;
++          const double qMid = q.Apply(mid), q0 = q.Apply(a), q1 = q.Apply(b);
++          if(q0 < qMid && q0 <= q1) newPos = this->pos.V(0)->P();
++          else if(q1 < qMid) newPos = this->pos.V(1)->P();
++          else newPos = CoordType::Construct(mid);
++        }
+       }      
+     }
+     this->optimalPos = newPos;
+diff --git a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h
+index 7071966..e00bdd8 100644
+--- a/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h
++++ b/vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h
+@@ -465,10 +465,22 @@ class TriEdgeCollapseQuadricTex: public vcg::tri::TriEdgeCollapse< TriMeshType,
+       return this->_priority;
+     }
+ 
++    // whether the n values of a place from the offset on, the position (3 values) or the texture
++    // coordinates (2 values from 3), are near the edge (see IsNearEdge)
++    static bool IsNearEdgeFrom(int offset, int n, const double vv[5], const double v0[5], const double v1[5])
++    {
++      double squared = 0;
++      for(int i = offset; i < offset + n; ++i) squared += (v0[i]-v1[i])*(v0[i]-v1[i]);
++      return math::IsNearEdge(vv+offset, v0+offset, v1+offset, n, std::sqrt(squared));
++    }
++
+     inline void ComputeMinimal(double vv[5],const double v0[5],const double v1[5], const Quadric5<double> qsum,BaseParameterClass *_pp)
+     {
+       tri::TriEdgeCollapseQuadricTexParameter *pp =(tri::TriEdgeCollapseQuadricTexParameter *)_pp;
+       bool rt=qsum.Minimum(vv);
++      // a minimum far from the edge, in the position or in the texture coordinates, is not used
++      if(rt)
++        rt = IsNearEdgeFrom(0, 3, vv, v0, v1) && IsNearEdgeFrom(3, 2, vv, v0, v1);
+       // if the computation of the minimum fails we choose between the two edge points and the middle one.
+       // Switch to this branch also in the case of not using the optimal placement.
+         if(!rt || !pp->OptimalPlacement )
+@@ -519,6 +531,9 @@ class TriEdgeCollapseQuadricTex: public vcg::tri::TriEdgeCollapse< TriMeshType,
+     {
+     tri::TriEdgeCollapseQuadricTexParameter *pp =(tri::TriEdgeCollapseQuadricTexParameter *)_pp;
+       bool rt=qsum.MinimumWithGeoContraints(vv,geo);
++      // the texture coordinates of a minimum far from the edge are not used
++      if(rt)
++        rt = IsNearEdgeFrom(3, 2, vv, v0, v1);
+       // if the computation of the minimum fails we choose between the two edge points and the middle one.
+       // Switch to this branch also in the case of not using the optimal placement.
+       if(!rt || !pp->OptimalPlacement) {
+diff --git a/vcg/math/quadric.h b/vcg/math/quadric.h
+index 96ac9f7..178864f 100644
+--- a/vcg/math/quadric.h
++++ b/vcg/math/quadric.h
+@@ -92,8 +92,35 @@ inline void SolveFullPivot3x3(const double A[3][3], const double b[3], double x[
+   for(int i = 0; i < rank; ++i) x[unknown[i]] = c[i];
+ }
+ 
++/* Whether the minimum of a quadric is a place the vertex of a collapse can go to: every one of the
++ * n coordinates of place lies in the box of the edge (the box of its two ends, a and b) made
++ * larger on every side by EdgePlacementSlack times the length of the edge (the length of the part
++ * of the edge in these n coordinates) and by the rounding of a float of the ends. The minimum is
++ * exact only when the planes of the quadric meet at one point that is well determined; where they
++ * are nearly parallel (a flat or a gently curved region, planes that differ by the noise of the
++ * input) the system is solvable to the precision of the residual and still puts the minimum far
++ * from the edge, on a part of the plane that is not there, and the surface grows a spike outside
++ * the model (or a texture coordinate falls outside the picture). A place that is not near the edge
++ * is not used: the caller takes the best of the ends and the middle. A coordinate that is not a
++ * number is outside.
++ */
++const double EdgePlacementSlack = 1.0;  // as a fraction of the length of the edge
++
++inline bool IsNearEdge(const double *place, const double *a, const double *b, int n, double length)
++{
++  const double rounding = 16 * double(std::numeric_limits<float>::epsilon());
++  for(int i = 0; i < n; ++i)
++  {
++    const double slack = EdgePlacementSlack * length + rounding * std::max(std::fabs(a[i]), std::fabs(b[i]));
++    const double low = std::min(a[i], b[i]) - slack;
++    const double high = std::max(a[i], b[i]) + slack;
++    if(!(place[i] >= low && place[i] <= high)) return false;
++  }
++  return true;
++}
++
+ /*
+- *  This class encode a quadric function 
++ *  This class encode a quadric function
+  *  f(x) = xAx +bx + c
+  *  where A is a symmetric 3x3 matrix, b a vector and c a scalar constant.  
+  */ 
+-- 
+2.43.0
+
