@@ -9,6 +9,7 @@
 #include <vector>
 #include "../common/scratchfile.h"
 #include "../io/image/image.h"
+#include "../io/image/tone_map.h"
 #include "../io/mesh/meshloader.h"
 
 namespace bm3d::detail {
@@ -38,7 +39,8 @@ public:
 	std::vector<TexLevel> levels;
 
 	void init(int tex, TexAtlas *c, Image &texture);
-	bool init(int tex, TexAtlas *c, LoadTexture &file);
+	//samples wider than 8 bits are mapped by toneMap
+	bool init(int tex, TexAtlas *c, LoadTexture &file, const ToneMap &toneMap);
 	Image read(int level, int x, int y, int w, int h);
 	void buildLevel(int level, float scale);
 };
@@ -91,7 +93,10 @@ public:
 	TexAtlas() {}
 
 	void addTextures(std::vector<Image>& textures);
-	//will actually fill width and height information
+	//will actually fill width and height information. The samples wider than 8 bits (the 16 bit or
+	//float TIFFs of multispectral and thermal models) of every texture are mapped to 8 bits by one
+	//stretch of them all, so that the pieces of the model in different textures get the same
+	//brightness for the same value.
 	bool addTextures(std::vector<LoadTexture> &filenames);
 	Image read(int tex, int level, int x, int y, int w, int h);
 	//every texture at this level, scale times the size of the level below

@@ -12,6 +12,8 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <map>
+#include <utility>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -62,6 +64,38 @@ std::vector<uint8_t> flatCmyk() {
         samples.insert(samples.end(), kStoredCmyk.begin(), kStoredCmyk.end());
     return samples;
 }
+
+#ifdef BM3D_WITH_TIFF
+// A 16 x 16 band of reflectance as a multispectral camera gives it in 16 bits: 0 in the first column
+// (the texels of a texture atlas that no photo covers), and 6000 to 36592 in the others, a small
+// part of the range of the type, growing from the top left to the bottom right
+constexpr double kBandLow = 6000;
+constexpr double kBandStep = 128;
+double bandValue(int x, int y) {
+    return x == 0 ? 0 : kBandLow + kBandStep * (y * 15 + (x - 1));
+}
+
+// The band in the samples of `spec`: the first sample of a pixel is the band, divided by `scale`, the
+// one after it (an alpha) 65535; an RGB of three samples has the band in each
+void writeBandTiff(const fs::path& file, TiffSpec spec, double scale = 1) {
+    spec.width = spec.height = 16;
+    std::vector<double> samples;
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++)
+            for (int s = 0; s < spec.samplesPerPixel; s++)
+                samples.push_back(s == 0 || spec.samplesPerPixel >= 3 ? bandValue(x, y) / scale : 65535);
+    writeRawTiff(file, spec, samples);
+}
+
+// The band as a fraction in floats; the power of two keeps the bins of the samples those of the 16 bit band
+constexpr double kFloatScale = 65536;
+TiffSpec floatSpec() {
+    TiffSpec spec;
+    spec.bitsPerSample = 32;
+    spec.floatingPoint = true;
+    return spec;
+}
+#endif
 
 struct TextureCase {
     const char* name;
@@ -115,6 +149,9 @@ std::vector<TextureCase> textureCases() {
     };
 #ifdef BM3D_WITH_TIFF
     cases.push_back({"tiff", "tif", [](const fs::path& f) { writeTiff(f, gradientRaster(3)); }});
+    // the texture of one band of a multispectral model of OpenDroneMap, and the same in floats
+    cases.push_back({"tiff16BitOneBand", "tif", [](const fs::path& f) { writeBandTiff(f, TiffSpec()); }});
+    cases.push_back({"tiffFloatOneBand", "tif", [](const fs::path& f) { writeBandTiff(f, floatSpec(), kFloatScale); }});
 #endif
     return cases;
 }
@@ -251,6 +288,139 @@ TEST(TextureDecoding, anInterlacedPngIsTheSamePictureAsThePlainOne) {
         return bm3d::detail::Image::rgb(p[0], p[1], p[2]);
     });
 }
+
+#ifdef BM3D_WITH_TIFF
+// --- TIFFs of samples wider than 8 bits, which hold reflectance or radiance in a small part of the
+// range of their type: they are stretched from the 2nd to the 98th percentile of the samples that
+// are not 0, and a band is gray
+
+bm3d::detail::Image decodeBand(const TiffSpec& spec, double scale = 1) {
+    TempDir dir;
+    writeBandTiff(dir.file("band.tif"), spec, scale);
+    return decodeFile(dir.file("band.tif"));
+}
+
+int red(uint32_t pixel) {
+    return int((pixel >> 16) & 0xff);
+}
+
+TEST(TextureDecoding, aOneBandTiffOf16BitSamplesThatCallsItselfRgbIsGrayAndStretched) {
+    const bm3d::detail::Image image = decodeBand(TiffSpec());
+    ASSERT_EQ(image.width(), 16);
+    ASSERT_EQ(image.height(), 16);
+    int previous = 0;
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++) {
+            const uint32_t pixel = image.scanLine(y)[x];
+            const int level = red(pixel);
+            ASSERT_EQ(pixel, bm3d::detail::Image::rgb(level, level, level)) << "not gray at " << x << ", " << y;
+            if (x == 0) {
+                ASSERT_EQ(level, 0) << "the texels that are 0 stay black, at row " << y;
+                continue;
+            }
+            ASSERT_GE(level, previous) << "the levels follow the values, at " << x << ", " << y;
+            previous = level;
+        }
+    // the lowest and the highest 2 % are black and white, the middle value is the middle gray: its
+    // high byte would be 83, and the brightest texel 142
+    EXPECT_EQ(red(image.scanLine(0)[1]), 0);
+    EXPECT_EQ(red(image.scanLine(15)[15]), 255);
+    EXPECT_NEAR(red(image.scanLine(8)[0 + 1]), 128, 4);
+}
+
+TEST(TextureDecoding, theSameBandInAnotherLayoutOfTheTiffIsTheSamePicture) {
+    const bm3d::detail::Image expected = decodeBand(TiffSpec());
+    std::vector<std::pair<std::string, TiffSpec>> layouts;
+    TiffSpec spec;
+    spec.photometric = TiffSpec::MinIsBlack;
+    spec.deflate = false;
+    spec.rowsPerStrip = 5;
+    layouts.push_back({"gray in strips of 5 rows, uncompressed", spec});
+    spec = TiffSpec();
+    spec.tileSide = 16;
+    layouts.push_back({"tiled", spec});
+    spec = TiffSpec();
+    spec.photometric = TiffSpec::MinIsBlack;
+    spec.samplesPerPixel = 2;
+    layouts.push_back({"gray and alpha", spec});
+    spec.separatePlanes = true;
+    spec.tileSide = 16;
+    layouts.push_back({"gray and alpha in planes of tiles", spec});
+    for (const auto& [name, layout] : layouts) {
+        SCOPED_TRACE(name);
+        expectPixels(decodeBand(layout), [&expected](int x, int y) { return expected.scanLine(y)[x]; });
+    }
+
+    // the same values as fractions in floats
+    {
+        SCOPED_TRACE("floats");
+        expectPixels(decodeBand(floatSpec(), kFloatScale), [&expected](int x, int y) { return expected.scanLine(y)[x]; });
+    }
+    // white is 0
+    spec = TiffSpec();
+    spec.photometric = TiffSpec::MinIsWhite;
+    {
+        SCOPED_TRACE("min is white");
+        expectPixels(decodeBand(spec), [&expected](int x, int y) {
+            const int level = 255 - red(expected.scanLine(y)[x]);
+            return bm3d::detail::Image::rgb(level, level, level);
+        });
+    }
+}
+
+TEST(TextureDecoding, theChannelsOfAnRgbTiffOf16BitSamplesShareOneStretch) {
+    // red the band, green the band upside down, blue a quarter of it: the same value is the same
+    // level in every channel, so the colors keep their balance; the samples of a pixel together,
+    // and in a plane each
+    for (const bool separatePlanes : {false, true}) {
+        SCOPED_TRACE(separatePlanes ? "planes" : "pixels");
+        TempDir dir;
+        TiffSpec spec;
+        spec.width = spec.height = 16;
+        spec.samplesPerPixel = 3;
+        spec.separatePlanes = separatePlanes;
+        std::vector<double> samples;
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++) {
+                samples.push_back(bandValue(x, y));
+                samples.push_back(bandValue(x, 15 - y));
+                samples.push_back(bandValue(x, y) / 4);
+            }
+        writeRawTiff(dir.file("rgb.tif"), spec, samples);
+        const bm3d::detail::Image image = decodeFile(dir.file("rgb.tif"));
+        ASSERT_EQ(image.width(), 16);
+        std::map<double, int> levels;
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++) {
+                const uint32_t pixel = image.scanLine(y)[x];
+                const int channel[3] = {red(pixel), int((pixel >> 8) & 0xff), int(pixel & 0xff)};
+                for (int c = 0; c < 3; c++) {
+                    const double value = samples[(size_t(y) * 16 + size_t(x)) * 3 + size_t(c)];
+                    const auto known = levels.emplace(value, channel[c]);
+                    ASSERT_EQ(known.first->second, channel[c]) << "value " << value << " in channel " << c;
+                }
+            }
+        EXPECT_EQ(levels[0], 0);
+        EXPECT_EQ(levels[bandValue(15, 15)], 255);
+    }
+}
+
+TEST(TextureDecoding, anRgbTiffOfOne8BitSampleIsGrayAsStored) {
+    TempDir dir;
+    TiffSpec spec;
+    spec.width = spec.height = 16;
+    spec.bitsPerSample = 8;
+    std::vector<double> samples;
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++)
+            samples.push_back(x * 16 + y);
+    writeRawTiff(dir.file("gray.tif"), spec, samples);
+    expectPixels(decodeFile(dir.file("gray.tif")), [](int x, int y) {
+        return bm3d::detail::Image::rgb(x * 16 + y, x * 16 + y, x * 16 + y);
+    });
+}
+
+#endif
 
 // --- and the same pictures through a whole build: the node texture holds the color
 

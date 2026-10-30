@@ -9,6 +9,7 @@
 #include <csetjmp>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <stdexcept>
@@ -207,6 +208,93 @@ void writeTiff(const fs::path& file, const Raster& raster) {
         if (TIFFWriteScanline(tiff, row.data(), uint32_t(y), 0) < 0)
             throw std::runtime_error("cannot write " + pathToUtf8(file));
     }
+}
+
+namespace {
+
+// One sample in the bytes of the file, in the byte order of the machine (libtiff swaps them)
+void putSample(const TiffSpec& spec, double value, uint8_t* at) {
+    if (spec.floatingPoint) {
+        const float f = float(value);
+        std::memcpy(at, &f, sizeof(f));
+    } else if (spec.bitsPerSample == 16) {
+        const uint16_t v = uint16_t(std::lround(value));
+        std::memcpy(at, &v, sizeof(v));
+    } else {
+        *at = uint8_t(std::lround(value));
+    }
+}
+
+}  // namespace
+
+void writeRawTiff(const fs::path& file, const TiffSpec& spec, const std::vector<double>& samples) {
+    const size_t perPixel = size_t(spec.samplesPerPixel);
+    if (samples.size() != size_t(spec.width) * size_t(spec.height) * perPixel)
+        throw std::runtime_error("writeRawTiff takes samplesPerPixel samples per pixel");
+#ifdef _WIN32
+    TIFF* tiff = TIFFOpenW(file.c_str(), "w");
+#else
+    TIFF* tiff = TIFFOpen(file.c_str(), "w");
+#endif
+    if (tiff == nullptr)
+        throw std::runtime_error("cannot write " + pathToUtf8(file));
+    std::unique_ptr<TIFF, decltype(&TIFFClose)> closer(tiff, &TIFFClose);
+
+    TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, uint32_t(spec.width));
+    TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, uint32_t(spec.height));
+    TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, uint16_t(spec.samplesPerPixel));
+    TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, uint16_t(spec.bitsPerSample));
+    TIFFSetField(tiff, TIFFTAG_SAMPLEFORMAT, uint16_t(spec.floatingPoint ? SAMPLEFORMAT_IEEEFP : SAMPLEFORMAT_UINT));
+    TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, uint16_t(spec.separatePlanes ? PLANARCONFIG_SEPARATE : PLANARCONFIG_CONTIG));
+    TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, uint16_t(spec.photometric));
+    TIFFSetField(tiff, TIFFTAG_COMPRESSION, uint16_t(spec.deflate ? COMPRESSION_ADOBE_DEFLATE : COMPRESSION_NONE));
+    if (spec.samplesPerPixel == 2 || spec.samplesPerPixel == 4) {
+        const uint16_t alpha = EXTRASAMPLE_UNASSALPHA;
+        TIFFSetField(tiff, TIFFTAG_EXTRASAMPLES, uint16_t(1), &alpha);
+    }
+
+    // A chunk (a strip or a tile) of one plane, from its top left pixel, `width` pixels a row; what
+    // falls outside the image is 0
+    const size_t bytes = size_t(spec.bitsPerSample / 8);
+    const size_t chunkPerPixel = spec.separatePlanes ? 1 : perPixel;
+    auto chunk = [&](int x0, int y0, int width, int height, int plane) {
+        std::vector<uint8_t> data(size_t(width) * size_t(height) * chunkPerPixel * bytes, 0);
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                for (size_t s = 0; s < chunkPerPixel; s++) {
+                    if (x0 + x >= spec.width || y0 + y >= spec.height)
+                        continue;
+                    const size_t sample = spec.separatePlanes ? size_t(plane) : s;
+                    const size_t from = (size_t(y0 + y) * size_t(spec.width) + size_t(x0 + x)) * perPixel + sample;
+                    putSample(spec, samples[from], &data[((size_t(y) * size_t(width) + size_t(x)) * chunkPerPixel + s) * bytes]);
+                }
+        return data;
+    };
+    const int planes = spec.separatePlanes ? spec.samplesPerPixel : 1;
+    bool ok = true;
+    if (spec.tileSide > 0) {
+        TIFFSetField(tiff, TIFFTAG_TILEWIDTH, uint32_t(spec.tileSide));
+        TIFFSetField(tiff, TIFFTAG_TILELENGTH, uint32_t(spec.tileSide));
+        for (int plane = 0; plane < planes; plane++)
+            for (int y = 0; y < spec.height; y += spec.tileSide)
+                for (int x = 0; x < spec.width; x += spec.tileSide) {
+                    std::vector<uint8_t> data = chunk(x, y, spec.tileSide, spec.tileSide, plane);
+                    ok = ok && TIFFWriteEncodedTile(tiff, TIFFComputeTile(tiff, uint32_t(x), uint32_t(y), 0, uint16_t(plane)),
+                                                    data.data(), tmsize_t(data.size())) >= 0;
+                }
+    } else {
+        const int rows = spec.rowsPerStrip > 0 ? spec.rowsPerStrip : spec.height;
+        if (spec.rowsPerStrip > 0)
+            TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, uint32_t(rows));
+        for (int plane = 0; plane < planes; plane++)
+            for (int y = 0; y < spec.height; y += rows) {
+                std::vector<uint8_t> data = chunk(0, y, spec.width, std::min(rows, spec.height - y), plane);
+                ok = ok && TIFFWriteEncodedStrip(tiff, TIFFComputeStrip(tiff, uint32_t(y), uint16_t(plane)), data.data(),
+                                                 tmsize_t(data.size())) >= 0;
+            }
+    }
+    if (!ok)
+        throw std::runtime_error("cannot write " + pathToUtf8(file));
 }
 #endif
 

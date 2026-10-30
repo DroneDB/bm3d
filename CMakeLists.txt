@@ -152,6 +152,7 @@ add_library(bm3d_core STATIC
     src/io/image/jpeg_codec.cpp
     src/io/image/stb_decoder.cpp
     src/io/image/tiff_decoder.cpp
+    src/io/image/tone_map.cpp
     src/io/image/webp_codec.cpp
     src/io/mesh/mesh_loader_registry.cpp
     src/io/mesh/meshloader.cpp

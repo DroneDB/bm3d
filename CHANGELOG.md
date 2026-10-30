@@ -2,6 +2,26 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## 1.1.2 (not released)
+
+- **TIFF textures of one band, of 16 bit samples and of floats are read.** The texture of one band
+  of a multispectral model of OpenDroneMap is a TIFF of 16 bit samples, one per pixel, that calls
+  itself RGB: libtiff's RGBA interface refused it (`Sorry, can not handle RGB image with Color
+  channels=1`, exit code 2), and it refuses float samples too. Gray and RGB TIFFs of 16 bit or
+  32 bit float samples, and RGB TIFFs of fewer than three samples (read as gray), are now read by
+  their samples, in strips or tiles, with the samples of a pixel together or in planes; extra
+  samples (alpha) are dropped. The other TIFFs (8 bit RGB, palettes, YCbCr, CMYK) are read as before.
+- **Samples wider than 8 bits are stretched.** Reflectance and radiance fill a small part of the
+  range of their type (6000 to 38000 of 65535 in the micasense textures, 0.003 to 0.07 in floats),
+  so their high byte is a dark picture, and a float has no range of its own. They are mapped to
+  8 bits by a linear stretch from the 2nd to the 98th percentile of the samples that are not 0 (0
+  is the part of an atlas no photo covers, and stays black), the stretch the map view of a raster
+  of one band gets in GIS programs. The percentiles are those of every texture of the model, so the
+  same value has the same brightness in every texture of an atlas (each texture on its own would
+  differ by up to a fifth). The channels of an RGB TIFF share the stretch, so their balance is kept.
+  A 16 bit RGB or gray TIFF that libtiff read before (its high byte) is stretched too; 8 bit
+  textures and 16 bit PNGs are unchanged, and so is the content hash of every reference model.
+
 ## 1.1.1
 
 The Windows program declares itself long path aware. The files it writes are the same, and the viewer is unchanged; its version follows the release.

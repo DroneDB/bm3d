@@ -106,6 +106,23 @@ TEST(ImageDecoderRegistry, theStandardRegistryTellsTheFormatsByTheirSignature) {
     EXPECT_NE(dynamic_cast<const StbDecoder*>(registry.find(bytes(unknown), unknown.size())), nullptr);
 }
 
+TEST(ImageDecoderRegistry, aFormatWithoutWideSamplesAddsNoneAndDecodesTheSameWithAToneMap) {
+    ImageDecoderRegistry registry;
+    registry.add(std::unique_ptr<ImageDecoder>(new FakeDecoder("AAA", Image::rgb(1, 2, 3))));
+    const std::string a = "AAA";
+    SampleHistogram samples;
+    EXPECT_FALSE(registry.addWideSamples(bytes(a), a.size(), samples));
+    EXPECT_EQ(samples.count(), 0u);
+    Image image;
+    std::string error;
+    ASSERT_TRUE(registry.decode(bytes(a), a.size(), ToneMap(10, 20), image, error)) << error;
+    EXPECT_EQ(image.scanLine(0)[0], Image::rgb(1, 2, 3));
+    const std::string other = "BBB";
+    EXPECT_FALSE(registry.addWideSamples(bytes(other), other.size(), samples));
+    EXPECT_FALSE(registry.decode(bytes(other), other.size(), ToneMap(), image, error));
+    EXPECT_EQ(error, "unknown image format");
+}
+
 TEST(ImageDecoderRegistry, aRiffFileThatIsNotWebpIsNotWebp) {
     const std::string wave = std::string("RIFF\0\0\0\0WAVE", 12);
     EXPECT_FALSE(WebpDecoder().matches(bytes(wave), wave.size()));

@@ -95,6 +95,7 @@ bm3d_add_tests(bm3d_unit_tests unit
     unit/simplification_test.cpp
     unit/texel_blanking_test.cpp
     unit/texture_encoder_pool_test.cpp
+    unit/tone_map_test.cpp
     unit/version_test.cpp)
 target_link_libraries(bm3d_unit_tests PRIVATE bm3d_corto bm3d_vcg)
 

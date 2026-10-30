@@ -282,6 +282,12 @@ describe what was done to them before.
   transparent gray kept, and the TIFF reader is compiled only when `BM3D_WITH_TIFF` is defined
   (otherwise a TIFF is refused by name). Output does not change.
 
+- `src/build/texpyramid.{h,cpp}`: `TexAtlas::addTextures` first counts the samples wider than 8
+  bits of every texture (`addWideSamples` of `src/io/image/image_decoder`) and loads each texture
+  with one `ToneMap` of them all (`src/io/image/tone_map.{h,cpp}`), so the 16 bit and float TIFFs
+  of a multispectral model have the same brightness in every texture. 8 bit textures are loaded
+  as before.
+
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
 

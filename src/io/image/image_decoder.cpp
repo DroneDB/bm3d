@@ -14,6 +14,15 @@
 
 namespace bm3d::detail {
 
+bool ImageDecoder::addWideSamples(const unsigned char *, size_t, SampleHistogram &) const {
+	return false;
+}
+
+bool ImageDecoder::decodeToneMapped(const unsigned char *data, size_t size, const ToneMap &, Image &image,
+                                    std::string &error) const {
+	return decode(data, size, image, error);
+}
+
 void ImageDecoderRegistry::add(std::unique_ptr<ImageDecoder> decoder) {
 	decoders_.push_back(std::move(decoder));
 }
@@ -34,6 +43,21 @@ bool ImageDecoderRegistry::decode(const unsigned char *data, size_t size, Image 
 	return decoder->decode(data, size, image, error);
 }
 
+bool ImageDecoderRegistry::decode(const unsigned char *data, size_t size, const ToneMap &toneMap, Image &image,
+                                  std::string &error) const {
+	const ImageDecoder *decoder = find(data, size);
+	if(!decoder) {
+		error = "unknown image format";
+		return false;
+	}
+	return decoder->decodeToneMapped(data, size, toneMap, image, error);
+}
+
+bool ImageDecoderRegistry::addWideSamples(const unsigned char *data, size_t size, SampleHistogram &samples) const {
+	const ImageDecoder *decoder = find(data, size);
+	return decoder && decoder->addWideSamples(data, size, samples);
+}
+
 const ImageDecoderRegistry &ImageDecoderRegistry::standard() {
 	static const ImageDecoderRegistry registry = [] {
 		ImageDecoderRegistry made;
@@ -47,33 +71,64 @@ const ImageDecoderRegistry &ImageDecoderRegistry::standard() {
 	return registry;
 }
 
-Image loadImage(const std::string &path, std::string &error, const ImageDecoderRegistry &registry) {
+namespace {
+
+//Maps the file and gives its bytes to read(data, size): false, and the reason in error, when the
+//file cannot be opened, mapped or is empty, and what read returns otherwise. Running out of memory
+//and the errors of the scratch and file layers are reasons too.
+template<class Read>
+bool readFile(const std::string &path, std::string &error, Read &&read) {
 	MappedFile file;
 	try {
 		file.openReadOnly(path);
 		if(file.size() == 0) {
 			error = "the file is empty";
-			return Image();
+			return false;
 		}
 		if(file.size() > size_t(-1) / 2) {
 			error = "the file is too large";
-			return Image();
+			return false;
 		}
 		const unsigned char *data = file.map(0, file.size());
 		if(!data) {
 			error = "could not read the file: " + file.lastError();
-			return Image();
+			return false;
 		}
-		Image image;
-		if(!registry.decode(data, size_t(file.size()), image, error))
-			return Image();
-		return image;
+		return read(data, size_t(file.size()));
 	} catch(const std::bad_alloc &) {
 		error = "not enough memory to load the image";
 	} catch(const Error &e) {
 		error = e.what();
 	}
-	return Image();
+	return false;
+}
+
+} //namespace
+
+Image loadImage(const std::string &path, std::string &error, const ImageDecoderRegistry &registry) {
+	Image image;
+	if(!readFile(path, error, [&](const unsigned char *data, size_t size) {
+		   return registry.decode(data, size, image, error);
+	   }))
+		return Image();
+	return image;
+}
+
+Image loadImage(const std::string &path, const ToneMap &toneMap, std::string &error,
+                const ImageDecoderRegistry &registry) {
+	Image image;
+	if(!readFile(path, error, [&](const unsigned char *data, size_t size) {
+		   return registry.decode(data, size, toneMap, image, error);
+	   }))
+		return Image();
+	return image;
+}
+
+bool addWideSamples(const std::string &path, SampleHistogram &samples, const ImageDecoderRegistry &registry) {
+	std::string ignored;
+	return readFile(path, ignored, [&](const unsigned char *data, size_t size) {
+		return registry.addWideSamples(data, size, samples);
+	});
 }
 
 } //namespace

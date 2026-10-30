@@ -42,6 +42,26 @@ void writePng(const fs::path& file, const Raster& raster);
 void writeBmp(const fs::path& file, const Raster& raster);  // 24 bit, RGB
 #ifdef BM3D_WITH_TIFF  // the tests write TIFFs with libtiff, which a build without TIFF support does not have
 void writeTiff(const fs::path& file, const Raster& raster);  // 8 bit, uncompressed, in strips
+
+// What libtiff needs to write a TIFF of samples wider than 8 bits, or of a layout that the RGBA
+// interface of libtiff refuses. The default is the texture of one band of a multispectral model of
+// OpenDroneMap: 16 bit samples, one per pixel, that call themselves RGB, compressed with deflate in
+// one strip, without the RowsPerStrip tag.
+struct TiffSpec {
+    enum Photometric { MinIsWhite = 0, MinIsBlack = 1, Rgb = 2 };
+    int width = 0;
+    int height = 0;
+    int samplesPerPixel = 1;
+    int bitsPerSample = 16;      // 8 or 16 for unsigned integers, 32 for floats
+    bool floatingPoint = false;
+    Photometric photometric = Rgb;
+    bool separatePlanes = false;
+    bool deflate = true;
+    int tileSide = 0;            // a multiple of 16; 0 writes strips
+    int rowsPerStrip = 0;        // 0 writes one strip and no RowsPerStrip tag
+};
+// `samples` has samplesPerPixel values per pixel, rows from the top
+void writeRawTiff(const fs::path& file, const TiffSpec& spec, const std::vector<double>& samples);
 #endif
 void writeWebp(const fs::path& file, const Raster& raster);  // lossless, RGB
 // A PNG with a palette of 16 colors (4 bits per pixel); `indices` has one entry per pixel

@@ -63,7 +63,11 @@ The version is the text of `VERSION`; `vcpkg.json` repeats it and must be kept i
 linked (`-DBM3D_WITH_TIFF=OFF`; vcpkg then does not install it either, because `tiff` is a default
 feature of `vcpkg.json` and the option turns the defaults off), the program is a quarter smaller, and a
 `.tif` texture is refused as invalid input (exit code 2) with a message that says this bm3d was built
-without TIFF support. Photogrammetry software writes PNG or JPEG textures, so most uses do not need it.
+without TIFF support. Photogrammetry software writes PNG or JPEG textures of photos, so most uses do
+not need it; the multispectral models of OpenDroneMap have TIFF textures of one band of 16 bit or
+float samples. Samples wider than 8 bits hold reflectance or radiance in a small part of the range of
+their type, and are stretched to 8 bits from the 2nd to the 98th percentile of the samples of every
+texture of the model that are not 0 (0 is the part of an atlas no photo covers, and stays black).
 
 ### Dependencies
 

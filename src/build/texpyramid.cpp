@@ -112,9 +112,9 @@ void TexPyramid::init(int tex, TexAtlas *c, Image &texture) {
 	levels[0].init(tex, collection, texture, 0);
 }
 
-bool TexPyramid::init(int tex, TexAtlas *c, LoadTexture &file) {
+bool TexPyramid::init(int tex, TexAtlas *c, LoadTexture &file, const ToneMap &toneMap) {
 	std::string error;
-	Image img = loadImage(file.filename, error);
+	Image img = loadImage(file.filename, toneMap, error);
 	if(img.isNull())
 		throw bm3d::detail::Error("could not load texture: " + file.filename + ": " + error);
 	//the kd-tree weighs each triangle by the texels it covers, from these sizes: left at 0 every
@@ -153,10 +153,15 @@ void TexAtlas::addTextures(std::vector<Image>& textures) {
 }
 
 bool TexAtlas::addTextures(std::vector<LoadTexture> &textures) {
+	SampleHistogram samples;
+	for(const LoadTexture &texture: textures)
+		addWideSamples(texture.filename, samples);
+	const ToneMap toneMap = ToneMap::stretch(samples);
+
 	pyramids.resize(textures.size());
 	for(size_t i = 0; i < pyramids.size(); i++) {
 		TexPyramid &py = pyramids[i];
-		bool ok = py.init(i, this, textures[i]);
+		bool ok = py.init(i, this, textures[i], toneMap);
 		if(!ok) {
 			throw bm3d::detail::Error("could not load texture: " + textures[i].filename);
 		}
