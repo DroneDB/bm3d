@@ -2,7 +2,9 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## 1.1.2 (not released)
+## 1.1.2
+
+TIFF textures of one band, of 16 bit samples and of floats are read, and samples wider than 8 bits are stretched with one map for the whole model: the multispectral models of OpenDroneMap build. The files written from 8 bit textures and 16 bit PNGs are the same, and the viewer is unchanged; its version follows the release.
 
 - **TIFF textures of one band, of 16 bit samples and of floats are read.** The texture of one band
   of a multispectral model of OpenDroneMap is a TIFF of 16 bit samples, one per pixel, that calls
