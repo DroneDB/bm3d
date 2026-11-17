@@ -2,7 +2,9 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
-## 1.1.3 (not released)
+## 1.1.3
+
+Textures that cut texels out are kept and drawn as cutouts, the colours of faces stay sharp along their borders, and the faces without a texture of a textured model keep their colour. PLY files of mixed property types and float colours, and texture coordinates outside 0..1, are read. A file with a cutout opens in an older viewer, drawn opaque. The files of models without cutouts, colours of faces or faces without a texture beside textured ones are the same, but for the coarse levels of textured models whose simplified texture coordinates fall just past an edge of their texture (below). The viewer draws cutouts, draws both sides of the triangles and gives the principal axes of a model.
 
 - **Textures that cut texels out are kept (`map_d`).** A material whose `map_d` names its own
   texture (as the OBJ of a glTF material with `alphaMode: MASK` does), or a mask, cuts out the texels

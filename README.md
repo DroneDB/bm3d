@@ -5,7 +5,7 @@ bm3d is a builder, a file format and a web viewer for multiresolution 3D models.
 the detail it needs, so a model of many millions of triangles and gigapixels of texture opens in
 a web page.
 
-Status of this version (1.1.2): the builder and its command line write a `.bm3d` file, format
+Status of this version (1.1.3): the builder and its command line write a `.bm3d` file, format
 version 1, always corto-compressed, specified in [`docs/FORMAT.md`](docs/FORMAT.md), and the web
 viewer (`bm3d-viewer`, in `web/`) reads it. Programs for Linux and Windows, the viewer package and
 the source are attached to each [release](https://github.com/DroneDB/bm3d/releases).
@@ -31,6 +31,10 @@ commits.
   the settings of the build, the input, and any JSON object given with `--metadata`), and a
   content hash that ignores the metadata, so that two builds of the same input have the same hash.
 - Full-resolution WebP textures, sized by texels instead of capped at 1024 pixels.
+- Cutout textures: a material whose `map_d` names its texture (its alpha) or a mask (its alpha, or
+  its luminance) keeps the alpha in its node textures, cut at half, and the viewer draws it with an
+  alpha test. The colours of faces (OBJ materials, STL faces) stay sharp along the borders between
+  them, and the faces without a texture of a textured model keep their colour.
 - Hardened loaders for OBJ, PLY and STL.
 - Deterministic output: the same input and options give the same bytes on every platform (GCC,
   Clang and MSVC builds write the same file; the golden tests check it), and the same content hash
@@ -115,7 +119,7 @@ workflow runs them.
   with their values unchanged. The top-level keys `generator`, `buildOptions`, `source` and any
   that starts with `bm3d` are reserved, a key cannot be given twice, and the whole block is at
   most 1 MiB: anything else is a wrong command line (exit code 64), refused before the build starts.
-- `--version` prints `bm3d <version> (format <N>)`, for example `bm3d 1.1.2 (format 1)`.
+- `--version` prints `bm3d <version> (format <N>)`, for example `bm3d 1.1.3 (format 1)`.
 - The output is always corto-compressed; there is no option to turn compression off.
 - The input type is chosen by the extension, in any letter case.
 - While it works, bm3d prints a progress line to standard output when it starts and then every
@@ -137,7 +141,7 @@ dependency; MIT). It is not on npm: it is the file `bm3d-viewer-<version>.tgz` o
 carries the bundles, the corto decoder (`corto-worker.js`, `corto.wasm`) and its licences. Install it
 from the release:
 
-    npm install https://github.com/DroneDB/bm3d/releases/download/v1.1.2/bm3d-viewer-1.1.2.tgz
+    npm install https://github.com/DroneDB/bm3d/releases/download/v1.1.3/bm3d-viewer-1.1.3.tgz
 
 then `import { Bm3dObject } from 'bm3d-viewer'` and give it the URL of a `.bm3d` file; the server
 must answer HTTP Range requests. The options (where the decoder is served from, the cache) and the
