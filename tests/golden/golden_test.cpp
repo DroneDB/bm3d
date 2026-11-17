@@ -426,4 +426,21 @@ TEST(GoldenFixtures, aSphereWithColoursFromAPly) {
     EXPECT_EQ(f.nface, 6u * 2 * 22 * 22);  // the 8 triangles with two equal corners are dropped
 }
 
+// The cutout model of the viewer's tests: a square whose texture cuts out its right half (a material
+// with map_d, the alpha of its own texture), one node and one texture with an alpha
+TEST(GoldenFixtures, aSquareWithACutoutTextureFromAnObj) {
+    TempDir dir;
+    writePng(dir.file("cutout.png"), makeRaster(64, 64, 4, [](int band, int x, int y) {
+                 if (band == 4) return x < 32 ? 255.0 : 0.0;
+                 return band == 1 ? 230.0 : band == 2 ? double(120 + (y / 8) * 10) : 40.0;
+             }));
+    writeTexturedModel(dir.path(), "cutout.png");
+    writeTextFile(dir.file("model.mtl"), "newmtl m\nKd 1 1 1\nmap_Kd cutout.png\nmap_d cutout.png\n");
+    const fs::path file = buildGolden(dir, "cutout", dir.file("model.obj"));
+    const Bm3dFile f = readBm3dFile(file);
+    EXPECT_EQ(f.nNodes, 2u);
+    ASSERT_EQ(f.nTextures, 1u);
+    EXPECT_EQ(decodeWebp(f.textures[0]).bands.size(), 4u);
+}
+
 }  // namespace

@@ -39,14 +39,15 @@ bool isGrayPngOfFewBits(const unsigned char *data, size_t size) {
 	return size >= 26 && std::memcmp(data, PngSignature, 8) == 0 && data[25] == 0 && data[24] >= 2 && data[24] <= 8;
 }
 
-//The pixels of RGBA samples, rows from the top; the alpha is dropped
+//The pixels of RGBA samples, rows from the top
 template <typename Sample>
 void copyPixels(const Sample *from, Image &image, bool transparentIsBlack) {
 	for(int y = 0; y < image.height(); y++) {
 		uint32_t *pixels = image.scanLine(y);
 		for(int x = 0; x < image.width(); x++, from += 4)
-			pixels[x] = (transparentIsBlack && from[3] == 0) ? Image::rgb(0, 0, 0)
-			                                                  : Image::rgb(toByte(from[0]), toByte(from[1]), toByte(from[2]));
+			pixels[x] = (transparentIsBlack && from[3] == 0)
+			                ? Image::rgba(0, 0, 0, 0)
+			                : Image::rgba(toByte(from[0]), toByte(from[1]), toByte(from[2]), toByte(from[3]));
 	}
 }
 

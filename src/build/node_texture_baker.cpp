@@ -528,6 +528,9 @@ NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 	}
 
 	image = image.mirrored().downscaled(storedSize[0], storedSize[1]);
+	//the alpha of a cutout, averaged by the levels and by the downscaling, is cut at half: the node
+	//texture is drawn or cut out, texel by texel
+	image.binarizeAlpha();
 	std::vector<UvTriangle> triangles;
 	triangles.reserve(mesh.face.size());
 	for(auto &face: mesh.face) {

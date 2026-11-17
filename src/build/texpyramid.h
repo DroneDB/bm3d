@@ -39,7 +39,7 @@ public:
 	std::vector<TexLevel> levels;
 
 	void init(int tex, TexAtlas *c, Image &texture);
-	//samples wider than 8 bits are mapped by toneMap
+	//samples wider than 8 bits are mapped by toneMap; a cutout texture keeps the alpha it is given
 	bool init(int tex, TexAtlas *c, LoadTexture &file, const ToneMap &toneMap);
 	Image read(int level, int x, int y, int w, int h);
 	void buildLevel(int level, float scale);
@@ -77,6 +77,7 @@ public:
 		uint64_t offset;
 		uint64_t size;
 		uint32_t w,h;
+		bool lossless; //a lossless WebP image (a tile with alpha), or else a JPEG one
 	};
 
 	//the side of a tile: reading a rectangle loads, and decodes when spilled to disk, every tile it
@@ -121,9 +122,10 @@ public:
 	std::map<Index, DiskData> disk;
 	std::list<Index> lru_list;        //front = most-recently-used, back = LRU eviction candidate
 
-	//The tiles that do not fit in RAM are kept here as JPEG images, in a temporary file created
-	//next to storage_prefix (the system's temporary folder when it is empty) the first time
-	//one is needed.
+	//The tiles that do not fit in RAM are kept here as JPEG images (lossless WebP images for the
+	//tiles that are not opaque: JPEG has no alpha, and the cutout is kept as it is), in a temporary
+	//file created next to storage_prefix (the system's temporary folder when it is empty) the
+	//first time one is needed.
 	ScratchFile storage;
 	std::string storage_prefix;
 

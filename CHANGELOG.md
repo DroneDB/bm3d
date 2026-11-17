@@ -4,6 +4,19 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## 1.1.3 (not released)
 
+- **Textures that cut texels out are kept (`map_d`).** A material whose `map_d` names its own
+  texture (as the OBJ of a glTF material with `alphaMode: MASK` does), or a mask, cuts out the texels
+  whose alpha is below half: the alpha of the texture, or of the mask, or the luminance of a mask
+  that has no alpha (a mask of any size, read at the nearest pixel). Every decoder keeps the alpha
+  now, and a texture without `map_d` is read opaque as before, whatever alpha its file has. The
+  alpha goes through the levels of the texture (the downscaling averages it and weighs the colours
+  by it, so the colours of the texels cut out do not tint the others; the tiles spilled to disk are
+  lossless WebP images, JPEG has none) and is cut at half in each node texture, which is written as
+  a WebP image with an alpha only when it cuts out a texel: 0 and 255, without loss, with the colours
+  of the texels cut out kept. Before, the alpha was dropped when the texture was read, so the texels
+  a mask cut out were drawn (the masked-out part of a gold leaf decal covered the dish under it). The
+  format is unchanged: the WebP image says whether it has an alpha (docs/FORMAT.md, section 6). The
+  textures of a model without `map_d` are the same bytes.
 - **The viewer gives the principal axes of a model.** `Bm3dObject.computePrincipalAxes()` returns
   the centre, the axes and the extents of the vertices of the coarsest level once its node has
   arrived. A flat model (one quad, a planar drawing) has almost no extent along its last axis, the

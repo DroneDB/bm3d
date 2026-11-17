@@ -25,10 +25,19 @@ for more details.
 
 class LoadTexture {
 public:
-	LoadTexture(const std::string &name = std::string()): filename(name) {}
+	LoadTexture(const std::string &name = std::string(), const std::string &alpha = std::string()):
+		filename(name), alphaFilename(alpha) {}
 	std::string filename; //UTF-8
+	//The image that cuts the texture out (UTF-8): empty for an opaque texture, the texture itself
+	//for its own alpha, or a mask, whose alpha (or luminance, when it is opaque) is the alpha
+	std::string alphaFilename;
 	uint32_t width = 0;
 	uint32_t height = 0;
+
+	bool isCutout() const { return !alphaFilename.empty(); }
+	bool operator==(const LoadTexture &other) const {
+		return filename == other.filename && alphaFilename == other.alphaFilename;
+	}
 };
 
 class MeshLoader {

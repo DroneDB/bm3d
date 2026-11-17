@@ -105,23 +105,32 @@ bool readFile(const std::string &path, std::string &error, Read &&read) {
 
 } //namespace
 
-Image loadImage(const std::string &path, std::string &error, const ImageDecoderRegistry &registry) {
+namespace {
+
+//The image decode(data, size, image) gives from the bytes of the file, with its alpha as asked
+template<class Decode>
+Image loadWith(const std::string &path, std::string &error, ImageAlpha alpha, Decode &&decode) {
 	Image image;
-	if(!readFile(path, error, [&](const unsigned char *data, size_t size) {
-		   return registry.decode(data, size, image, error);
-	   }))
+	if(!readFile(path, error, [&](const unsigned char *data, size_t size) { return decode(data, size, image); }))
 		return Image();
+	if(alpha == ImageAlpha::Drop)
+		image.setOpaque();
 	return image;
 }
 
-Image loadImage(const std::string &path, const ToneMap &toneMap, std::string &error,
+} //namespace
+
+Image loadImage(const std::string &path, std::string &error, ImageAlpha alpha, const ImageDecoderRegistry &registry) {
+	return loadWith(path, error, alpha, [&](const unsigned char *data, size_t size, Image &image) {
+		return registry.decode(data, size, image, error);
+	});
+}
+
+Image loadImage(const std::string &path, const ToneMap &toneMap, std::string &error, ImageAlpha alpha,
                 const ImageDecoderRegistry &registry) {
-	Image image;
-	if(!readFile(path, error, [&](const unsigned char *data, size_t size) {
-		   return registry.decode(data, size, toneMap, image, error);
-	   }))
-		return Image();
-	return image;
+	return loadWith(path, error, alpha, [&](const unsigned char *data, size_t size, Image &image) {
+		return registry.decode(data, size, toneMap, image, error);
+	});
 }
 
 bool addWideSamples(const std::string &path, SampleHistogram &samples, const ImageDecoderRegistry &registry) {

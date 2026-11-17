@@ -82,12 +82,12 @@ void blankUndrawnTexels(Image &image, const std::vector<UvTriangle> &triangles) 
 				drawn[size_t(at) * width + px] = 1;
 		}
 	}
-	//the mean of the kept texels, then the flat color everywhere else
+	//the mean of the kept texels that are not cut out, then the flat color everywhere else
 	uint64_t sum[3] = {0, 0, 0}, kept = 0;
 	for(int py = 0; py < height; py++) {
 		const uint32_t *row = image.scanLine(py);
 		for(int px = 0; px < width; px++) {
-			if(!drawn[size_t(py) * width + px]) continue;
+			if(!drawn[size_t(py) * width + px] || Image::alpha(row[px]) < Image::CutoutThreshold) continue;
 			sum[0] += (row[px] >> 16) & 0xff; sum[1] += (row[px] >> 8) & 0xff; sum[2] += row[px] & 0xff;
 			kept++;
 		}

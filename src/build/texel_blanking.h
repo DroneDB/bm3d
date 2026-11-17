@@ -22,7 +22,7 @@ using UvTriangle = std::array<vcg::Point2f, 3>;
 //A node texture is packed from the bounding boxes of its pieces of texture, so most of it lies
 //outside the node's triangles: texels of the model's texture that the node never draws, which
 //cost as many bytes as the ones it draws. Those further than a few texels from every triangle
-//get one flat color, the mean of the others. image is the node texture as stored (row 0 at the
+//get one flat color, the mean of the others that are drawn (not cut out by their alpha). image is the node texture as stored (row 0 at the
 //top, v = 1), triangles the ones of the node with their texture coordinates in that texture.
 //An image too small to have texels away from the triangles is left as it is.
 void blankUndrawnTexels(Image &image, const std::vector<UvTriangle> &triangles);

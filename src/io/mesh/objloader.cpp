@@ -54,6 +54,16 @@ uint32_t channel(float value) {
 	return scaled <= 0.0f ? 0u : scaled >= 255.0f ? 255u : uint32_t(scaled);
 }
 
+//The file name a map line gives (after its keyword), without the quotes some exporters put round it
+std::string mapFileName(const std::string &line) {
+	std::string name = text::trimmed(text::afterFirstWord(line));
+	if (!name.empty() && name.front() == '"')
+		name.erase(0, 1);
+	if (!name.empty() && name.back() == '"')
+		name.pop_back();
+	return name;
+}
+
 //The colour of a vertex line, from what follows its x y z: `v x y z r g b` has one, `v x y z`
 //has none and `v x y z w` has a weight, which is not a colour (nor is anything else than three
 //numbers). The colour is in 0..1, unless a component of this vertex is more than 1: then it is in
@@ -163,6 +173,7 @@ void ObjLoader::readMTL() {
 		bool started = false;
 		std::string tag;
 		std::string texture;
+		std::string alpha; //map_d: the image whose alpha (or luminance) cuts the texture out
 		uint32_t R = 0xff000000, G = 0x00ff0000, B = 0x0000ff00, A = 255;
 	} material;
 	int cnt = 0;
@@ -172,28 +183,11 @@ void ObjLoader::readMTL() {
 			return;
 		colors_map[material.tag] = material.R + material.G + material.B + material.A;
 
-		std::string txtfname = material.texture;
-		if (txtfname.length() > 0) {
-			sanitizeTextureFilepath(txtfname);
-			//a texture name is relative to the .mtl that names it; when the .mtl is in
-			//another folder and the name is not found next to it, the .obj's folder is
-			//still tried, which is where every name was looked up before.
-			std::string nextToMtl = joinPath(parentPath(mtl), txtfname);
-			if (pathExists(nextToMtl))
-				txtfname = nextToMtl;
-			else
-				resolveTextureFilepath(filename, txtfname);
-
-			textures_map[material.tag] = txtfname;
-			bool exists = false;
-			for (const auto &fn : texture_filenames)
-				if (fn.filename == txtfname) {
-					exists = true;
-					break;
-				}
-			if (!exists) {
-				texture_filenames.push_back(LoadTexture(txtfname));
-			}
+		//a map_d without a map_Kd has no texture to cut out: the material is drawn in its colour
+		if (!material.texture.empty()) {
+			const std::string texture = resolveTexturePath(material.texture);
+			const std::string alpha = material.alpha.empty() ? std::string() : resolveTexturePath(material.alpha);
+			material_textures[material.tag] = addTexture(LoadTexture(texture, alpha));
 		}
 		cnt++;
 		material = Material();
@@ -221,13 +215,9 @@ void ObjLoader::readMTL() {
 			if (text::parseFloat(args, d))
 				material.A = channel(d);
 		} else if (text::equalsNoCase(word, "map_kd")) {
-			//the name, without the quotes some exporters put around it
-			std::string name = text::trimmed(text::afterFirstWord(str));
-			if (!name.empty() && name.front() == '"')
-				name.erase(0, 1);
-			if (!name.empty() && name.back() == '"')
-				name.pop_back();
-			material.texture = name;
+			material.texture = mapFileName(str);
+		} else if (text::equalsNoCase(word, "map_d")) {
+			material.alpha = mapFileName(str);
 		} else if (text::equalsNoCase(word, "kd")) {
 			float r, g, b;
 			if (text::parseFloat(args, r) && text::parseFloat(args, g) && text::parseFloat(args, b)) {
@@ -243,6 +233,26 @@ void ObjLoader::readMTL() {
 		has_textures = true;
 	if (cnt)
 		has_colors = true;
+}
+
+std::string ObjLoader::resolveTexturePath(std::string name) {
+	sanitizeTextureFilepath(name);
+	//a texture name is relative to the .mtl that names it; when the .mtl is in another folder and
+	//the name is not found next to it, the .obj's folder is still tried, which is where every name
+	//was looked up before.
+	std::string nextToMtl = joinPath(parentPath(mtl), name);
+	if (pathExists(nextToMtl))
+		return nextToMtl;
+	resolveTextureFilepath(filename, name);
+	return name;
+}
+
+int32_t ObjLoader::addTexture(const LoadTexture &texture) {
+	for (size_t i = 0; i < texture_filenames.size(); i++)
+		if (texture_filenames[i] == texture)
+			return int32_t(i);
+	texture_filenames.push_back(texture);
+	return int32_t(texture_filenames.size() - 1);
 }
 
 void ObjLoader::cacheVertices() {
@@ -397,14 +407,8 @@ uint32_t ObjLoader::getTriangles(uint32_t size, Triangle *faces) {
 			if (!current_color)
 				current_color = default_color;
 
-			current_texture_id = -1;
-			auto texture = textures_map.find(str);
-			if (texture != textures_map.end() && texture->second.length() > 0) {
-				for (size_t i = 0; i < texture_filenames.size(); i++) {
-					if (texture_filenames[i].filename == texture->second)
-						current_texture_id = int32_t(i);
-				}
-			}
+			const auto texture = material_textures.find(str);
+			current_texture_id = texture == material_textures.end() ? -1 : texture->second;
 			continue;
 		}
 

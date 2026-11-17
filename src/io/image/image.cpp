@@ -97,9 +97,77 @@ std::vector<BoxSpan> boxSpans(int source, int target) {
 	return spans;
 }
 
+//An average of a channel, rounded to a byte
+unsigned channel(float v) {
+	return unsigned(std::min(255.0f, std::max(0.0f, v + 0.5f)));
+}
+
 uint32_t packPixel(const float *rgb) {
-	auto channel = [](float v) { return unsigned(std::min(255.0f, std::max(0.0f, v + 0.5f))); };
 	return Image::rgb(channel(rgb[0]), channel(rgb[1]), channel(rgb[2]));
+}
+
+//The box filter of an image to width x height. load(pixel, values) gives the Channels values a
+//pixel adds to the average, store(values) the pixel of the averages.
+template <int Channels, class Load, class Store>
+Image boxFiltered(const Image &source, int width, int height, Load load, Store store) {
+	const std::vector<BoxSpan> columns = boxSpans(source.width(), width);
+	const std::vector<BoxSpan> rows = boxSpans(source.height(), height);
+	Image result(width, height);
+	std::vector<float> row(size_t(width) * Channels), sum(size_t(width) * Channels);
+	for(int y = 0; y < height; y++) {
+		std::fill(sum.begin(), sum.end(), 0.0f);
+		const BoxSpan &rowSpan = rows[size_t(y)];
+		for(size_t r = 0; r < rowSpan.weights.size(); r++) {
+			//the source row, filtered across to the target width
+			const uint32_t *from = source.scanLine(rowSpan.first + int(r));
+			for(int x = 0; x < width; x++) {
+				const BoxSpan &column = columns[size_t(x)];
+				float filtered[Channels] = {};
+				for(size_t c = 0; c < column.weights.size(); c++) {
+					float values[Channels];
+					load(from[column.first + int(c)], values);
+					const float w = column.weights[c];
+					for(int k = 0; k < Channels; k++)
+						filtered[k] += w * values[k];
+				}
+				for(int k = 0; k < Channels; k++)
+					row[size_t(x) * Channels + k] = filtered[k];
+			}
+			const float w = rowSpan.weights[r];
+			for(size_t k = 0; k < sum.size(); k++)
+				sum[k] += w * row[k];
+		}
+		uint32_t *to = result.scanLine(y);
+		for(int x = 0; x < width; x++)
+			to[x] = store(&sum[size_t(x) * Channels]);
+	}
+	return result;
+}
+
+//The red, green and blue of a pixel, as numbers
+void loadColor(uint32_t p, float *rgb) {
+	rgb[0] = float((p >> 16) & 0xff);
+	rgb[1] = float((p >> 8) & 0xff);
+	rgb[2] = float(p & 0xff);
+}
+
+//The averages of an image that is not opaque: the colors multiplied by the alpha, the alpha, and the
+//colors as they are, for a pixel whose whole area is cut out (it has no drawn color to take)
+const int WeightedChannels = 7;
+
+void loadWeighted(uint32_t p, float *values) {
+	loadColor(p, values + 4);
+	const float a = float(Image::alpha(p));
+	for(int k = 0; k < 3; k++)
+		values[k] = values[4 + k] * a;
+	values[3] = a;
+}
+
+uint32_t storeWeighted(const float *values) {
+	const float a = values[3];
+	if(a <= 0.0f)
+		return Image::rgba(channel(values[4]), channel(values[5]), channel(values[6]), 0);
+	return Image::rgba(channel(values[0] / a), channel(values[1] / a), channel(values[2] / a), channel(a));
 }
 
 } //namespace
@@ -111,39 +179,46 @@ Image Image::downscaled(int width, int height) const {
 		throw std::invalid_argument("an image is downscaled to a size larger than its own");
 	if(width == width_ && height == height_)
 		return *this;
+	if(isOpaque())
+		return boxFiltered<3>(*this, width, height, loadColor, packPixel);
+	return boxFiltered<WeightedChannels>(*this, width, height, loadWeighted, storeWeighted);
+}
 
-	const std::vector<BoxSpan> columns = boxSpans(width_, width);
-	const std::vector<BoxSpan> rows = boxSpans(height_, height);
-	Image result(width, height);
-	std::vector<float> row(size_t(width) * 3), sum(size_t(width) * 3);
-	for(int y = 0; y < height; y++) {
-		std::fill(sum.begin(), sum.end(), 0.0f);
-		const BoxSpan &rowSpan = rows[size_t(y)];
-		for(size_t r = 0; r < rowSpan.weights.size(); r++) {
-			//the source row, filtered across to the target width
-			const uint32_t *from = scanLine(rowSpan.first + int(r));
-			for(int x = 0; x < width; x++) {
-				const BoxSpan &column = columns[size_t(x)];
-				float rgb[3] = {0, 0, 0};
-				for(size_t c = 0; c < column.weights.size(); c++) {
-					const uint32_t p = from[column.first + int(c)];
-					const float w = column.weights[c];
-					rgb[0] += w * float((p >> 16) & 0xff);
-					rgb[1] += w * float((p >> 8) & 0xff);
-					rgb[2] += w * float(p & 0xff);
-				}
-				for(int k = 0; k < 3; k++)
-					row[size_t(x) * 3 + k] = rgb[k];
-			}
-			const float w = rowSpan.weights[r];
-			for(size_t k = 0; k < sum.size(); k++)
-				sum[k] += w * row[k];
+bool Image::isOpaque() const {
+	const size_t count = size_t(width_) * size_t(height_);
+	for(size_t i = 0; i < count; i++)
+		if(alpha(pixels_[i]) != 255)
+			return false;
+	return true;
+}
+
+void Image::setOpaque() {
+	const size_t count = size_t(width_) * size_t(height_);
+	for(size_t i = 0; i < count; i++)
+		pixels_[i] |= Opaque;
+}
+
+void Image::setAlphaFrom(const Image &mask) {
+	if(isNull() || mask.isNull())
+		return;
+	const bool fromAlpha = !mask.isOpaque();
+	for(int y = 0; y < height_; y++) {
+		const uint32_t *from = mask.scanLine(int(int64_t(y) * mask.height_ / height_));
+		uint32_t *to = scanLine(y);
+		for(int x = 0; x < width_; x++) {
+			const uint32_t m = from[int64_t(x) * mask.width_ / width_];
+			//the luminance of Rec. 601, in integers: the weights add up to 1000
+			const unsigned value = fromAlpha ? alpha(m)
+			                                 : (299 * ((m >> 16) & 0xff) + 587 * ((m >> 8) & 0xff) + 114 * (m & 0xff) + 500) / 1000;
+			to[x] = (to[x] & 0x00ffffffu) | (uint32_t(value) << 24);
 		}
-		uint32_t *to = result.scanLine(y);
-		for(int x = 0; x < width; x++)
-			to[x] = packPixel(&sum[size_t(x) * 3]);
 	}
-	return result;
+}
+
+void Image::binarizeAlpha() {
+	const size_t count = size_t(width_) * size_t(height_);
+	for(size_t i = 0; i < count; i++)
+		pixels_[i] = alpha(pixels_[i]) >= CutoutThreshold ? (pixels_[i] | Opaque) : (pixels_[i] & ~Opaque);
 }
 
 } //namespace

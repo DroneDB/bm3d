@@ -5,10 +5,32 @@
 #include "../common/pathutil.h"
 #include "../io/image/image_decoder.h"
 #include "../io/image/jpeg_codec.h"
+#include "../io/image/webp_codec.h"
 #include "texpyramid.h"
 
 using namespace bm3d::detail;
 using namespace std;
+
+namespace {
+
+//The texture of a material: its colors, opaque, or with the alpha that cuts it out (its own alpha,
+//or that of a mask)
+Image loadTexture(const LoadTexture &file, const ToneMap &toneMap) {
+	std::string error;
+	const bool ownAlpha = file.alphaFilename == file.filename;
+	Image img = loadImage(file.filename, toneMap, error, ownAlpha ? ImageAlpha::Keep : ImageAlpha::Drop);
+	if(img.isNull())
+		throw bm3d::detail::Error("could not load texture: " + file.filename + ": " + error);
+	if(file.isCutout() && !ownAlpha) {
+		const Image mask = loadImage(file.alphaFilename, error, ImageAlpha::Keep);
+		if(mask.isNull())
+			throw bm3d::detail::Error("could not load the alpha texture: " + file.alphaFilename + ": " + error);
+		img.setAlphaFrom(mask);
+	}
+	return img;
+}
+
+} //namespace
 
 void TexLevel::init(int t, TexAtlas* c, Image& texture, int _level = 0) {
 	tex = t;
@@ -113,10 +135,7 @@ void TexPyramid::init(int tex, TexAtlas *c, Image &texture) {
 }
 
 bool TexPyramid::init(int tex, TexAtlas *c, LoadTexture &file, const ToneMap &toneMap) {
-	std::string error;
-	Image img = loadImage(file.filename, toneMap, error);
-	if(img.isNull())
-		throw bm3d::detail::Error("could not load texture: " + file.filename + ": " + error);
+	Image img = loadTexture(file, toneMap);
 	//the kd-tree weighs each triangle by the texels it covers, from these sizes: left at 0 every
 	//triangle weighs nothing and the nodes are cut by triangle count alone, however much texture
 	//they hold
@@ -224,7 +243,9 @@ Image TexAtlas::getImg(Index index) {
 	//expensive decode without lock
 	std::string error;
 	Image img;
-	if(!bm3d::detail::JpegDecoder().decode(bytes.data(), bytes.size(), img, error) || uint32_t(img.width()) != d.w || uint32_t(img.height()) != d.h)
+	const bool decoded = d.lossless ? bm3d::detail::WebpDecoder().decode(bytes.data(), bytes.size(), img, error)
+	                                : bm3d::detail::JpegDecoder().decode(bytes.data(), bytes.size(), img, error);
+	if(!decoded || uint32_t(img.width()) != d.w || uint32_t(img.height()) != d.h)
 		throw bm3d::detail::Error("could not read back a texture tile: " + error);
 
 	{
@@ -284,9 +305,11 @@ void TexAtlas::pruneCacheLocked() {
 			d.w = it->second.image.width();
 			d.h = it->second.image.height();
 			//TODO: this could be made not under the lock as well
-			const std::vector<unsigned char> jpeg = bm3d::detail::JpegEncoder(quality).encode(it->second.image);
-			d.offset = storage.append(jpeg.data(), jpeg.size());
-			d.size = jpeg.size();
+			d.lossless = !it->second.image.isOpaque();
+			const std::vector<unsigned char> bytes = d.lossless ? WebpEncoder::lossless().encode(it->second.image)
+			                                                   : JpegEncoder(quality).encode(it->second.image);
+			d.offset = storage.append(bytes.data(), bytes.size());
+			d.size = bytes.size();
 			disk[index] = d;
 		}
 		ram.erase(it);

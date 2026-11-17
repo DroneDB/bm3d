@@ -97,6 +97,18 @@ TEST(TexelBlanking, theFlatColorIsTheMeanOfTheKeptTexels) {
     EXPECT_EQ(flat, Image::rgb(unsigned(sum[0] / kept), unsigned(sum[1] / kept), unsigned(sum[2] / kept)));
 }
 
+// The colour of the texels a cutout does not draw is not seen: the flat colour is the mean of the
+// texels that are drawn
+TEST(TexelBlanking, theFlatColorLeavesOutTheTexelsThatAreCutOut) {
+    Image image(kSide, kSide);
+    for (int y = 0; y < kSide; y++)
+        for (int x = 0; x < kSide; x++)
+            image.scanLine(y)[x] = x % 2 ? Image::rgb(200, 100, 50) : Image::rgba(0, 0, 255, 0);
+    blankUndrawnTexels(image, {triangleOfTexels()});
+    EXPECT_EQ(image.scanLine(60)[60], Image::rgb(200, 100, 50));
+    EXPECT_EQ(image.scanLine(15)[16], Image::rgba(0, 0, 255, 0));  // inside the triangle: kept
+}
+
 TEST(TexelBlanking, anImageWithNoTriangleIsLeftAsItIs) {
     Image image = distinctImage();
     blankUndrawnTexels(image, {});

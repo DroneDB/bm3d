@@ -352,6 +352,22 @@ most 1024 pixels; the format does not limit it. When a reader reads a texture it
 that `length` is at least 12, that bytes 0 to 3 are `RIFF` and that bytes 8 to 11 are `WEBP`; otherwise, or
 when the WebP decoder refuses the image, it reports a corrupt texture (section 11).
 
+**Cutouts.** A texture MAY have an alpha channel. Its alpha is a cutout: the texels with an alpha of 255
+are drawn and those with an alpha of 0 are not (they are cut out of the triangles that read them). A
+writer of bm3d writes an alpha only for a node texture that cuts out at least one texel, only the
+values 0 and 255, and without loss; the colours of the texels cut out are kept, since a client that
+filters the texture reads them along the edges of the cutout. A node texture that cuts nothing out has
+no alpha, as every texture of a file written before cutouts existed. Whether a texture has an alpha is
+told by the image itself: a lossy WebP image with an alpha starts with the `VP8X` chunk and has the
+alpha bit (`0x10`) of its flags (byte 20 of the file) set; a lossless one starts with the `VP8L` chunk
+and has the bit `alpha_is_used` (bit 4 of byte 24 of the file) set. A client draws a texture with an
+alpha with an alpha test at half (0.5): the edge of the cutout is then where the filtered alpha is
+half. It tests the alpha of the texture only, not the alpha of the vertex colours (the opacity of a
+material, which this format does not blend). A client that ignores the alpha draws the file as it drew
+every file before: opaque, with the colours of the texels cut out. This is an additive change (section
+8): the payload is still a WebP image decoded to 8-bit RGBA, and no field of the header or of the index
+says anything new.
+
 ## 7. Metadata block
 
 The block is `metadataLength` bytes at `metadataOffset`: **one JSON object** as RFC 8259 defines it,
@@ -396,8 +412,9 @@ same.
   is a Nexus file).
 * **An additive change does not change the version**, because an older reader still reads the file: more
   bytes at the end of the header (the reader reads the fields it knows and uses `headerSize` to know where
-  the header ends, and checks that no section starts inside it), a new key in the metadata block. A new
-  header field is never a new meaning of a field of this document.
+  the header ends, and checks that no section starts inside it), a new key in the metadata block, a
+  meaning given to what a payload already holds and an older reader ignores (the alpha of a texture,
+  section 6). A new header field is never a new meaning of a field of this document.
 * **A change that an older reader cannot read raises the version**: a new flag bit, a new texture codec, a
   new attribute or type in a layout, a different record size, a different meaning of a field, a different
   alignment rule. The Hub then ships a viewer that reads the new version before DroneDB takes a bm3d that

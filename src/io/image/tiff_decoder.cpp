@@ -93,7 +93,7 @@ uint32_t tiffPixel(uint32_t abgr, bool premultiplied) {
 			b = (b * inverse + 0x8000) >> 16;
 		}
 	}
-	return Image::rgb(r, g, b);
+	return Image::rgba(r, g, b, a);
 }
 
 //A TIFF opened from memory, closed when this goes

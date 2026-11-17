@@ -23,8 +23,10 @@ for more details.
 
 namespace bm3d::detail {
 
-//An opaque true color image: every pixel is 0xffRRGGBB. This is everything the texture code
-//of the builder needs.
+//A true color image with an alpha channel: every pixel is 0xAARRGGBB, with colors that are not
+//multiplied by the alpha. The colors of a model are opaque (alpha 255); the alpha of a texture is a
+//cutout, the texels that are not drawn (see binarizeAlpha). This is everything the texture code of
+//the builder needs.
 //
 //Copying an Image is cheap: copies share their pixels. An image is therefore written only
 //where it was just created (fill(), draw(), scanLine()); every other operation returns a
@@ -36,6 +38,13 @@ public:
 	static uint32_t rgb(unsigned r, unsigned g, unsigned b) {
 		return Opaque | (uint32_t(r & 0xff) << 16) | (uint32_t(g & 0xff) << 8) | uint32_t(b & 0xff);
 	}
+	static uint32_t rgba(unsigned r, unsigned g, unsigned b, unsigned a) {
+		return (uint32_t(a & 0xff) << 24) | (rgb(r, g, b) & 0x00ffffffu);
+	}
+	static unsigned alpha(uint32_t pixel) { return pixel >> 24; }
+	//An alpha at or above this is drawn, below it is cut out: half of full intensity, as the cutoff
+	//of a masked glTF material is by default
+	static constexpr unsigned CutoutThreshold = 128;
 
 	Image() = default;
 	//the pixels are not initialised; throws std::bad_alloc when there is no memory for them
@@ -52,6 +61,18 @@ public:
 
 	void fill(uint32_t pixel);
 
+	//Whether every pixel has an alpha of 255. A null image is opaque.
+	bool isOpaque() const;
+	//Sets the alpha of every pixel to 255, keeping the colors
+	void setOpaque();
+	//Sets the alpha of every pixel to 255 when it is at least CutoutThreshold and to 0 otherwise:
+	//the cutout a viewer draws with an alpha test, which is the same whatever the viewer filters
+	void binarizeAlpha();
+	//Sets the alpha of every pixel from the mask: the alpha of the mask when it is not opaque, its
+	//luminance otherwise (a mask drawn in gray, white where the texture is drawn). A mask of another
+	//size is read at the pixel nearest to the same place.
+	void setAlphaFrom(const Image &mask);
+
 	//The part of the image inside the rectangle, which must lie inside the image.
 	Image copy(int x, int y, int width, int height) const;
 	//Upside down.
@@ -64,8 +85,11 @@ public:
 
 	//Resized to width x height, which is no larger than this image, each pixel the average of
 	//the source area it covers (a box filter): a texture made smaller keeps the mean color of
-	//its details instead of a scattering of the pixels that happened to be picked. A null image
-	//when width or height is not positive; throws std::invalid_argument when either is larger.
+	//its details instead of a scattering of the pixels that happened to be picked. An image that is
+	//not opaque averages its alpha (the share of the area that is drawn) and weighs each color by
+	//its alpha, so that the colors of the texels cut out do not tint those that are drawn; an
+	//opaque image comes out opaque. A null image when width or height is not positive; throws
+	//std::invalid_argument when either is larger.
 	Image downscaled(int width, int height) const;
 
 private:

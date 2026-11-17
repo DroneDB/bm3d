@@ -14,9 +14,10 @@
 
 namespace bm3d::detail {
 
-//Decodes one family of image formats from data in memory. The alpha channel of an image is
-//dropped and its colors kept as they are stored (a pixel that is transparent keeps the color it has
-//in the file).
+//Decodes one family of image formats from data in memory. The alpha channel of an image is kept
+//(255 for an image without one) and its colors as they are stored, not multiplied by the alpha (a
+//pixel that is transparent keeps the color it has in the file). The samples wider than 8 bits that
+//are read as data (below) are opaque.
 //
 //A decoder that reads samples wider than 8 bits as data (the 16 bit and float samples of a TIFF,
 //which hold reflectance or radiance) maps them to 8 bits with a ToneMap: decode() with a stretch
@@ -67,12 +68,17 @@ private:
 	std::vector<std::unique_ptr<ImageDecoder>> decoders_;
 };
 
+//What a texture file is read for: its colors only (every pixel opaque, which the colors of a model
+//are), or its colors and its alpha (the texture of a cutout, or the mask of one)
+enum class ImageAlpha { Drop, Keep };
+
 //Reads a texture file with the decoders of `registry`. Returns a null image, and the reason in
 //error (UTF-8), when the file cannot be opened or read as an image.
-Image loadImage(const std::string &path, std::string &error,
+Image loadImage(const std::string &path, std::string &error, ImageAlpha alpha = ImageAlpha::Drop,
                 const ImageDecoderRegistry &registry = ImageDecoderRegistry::standard());
 //The same, with the samples wider than 8 bits mapped by toneMap
 Image loadImage(const std::string &path, const ToneMap &toneMap, std::string &error,
+                ImageAlpha alpha = ImageAlpha::Drop,
                 const ImageDecoderRegistry &registry = ImageDecoderRegistry::standard());
 //Adds the samples of the texture file that are wider than 8 bits to samples (see
 //ImageDecoder::addWideSamples). False when it has none or the file cannot be read: loading it then

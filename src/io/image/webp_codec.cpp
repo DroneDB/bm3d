@@ -30,20 +30,14 @@ bool readWebp(const unsigned char *data, size_t size, Image &image, std::string 
 	}
 	image = Image(features.width, features.height);
 	const size_t stride = size_t(features.width) * 4;
-	//B, G, R, A in memory, as the pixels are, with the colors as stored
+	//B, G, R, A in memory, as the pixels are, with the colors as stored (an image without alpha is
+	//decoded with an alpha of 255)
 	uint8_t *decoded = WebPDecodeBGRAInto(data, size, reinterpret_cast<uint8_t *>(image.scanLine(0)),
 	                                      stride * size_t(features.height), int(stride));
 	if(!decoded) {
 		error = "could not decode the WebP image";
 		image = Image();
 		return false;
-	}
-	if(features.has_alpha) {
-		for(int y = 0; y < image.height(); y++) {
-			uint32_t *pixels = image.scanLine(y);
-			for(int x = 0; x < image.width(); x++)
-				pixels[x] |= Image::Opaque;
-		}
 	}
 	return true;
 }
@@ -62,25 +56,35 @@ std::vector<unsigned char> WebpEncoder::encode(const Image &image) const {
 	if(image.isNull())
 		throw Error("there is no image to encode");
 	WebPConfig config;
-	if(!WebPConfigPreset(&config, WEBP_PRESET_PHOTO, float(std::min(100, std::max(0, quality_)))))
-		throw Error("could not set up the WebP encoder");
-	//effort 2 instead of the default 4: twice as fast on node textures, for 3% more bytes
-	config.method = 2;
+	if(lossless_) {
+		if(!WebPConfigInit(&config) || !WebPConfigLosslessPreset(&config, 0))
+			throw Error("could not set up the WebP encoder");
+	} else {
+		if(!WebPConfigPreset(&config, WEBP_PRESET_PHOTO, float(std::min(100, std::max(0, quality_)))))
+			throw Error("could not set up the WebP encoder");
+		//effort 2 instead of the default 4: twice as fast on node textures, for 3% more bytes
+		config.method = 2;
+	}
+	const bool alpha = !image.isOpaque();
+	//the colors under an alpha of 0 are kept: the encoder would otherwise flatten them
+	if(alpha)
+		config.exact = 1;
 
 	WebPPicture picture;
 	if(!WebPPictureInit(&picture))
 		throw Error("could not set up the WebP encoder");
 	picture.width = image.width();
 	picture.height = image.height();
-	picture.use_argb = 0;
+	picture.use_argb = lossless_ ? 1 : 0;
 	WebPMemoryWriter writer;
 	WebPMemoryWriterInit(&writer);
 	picture.writer = WebPMemoryWrite;
 	picture.custom_ptr = &writer;
 
-	//B, G, R, A in memory: the alpha byte is ignored, the pixels are opaque
-	const bool ok = WebPPictureImportBGRX(&picture, reinterpret_cast<const uint8_t *>(image.scanLine(0)),
-	                                      image.width() * 4) &&
+	//B, G, R, A in memory; the alpha byte of an opaque image is ignored
+	const uint8_t *pixels = reinterpret_cast<const uint8_t *>(image.scanLine(0));
+	const bool ok = (alpha ? WebPPictureImportBGRA(&picture, pixels, image.width() * 4)
+	                       : WebPPictureImportBGRX(&picture, pixels, image.width() * 4)) &&
 	                WebPEncode(&config, &picture);
 	const WebPEncodingError status = picture.error_code;
 	WebPPictureFree(&picture);

@@ -302,6 +302,15 @@ describe what was done to them before.
   double coordinates are gone. The loader takes the build's logger and warns of each header line
   that plylib skipped. A file of float coordinates gives the same model.
 
+- `src/io/mesh/objloader.{h,cpp}`, `src/io/mesh/meshloader.h`, `src/io/image/`, `src/build/`
+  `texpyramid.{h,cpp}`, `node_texture_baker.cpp`, `texel_blanking.{h,cpp}`: a material's `map_d`
+  names the image whose alpha (or luminance) cuts its texture out, and a texture is one per pair of
+  colour and alpha images. The decoders keep the alpha and the textures without `map_d` are made
+  opaque when they are loaded; the downscaling weighs the colours by the alpha, the tiles with an
+  alpha spill to disk as lossless WebP instead of JPEG, a node texture's alpha is cut at half, its
+  flat colour is the mean of the texels it draws, and it is written with an alpha when it cuts a
+  texel out. Models without `map_d` give the same file.
+
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
 

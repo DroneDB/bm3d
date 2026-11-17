@@ -72,6 +72,13 @@ private:
 	uint32_t  current_color = 0;
 	int32_t  current_texture_id = -1;
 	std::unordered_map<std::string, uint32_t> colors_map;
-	std::unordered_map<std::string, std::string> textures_map;
+	//the texture of each material that has one, an index in texture_filenames
+	std::unordered_map<std::string, int32_t> material_textures;
+
+	//The index in texture_filenames of the texture, added when it is not there yet
+	int32_t addTexture(const LoadTexture &texture);
+	//The file a map line of the material library names, relative to the library (or, when not found
+	//there, to the model)
+	std::string resolveTexturePath(std::string name);
 };
 #endif // BM3D_OBJLOADER_H
