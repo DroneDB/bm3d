@@ -57,6 +57,13 @@ sides of the triangles (`THREE.DoubleSide`): the winding of many meshes is not c
 surface is seen from behind when the camera passes under it. A material of your own decides that with
 its `side`.
 
+A texture with an alpha channel cuts texels out (the leaves of a plant, a decal with holes: a material
+with a mask in the model the file was built from). The material the object makes draws it with an
+alpha test of `CUTOUT_ALPHA_TEST` (0.5, exported) once such a texture has arrived; it reads the vertex
+colours as red, green and blue, so that the opacity of a material, which it does not blend, does not
+cut the model out. `model.hasCutout` says whether a texture with a cutout has arrived: a material of
+your own sets its `alphaTest` then. A viewer older than 1.1.3 draws such a model opaque.
+
 `model.dispose()` frees what the model holds on the GPU. `model.flush()` drops the loaded nodes.
 `model.computeBoundingBox()` gives the box around the finest nodes, and `raycast` works against the
 coarsest level. `model.computePrincipalAxes()` gives the principal axes of the vertices of the coarsest

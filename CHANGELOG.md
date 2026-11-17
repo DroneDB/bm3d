@@ -17,6 +17,12 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   a mask cut out were drawn (the masked-out part of a gold leaf decal covered the dish under it). The
   format is unchanged: the WebP image says whether it has an alpha (docs/FORMAT.md, section 6). The
   textures of a model without `map_d` are the same bytes.
+- **The viewer draws cutouts.** It tells a texture with an alpha by the header of its WebP image
+  and, once one has arrived, sets an alpha test of 0.5 (`CUTOUT_ALPHA_TEST`) on the material it made;
+  `Bm3dObject.hasCutout` says so to an application with a material of its own. The material it makes
+  reads the vertex colours as red, green and blue: their alpha (the opacity of a material, which the
+  viewer does not blend and always drew opaque) does not take part in the test. A viewer of 1.1.2 or
+  older draws a file with cutouts opaque.
 - **The colours of faces keep their borders.** The colour of a material (OBJ `Kd`) or of an STL
   face is the colour of every corner of its faces, and the builder merges the vertices of a node by
   position, so a vertex shared by faces of two colours kept one of them and the triangles of the

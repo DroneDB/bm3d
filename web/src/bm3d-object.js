@@ -18,6 +18,13 @@ function noCentering() {
 	throw new Error('bm3d: centering, and in general applying a matrix to the geometry, is not supported.');
 }
 
+/**
+ * The alpha test of a model whose textures cut texels out: a texel of the file is drawn (alpha 255) or
+ * cut out (alpha 0), and between them, where the texture is filtered, the edge of the cutout is
+ * where the alpha is half.
+ */
+export const CUTOUT_ALPHA_TEST = 0.5;
+
 /** A 1x1 white texture: three needs a `map` to put a sampler in the shader; the nodes bring their own. */
 function placeholderTexture() {
 	const texture = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, RGBAFormat);
@@ -31,7 +38,8 @@ function placeholderTexture() {
  * kept it consistent, and many do not (scans, terrain patches wound clockwise, meshes of mixed
  * winding), and an open surface is seen from behind as soon as the camera passes under it. Culling
  * the back faces would leave holes there; three.js turns the normal of a back face to the camera, so
- * it is lit as the front.
+ * it is lit as the front. The alpha test that draws the cutouts is set when the first texture that has
+ * one arrives (see syncCutout).
  */
 function createMaterial(mesh) {
 	const Material = mesh.hasNormals ? MeshLambertMaterial : MeshBasicMaterial;
@@ -41,11 +49,29 @@ function createMaterial(mesh) {
 	return new Material(parameters);
 }
 
-/** Adds to the placeholder geometry the attributes the model has, so that the shader reads them. */
-function addAttributes(geometry, mesh) {
+/**
+ * Adds to the placeholder geometry the attributes the model has, so that the shader reads them. The
+ * material the object makes reads the colours as red, green and blue: it draws the model opaque, and
+ * the alpha of the vertices (the opacity of a material, which it does not blend) does not cut the
+ * model out where the alpha test of a cutout texture runs. A material of the caller reads the alpha too.
+ */
+function addAttributes(geometry, mesh, colorAlpha) {
 	if (mesh.hasNormals) geometry.setAttribute('normal', new BufferAttribute(new Float32Array(3), 3));
 	if (mesh.hasUvs) geometry.setAttribute('uv', new BufferAttribute(new Float32Array(2), 2));
-	if (mesh.hasColors) geometry.setAttribute('color', new BufferAttribute(new Uint8Array(4), 4, true));
+	const colorSize = colorAlpha ? 4 : 3;
+	if (mesh.hasColors) geometry.setAttribute('color', new BufferAttribute(new Uint8Array(colorSize), colorSize, true));
+}
+
+/**
+ * Draw hook of three, before it chooses the shader program of the frame: the material the object
+ * made gets the alpha test once a texture with a cutout has arrived, so the nodes that bring it are
+ * drawn with it from their first frame.
+ */
+function syncCutout() {
+	const { instance } = this.geometry;
+	if (this.autoMaterial && instance && instance.isReady && instance.mesh.hasCutout && this.material.alphaTest !== CUTOUT_ALPHA_TEST) {
+		this.material.alphaTest = CUTOUT_ALPHA_TEST;
+	}
 }
 
 /** Draw hook of three: runs after three drew the placeholder, with its shader program still in use. */
@@ -80,7 +106,7 @@ function afterRender(renderer, scene, camera, geometry) {
  * `onLoad(object)` is called when the model has been opened (its index read), `onUpdate()` when a
  * node has arrived (render again). `material` is optional: without one, a white Lambert (or basic,
  * for a model without normals) material is made that shows the vertex colours and the textures, on
- * both sides of the triangles.
+ * both sides of the triangles, and cuts out the texels the textures cut out (see `hasCutout`).
  * `options`: decoderPath, cache, fetch, requestInit, onError (see the README).
  */
 export class Bm3dObject extends Mesh {
@@ -99,7 +125,7 @@ export class Bm3dObject extends Mesh {
 			const [x, y, z] = mesh.sphere.center;
 			geometry.boundingSphere = new Sphere(new Vector3(x, y, z), mesh.sphere.radius);
 			geometry.boundingBox = this.computeBoundingBox();
-			addAttributes(geometry, mesh);
+			addAttributes(geometry, mesh, !this.autoMaterial);
 			if (this.autoMaterial) this.material = createMaterial(mesh);
 			if (onLoad) onLoad(this);
 		};
@@ -109,7 +135,18 @@ export class Bm3dObject extends Mesh {
 		instance.onError = options.onError || null;
 		instance.open(url, options);
 
+		this.onBeforeRender = syncCutout;
 		this.onAfterRender = afterRender;
+	}
+
+	/**
+	 * Whether a texture of the model that has arrived cuts texels out (its alpha). The material the
+	 * object makes draws them with an alpha test of CUTOUT_ALPHA_TEST; a material of the caller sets
+	 * its own `alphaTest`.
+	 */
+	get hasCutout() {
+		const { instance } = this.geometry;
+		return Boolean(instance && instance.isReady && instance.mesh.hasCutout);
 	}
 
 	/** Frees what the model holds on the GPU and forgets it. */

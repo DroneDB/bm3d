@@ -45,7 +45,7 @@ function contentHash(bytes) {
 describe('the fixtures', () => {
 	it('are the golden files of the command line: their content hashes are the lines of hashes.txt', () => {
 		const fixtures = readdirSync(here('./fixtures')).filter((name) => name.endsWith('.bm3d'));
-		expect(fixtures.sort()).toEqual(['sphere.bm3d', 'terrain.bm3d']);
+		expect(fixtures.sort()).toEqual(['cutout.bm3d', 'sphere.bm3d', 'terrain.bm3d']);
 		for (const name of fixtures) {
 			const hash = contentHash(new Uint8Array(readFileSync(here(`./fixtures/${name}`))));
 			expect(hash, `${name}: write the fixtures again (web/tests/fixtures/README.md)`).toBe(goldenHashes.get(basename(name, '.bm3d')));

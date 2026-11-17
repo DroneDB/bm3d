@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { Matrix4, PerspectiveCamera } from 'three';
 
-import { Bm3dObject } from '../src/bm3d-object.js';
+import { Bm3dObject, CUTOUT_ALPHA_TEST } from '../src/bm3d-object.js';
 import { getContext, setTargetError } from '../src/context.js';
 import { uploadTexture } from '../src/gl-upload.js';
 import { Instance } from '../src/instance.js';
@@ -155,7 +155,8 @@ describe('Bm3dObject', () => {
 		const color = object.geometry.getAttribute('color');
 		expect(color.array).toBeInstanceOf(Uint8Array);
 		expect(color.normalized).toBe(true);
-		expect(color.itemSize).toBe(4);
+		// red, green and blue: the alpha of the vertices does not cut the model out where a cutout texture is tested
+		expect(color.itemSize).toBe(3);
 		expect(object.geometry.getAttribute('uv').itemSize).toBe(2);
 		expect(object.geometry.getAttribute('normal').itemSize).toBe(3);
 		expect(object.geometry.boundingSphere.radius).toBeCloseTo(1.5);
@@ -174,6 +175,31 @@ describe('Bm3dObject', () => {
 		const { object } = await loadObject(model({ textures: false, normals: false }));
 		expect(object.material.isMeshBasicMaterial).toBe(true);
 		expect(object.geometry.getAttribute('normal')).toBeUndefined();
+	});
+
+	it('gives the colours with their alpha to a material of the caller', async () => {
+		const { object } = await loadObject(model({ textures: false, colors: true }), { isMaterial: true });
+		expect(object.geometry.getAttribute('color').itemSize).toBe(4);
+	});
+
+	it('tests the alpha of its material once a texture with a cutout has arrived', async () => {
+		const { object } = await loadObject(model({ textures: true }));
+		object.onBeforeRender();
+		expect(object.hasCutout).toBe(false);
+		expect(object.material.alphaTest).toBe(0);
+		object.geometry.instance.mesh.hasCutout = true;
+		object.onBeforeRender();
+		expect(object.hasCutout).toBe(true);
+		expect(object.material.alphaTest).toBe(CUTOUT_ALPHA_TEST);
+	});
+
+	it('leaves the alpha test of a material of the caller to the caller', async () => {
+		const given = { isMaterial: true, alphaTest: 0 };
+		const { object } = await loadObject(model({ textures: true }), given);
+		object.geometry.instance.mesh.hasCutout = true;
+		object.onBeforeRender();
+		expect(object.hasCutout).toBe(true);
+		expect(given.alphaTest).toBe(0);
 	});
 
 	it('has a bounding box around the leaves', async () => {

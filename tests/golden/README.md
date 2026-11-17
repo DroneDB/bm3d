@@ -1,11 +1,12 @@
 # Golden files
 
-`golden_test.cpp` builds ten small models with the program (a cube from an OBJ, a coloured
+`golden_test.cpp` builds eleven small models with the program (a cube from an OBJ, a coloured
 pyramid from a PLY, a wavy surface from a binary STL, a square with a degenerate triangle, a
 textured square, a surface of several nodes, a textured surface of thousands of pieces of texture of
-the same size, 40 triangles that share one edge, and the two models of the viewer's tests: a
-textured terrain of ten nodes and a sphere with vertex colours) and compares the content hash of each file (the
-SHA-256 of every byte but the metadata block, `docs/FORMAT.md` section 9) with the line of
+the same size, 40 triangles that share one edge, and the three models of the viewer's tests: a
+textured terrain of ten nodes, a sphere with vertex colours and a square whose texture cuts out its
+right half) and compares the content hash of each file (the SHA-256 of every byte but the metadata
+block, `docs/FORMAT.md` section 9) with the line of
 `hashes.txt` that names it. A change of the code that alters a file outside its metadata fails
 there, so it is a decision and not an accident; the failure prints the hash to put in `hashes.txt`.
 
@@ -22,8 +23,9 @@ a node, equal costs of the collapses of a flat region, equal pieces of texture, 
 two faces. The inputs are written with integer arithmetic for the same reason.
 
 The files are the fixtures of the other readers of the format (the viewer's tests read every
-`.bm3d` file of the folder they are given, and `web/tests/fixtures/` holds copies of `terrain` and
-`sphere`, which the viewer's tests check against `hashes.txt`). They are not committed: the test copies each one to
+`.bm3d` file of the folder they are given, and `web/tests/fixtures/` holds copies of `terrain`,
+`sphere` and `cutout`, which the viewer's tests check against `hashes.txt`). They are not committed:
+the test copies each one to
 the folder named by the environment variable `BM3D_GOLDEN_DIR`, by default `golden/` in the build
 folder, with `<name>.sha256` beside it. To write them without running the other tests:
 

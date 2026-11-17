@@ -38,6 +38,7 @@ beforeAll(async () => {
 	};
 	const files = {
 		'/terrain.bm3d': { data: read('./fixtures/terrain.bm3d') },
+		'/cutout.bm3d': { data: read('./fixtures/cutout.bm3d') },
 		'/decoder/corto-worker.js': { data: read('../dist/corto-worker.js'), type: 'text/javascript' },
 		'/decoder/corto.wasm': { data: read('../dist/corto.wasm'), type: 'application/wasm' },
 	};
@@ -56,12 +57,12 @@ afterEach(() => {
 
 const count = (gl, name) => gl.calls.filter((c) => c.name === name).length;
 
-/** A mesh of the terrain, a context, and promises for what happens to it. */
-async function setup({ fetch } = {}) {
+/** A mesh of the terrain (or of another fixture), a context, and promises for what happens to it. */
+async function setup({ fetch, fixture = 'terrain' } = {}) {
 	const gl = fakeGl({ returns: { createBuffer: () => ({}), createTexture: () => ({}) } });
 	const context = getContext(gl);
 	const errors = [];
-	const mesh = new Bm3dMesh(`${server.url}/terrain.bm3d`, { decoderPath, fetch, onError: (error, node) => errors.push({ error, node }) });
+	const mesh = new Bm3dMesh(`${server.url}/${fixture}.bm3d`, { decoderPath, fetch, onError: (error, node) => errors.push({ error, node }) });
 	await mesh.ready;
 	const arrived = [];
 	const instance = { onUpdate: () => arrived.splice(0).forEach((resolve) => resolve()) };
@@ -86,6 +87,20 @@ function tamperedFetch(change) {
 		return (await change(init.headers.Range, response, init)) || response;
 	};
 }
+
+describe('a texture with an alpha', () => {
+	it('says that the model has a cutout once it has arrived; an opaque one does not', async () => {
+		for (const [fixture, cutout] of [['terrain', false], ['cutout', true]]) {
+			const { context, mesh, instance, next } = await setup({ fixture });
+			expect(mesh.hasCutout).toBe(false);
+			const arrival = next();
+			mesh.request(context, 0, instance);
+			await arrival;
+			expect(mesh.hasCutout, fixture).toBe(cutout);
+			mesh.release(context, 0);
+		}
+	});
+});
 
 describe('a node that is requested', () => {
 	it('is decoded, put on the GPU with its texture, and dropped again', async () => {

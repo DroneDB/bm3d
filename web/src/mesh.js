@@ -9,7 +9,7 @@
 // is on the GPU, being loaded, or absent. The traversal (instance.js) says which nodes it wants;
 // the cache rule (context.js) chooses; this class loads and drops them.
 
-import { Bm3dError, checkTexture, ErrorCode } from './format.js';
+import { Bm3dError, checkTexture, ErrorCode, textureHasAlpha } from './format.js';
 import { getDecoder } from './decoder-client.js';
 import { decodeImage, uploadNode, uploadTexture } from './gl-upload.js';
 import { openModelFile } from './model-file.js';
@@ -75,6 +75,7 @@ export class Bm3dMesh {
 		this.texref = new Uint32Array(index.textureCount); // nodes that hold each texture
 		this.textureLoads = new Map();
 		this.root = null; // positions and triangles of node 0, for ray casting
+		this.hasCutout = false; // a texture that has arrived has an alpha: the texels it cuts out are not drawn
 
 		this.isReady = true;
 	}
@@ -188,6 +189,7 @@ export class Bm3dMesh {
 			throw new Bm3dError(ErrorCode.CORRUPT_TEXTURE, `texture ${tex} could not be decoded by the browser`, { cause });
 		}
 		if (this.texref[tex] === 0) return; // every node that wanted it has gone
+		if (textureHasAlpha(bytes)) this.hasCutout = true;
 		this.texids[tex] = uploadTexture(context.gl, image);
 	}
 

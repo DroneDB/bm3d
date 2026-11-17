@@ -453,6 +453,18 @@ export function checkTexture(bytes, index) {
 }
 
 /**
+ * Whether a texture (a WebP image, checked by checkTexture) has an alpha channel: the cutout of its
+ * node (section 6). A lossy image with alpha starts with the VP8X chunk, whose flags have the alpha
+ * bit; a lossless one with the VP8L chunk, whose header has the bit `alpha_is_used`.
+ */
+export function textureHasAlpha(bytes) {
+	const chunk = String.fromCharCode(...bytes.subarray(12, 16));
+	if (chunk === 'VP8X') return bytes.byteLength > 20 && (bytes[20] & 0x10) !== 0;
+	if (chunk === 'VP8L') return bytes.byteLength > 24 && (bytes[24] & 0x10) !== 0;
+	return false;
+}
+
+/**
  * Opens a file: the header, then the index, with every check of section 11. `source` is
  * `{ size, read(start, end) }` (see source.js). Nothing else is read.
  */

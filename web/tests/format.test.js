@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { Bm3dError, ErrorCode, openBm3d, openHeader, parseMetadata, readMetadata } from '../src/format.js';
+import { Bm3dError, ErrorCode, openBm3d, openHeader, parseMetadata, readMetadata, textureHasAlpha } from '../src/format.js';
 import { bufferSource } from '../src/source.js';
 import { workedExample } from './support/doc.js';
 import { model, modelSpec } from './support/models.js';
@@ -419,5 +419,33 @@ describe('the metadata block', () => {
 
 	it('is the empty object when there is none', () => {
 		expect(parse(new Uint8Array(0))).toEqual({});
+	});
+});
+
+describe('the alpha of a texture', () => {
+	/** The first bytes of a WebP file whose first chunk is `chunk`, with `bytes` after the chunk size. */
+	function webp(chunk, bytes) {
+		const data = new Uint8Array(40);
+		const ascii = (text, at) => data.set(new TextEncoder().encode(text), at);
+		ascii('RIFF', 0);
+		ascii('WEBP', 8);
+		ascii(chunk, 12);
+		data.set(bytes, 20);
+		return data;
+	}
+
+	it('is told by the alpha flag of an extended (VP8X) image', () => {
+		expect(textureHasAlpha(webp('VP8X', [0x10]))).toBe(true);
+		expect(textureHasAlpha(webp('VP8X', [0x20]))).toBe(false); // an ICC profile only
+	});
+
+	it('is told by the alpha_is_used bit of a lossless (VP8L) image', () => {
+		// the signature 0x2f, then 14 bits of width - 1, 14 of height - 1, the alpha bit and 3 bits of version
+		expect(textureHasAlpha(webp('VP8L', [0x2f, 0xff, 0xc0, 0xff, 0x1f]))).toBe(true);
+		expect(textureHasAlpha(webp('VP8L', [0x2f, 0xff, 0xc0, 0xff, 0x0f]))).toBe(false);
+	});
+
+	it('is none for a simple lossy (VP8) image, which has no alpha', () => {
+		expect(textureHasAlpha(webp('VP8 ', [0xff, 0xff, 0xff, 0xff, 0xff]))).toBe(false);
 	});
 });

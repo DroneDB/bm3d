@@ -3,7 +3,7 @@
 
 # Fixtures of the viewer tests
 
-Two small models in format 1, written by the bm3d command line. They are two of its golden files
+Three small models in format 1, written by the bm3d command line. They are three of its golden files
 (`tests/golden/` of the repository), and each `.sha256` file holds the content hash
 (docs/FORMAT.md, section 9) the golden test wrote next to it:
 
@@ -14,6 +14,9 @@ Two small models in format 1, written by the bm3d command line. They are two of 
   a triangle with two equal corners and a point inside the sphere is dropped by the encoder, so
   the node holds 2 906 vertices and 5 808 triangles, fewer than the input (docs/FORMAT.md,
   section 12).
+* `cutout.bm3d`: a square of two triangles whose texture (a 64 x 64 PNG with an alpha, named by the
+  `map_Kd` and the `map_d` of its material) cuts out its right half: one node and one texture, a
+  WebP image with an alpha of 255 on the left half and 0 on the right half.
 
 The inputs are made by `tests/golden/golden_test.cpp` with integer arithmetic and square roots,
 so the files are the same bytes on every platform. To write them again, after a change of the

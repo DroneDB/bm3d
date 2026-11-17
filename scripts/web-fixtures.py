@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Write the fixtures of the viewer's tests, web/tests/fixtures/, with the command line.
 
-They are two of the golden files (tests/golden/): the textured terrain and the sphere with vertex
-colours. The golden test program builds them with the bm3d program next to it and writes them,
-with their content hash in <name>.sha256, to BM3D_GOLDEN_DIR; this script points that at the
-fixtures folder and runs only those two tests. The files are the same bytes on every platform
-(the builder is deterministic and the inputs are made with integer arithmetic and square roots),
-so running this again with the same program gives the committed files; only the "generator" of
-their metadata names the version of the program.
+They are three of the golden files (tests/golden/): the textured terrain, the sphere with vertex
+colours and the square with a cutout texture. The golden test program builds them with the bm3d
+program next to it and writes them, with their content hash in <name>.sha256, to BM3D_GOLDEN_DIR;
+this script points that at the fixtures folder and runs only those three tests. The files are the
+same bytes on every platform (the builder is deterministic and the inputs are made with integer
+arithmetic and square roots), so running this again with the same program gives the committed
+files; only the "generator" of their metadata names the version of the program.
 
   web-fixtures.py --build <build folder>     the folder where CMake built the tests
 """
@@ -20,7 +20,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(ROOT, "web", "tests", "fixtures")
 # the golden tests whose files are the fixtures, and the names they write
-TESTS = {"aTexturedTerrainFromAnObj": "terrain", "aSphereWithColoursFromAPly": "sphere"}
+TESTS = {"aTexturedTerrainFromAnObj": "terrain", "aSphereWithColoursFromAPly": "sphere",
+         "aSquareWithACutoutTextureFromAnObj": "cutout"}
 
 
 def golden_program(build):

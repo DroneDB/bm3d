@@ -43,10 +43,16 @@ if (query.get('decoderPath')) options.decoderPath = query.get('decoderPath');
 if (query.get('cache')) options.cache = true;
 const object = new Bm3dObject(query.get('model'), (o) => {
 	const { center, radius } = o.geometry.boundingSphere;
-	// view=below: from under the model, which shows the back of a surface such as the terrain
+	// view=below: from under the model, which shows the back of a surface such as the terrain;
+	// view=top: straight down on it, x to the right of the canvas
 	const below = query.get('view') === 'below' ? -1 : 1;
-	camera.position.set(center.x + radius * 0.8, center.y - radius * 2.2, center.z + below * radius * 1.6);
-	camera.up.set(0, 0, 1);
+	if (query.get('view') === 'top') {
+		camera.position.set(center.x, center.y, center.z + radius * 2.5);
+		camera.up.set(0, 1, 0);
+	} else {
+		camera.position.set(center.x + radius * 0.8, center.y - radius * 2.2, center.z + below * radius * 1.6);
+		camera.up.set(0, 0, 1);
+	}
 	camera.lookAt(center);
 	state.loaded = true;
 }, () => state.updates++, renderer, undefined, options);
@@ -70,13 +76,15 @@ window.__pixels = () => {
 	const data = context.getImageData(0, 0, 400, 300).data;
 	const colors = new Set();
 	let drawn = 0;
+	const halves = [0, 0]; // the pixels drawn on the left and on the right half of the canvas
 	for (let i = 0; i < data.length; i += 4) {
 		if (Math.abs(data[i] - ${BACKGROUND[0]}) > 6 || Math.abs(data[i + 1] - ${BACKGROUND[1]}) > 6 || Math.abs(data[i + 2] - ${BACKGROUND[2]}) > 6) {
 			drawn++;
+			halves[(i / 4) % 400 < 200 ? 0 : 1]++;
 			colors.add((data[i] >> 3) << 10 | (data[i + 1] >> 3) << 5 | (data[i + 2] >> 3));
 		}
 	}
-	return { drawn, total: data.length / 4, colors: colors.size };
+	return { drawn, total: data.length / 4, colors: colors.size, halves };
 };
 </script>`;
 
@@ -93,6 +101,7 @@ test.beforeAll(async () => {
 		'/dist/corto.wasm': { data: read('../../dist/corto.wasm'), type: 'application/wasm' },
 		'/models/terrain.bm3d': { data: read('../fixtures/terrain.bm3d') },
 		'/models/sphere.bm3d': { data: read('../fixtures/sphere.bm3d') },
+		'/models/cutout.bm3d': { data: read('../fixtures/cutout.bm3d') },
 	};
 	for (const name of golden) files[`/models/golden/${name}`] = { data: readFileSync(join(goldenDir, name)) };
 	server = await startServer((path) => files[path] || null);
@@ -183,6 +192,16 @@ test('draws a model with vertex colours and no texture', async ({ page }) => {
 	expect(pixels.colors).toBeGreaterThan(20);
 	expect(errors).toEqual([]);
 	expect((await page.evaluate(() => window.__state)).errors).toEqual([]);
+});
+
+test('cuts out the texels whose alpha a texture cuts out', async ({ page }) => {
+	// The square seen from above: its texture draws its left half and cuts out its right half
+	const errors = await show(page, 'cutout', { extra: '&view=top' });
+	const pixels = await page.evaluate(() => window.__pixels());
+	expect(pixels.halves[0]).toBeGreaterThan(0.1 * pixels.total);
+	expect(pixels.halves[1]).toBeLessThan(0.01 * pixels.total);
+	expect(errors).toEqual([]);
+	expect(await page.evaluate(() => window.__state.errors)).toEqual([]);
 });
 
 test('takes the worker and corto.wasm from the decoderPath it is given', async ({ page }) => {
