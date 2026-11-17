@@ -17,6 +17,7 @@ for more details.
 */
 #include "plyloader.h"
 #include <math.h>
+#include <cmath>
 #include <algorithm>
 #include "../../common/error.h"
 #include "../../common/pathutil.h"
@@ -47,11 +48,11 @@ struct PlyVertex {
 	double v[3]; //read as a double whatever the type in the file: every scalar type of PLY converts to it exactly
 	float t[2]; //texture
 	float n[3];
-	unsigned char c[4]; //colors
+	double c[4]; //the colour channels as the file gives them, see colourFullScale
 };
 
-//The colour channels of a vertex: an uchar each, under either set of names (the first set that the
-//file has a red of is the one read; a channel the file lacks is left as it is, see cacheVertices)
+//The colour channels of a vertex, under either set of names (the first set that the file has a red
+//of is the one read; a channel the file lacks is left as it is, see cacheVertices)
 static const char *const vertexColorNames[][4] = {
 	{ "red", "green", "blue", "alpha" },
 	{ "diffuse_red", "diffuse_green", "diffuse_blue", nullptr }
@@ -90,8 +91,7 @@ static PlyProperty *findProperty(PlyFile &pf, const char *element, const char *n
 //A vertex property is read as the type the header declares, whatever its place among the others:
 //plylib reads a property only when it is told the type of the file, and a coordinate may be any
 //scalar type (a double x, a float y and a short z are one valid vertex). memtype is the type it is
-//stored as at offset in PlyVertex (T_FLOAT or T_DOUBLE, which every type of the file converts to;
-//T_UCHAR for a colour, read only from an uchar of the file: a float colour is not a byte).
+//stored as at offset in PlyVertex (T_FLOAT or T_DOUBLE, which every type of the file converts to).
 //False when the vertex has no such scalar property, or it cannot be stored as memtype.
 static bool addVertexScalar(PlyFile &pf, const char *name, int memtype, size_t offset) {
 	const PlyProperty *property = findProperty(pf, "vertex", name);
@@ -102,6 +102,27 @@ static bool addVertexScalar(PlyFile &pf, const char *name, int memtype, size_t o
 	if(!storable)
 		return false;
 	return pf.AddToRead("vertex", name, property->tipo, memtype, offset, 0, 0, 0, 0, 0) == vcg::ply::E_NOERROR;
+}
+
+//The value of a colour channel of the type `type` that is full intensity, or 0 for a type that is not
+//read as a colour. An uchar is 0 to 255, an ushort 0 to 65535 (scanners of 16 bit colour), a float or
+//a double 0 to 1 (as Blender, Assimp and VCG write and read them).
+static double colourFullScale(int type) {
+	switch(type) {
+	case T_UCHAR: return 255;
+	case T_USHORT: return 65535;
+	case T_FLOAT:
+	case T_DOUBLE: return 1;
+	default: return 0;
+	}
+}
+
+//A colour channel of the file as a byte: full scale is 255, and a value out of range is clamped
+static unsigned char colourByte(double value, double fullScale) {
+	const double unit = value / fullScale;
+	if(!(unit > 0))
+		return 0;
+	return unit >= 1 ? 255 : (unsigned char)std::lround(unit * 255);
 }
 
 //The face lists are read as the types the header declares, the lengths included: most files give
@@ -213,14 +234,22 @@ void PlyLoader::init() {
 		if(!addVertexScalar(pf, coordinateNames[k], T_DOUBLE, offsetof(PlyVertex, v[0]) + k*sizeof(double)))
 			throw bm3d::detail::Error("ply file " + filename + " has no x, y and z coordinates for its vertices");
 
-	//the colour, when the file has a red; the alpha is optional: a vertex without one is opaque
-	//(see cacheVertices)
+	//the colour, when the file has a red of a colour type; the alpha is optional: a vertex without one
+	//is opaque (see cacheVertices). Each channel is scaled by the full intensity of its own type.
+	auto addColourChannel = [this](const char *name, int k) {
+		const PlyProperty *property = findProperty(pf, "vertex", name);
+		const double fullScale = property ? colourFullScale(property->tipo) : 0;
+		if(fullScale == 0 || !addVertexScalar(pf, name, T_DOUBLE, offsetof(PlyVertex, c[0]) + k*sizeof(double)))
+			return false;
+		colour_full_scale[k] = fullScale;
+		return true;
+	};
 	for(const auto &names: vertexColorNames) {
-		if(!addVertexScalar(pf, names[0], T_UCHAR, offsetof(PlyVertex, c[0])))
+		if(!addColourChannel(names[0], 0))
 			continue;
 		for(int k = 1; k < 4; k++)
 			if(names[k])
-				addVertexScalar(pf, names[k], T_UCHAR, offsetof(PlyVertex, c[0]) + k);
+				addColourChannel(names[k], k);
 		has_colors = true;
 		break;
 	}
@@ -278,12 +307,9 @@ void PlyLoader::cacheVertices() {
 		bm3d::detail::requireFinite(v.v, [&]() {
 			return "vertex " + std::to_string(i) + " of ply file " + filename;
 		});
-		if(has_colors) {
-			v.c[0] = vertex.c[0];
-			v.c[1] = vertex.c[1];
-			v.c[2] = vertex.c[2];
-			v.c[3] = vertex.c[3];
-		}
+		if(has_colors)
+			for(int k = 0; k < 4; k++)
+				v.c[k] = colourByte(vertex.c[k], colour_full_scale[k]);
 		if(has_textures) {
 			v.t[0] = vertex.t[0];
 			v.t[1] = vertex.t[1];

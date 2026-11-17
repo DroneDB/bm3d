@@ -521,13 +521,15 @@ TEST(PlyFormats, aTextureCoordinateBeyondOneIsTheSameAsItsFractionalPart) {
 const double kSquare[4][3] = {{0.5, 0, -2}, {2.25, 0, 7}, {2.25, 3.75, 7}, {0.5, 3.75, -2}};
 const char* const kSquareFaces = "3 0 1 2\n3 0 2 3\n";
 
-// The square with float coordinates in the usual order, the model the others must give
+// The square with float coordinates in the usual order, and the colour of the float colours of the
+// others in bytes (0.8, 0.2 and 0.5 of 255, rounded): the model the others must give
 std::string plainSquarePly() {
     std::ostringstream s;
     s << "ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\n"
+         "property uchar red\nproperty uchar green\nproperty uchar blue\n"
          "element face 2\nproperty list uchar int vertex_indices\nend_header\n";
     for (const auto& v : kSquare)
-        s << v[0] << " " << v[1] << " " << v[2] << "\n";
+        s << v[0] << " " << v[1] << " " << v[2] << " 204 51 128\n";
     return s.str() + kSquareFaces;
 }
 
@@ -577,7 +579,8 @@ std::string mixedSquareBinaryPly() {
 
 // The coordinates of a vertex are read whatever their place among its properties and whatever their
 // scalar types (they were read only as three floats or three doubles), in text and in binary, and
-// give the model of the same coordinates written as floats
+// give the model of the same coordinates written as floats; the float colours among them are read as
+// fractions of full intensity
 TEST(PlyFormats, theCoordinatesOfAVertexAreReadWhateverTheirTypesAndOrder) {
     TempDir dir;
     writeTextFile(dir.file("plain.ply"), plainSquarePly());
@@ -589,6 +592,44 @@ TEST(PlyFormats, theCoordinatesOfAVertexAreReadWhateverTheirTypesAndOrder) {
         const Bm3dFile mixed = buildFile(dir, name, std::string(name) + ".bm3d");
         EXPECT_EQ(mixed.nface, 2u) << name;
         EXPECT_EQ(mixed.contentHash, plain.contentHash) << name;
+    }
+}
+
+// A colour channel is read from any of the types colours come in, each a fraction of the full
+// intensity of its type: an uchar of 255, an ushort of 65535, a float or a double of 1 (as Blender,
+// Assimp and VCG read them). Float colours were left out, and the model was grey; a value outside the
+// range is clamped. The channels of a vertex may be of different types.
+TEST(PlyFormats, aColourIsReadFromAnyOfItsTypesAsAFractionOfFullIntensity) {
+    TempDir dir;
+    const struct {
+        const char* name;
+        const char* properties;
+        const char* channels;
+    } files[] = {
+        {"uchar.ply", "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha\n", "51 204 255 128"},
+        {"ushort.ply", "property ushort red\nproperty ushort green\nproperty ushort blue\nproperty ushort alpha\n",
+         "13107 52428 65535 32896"},
+        {"float.ply", "property float red\nproperty float green\nproperty float blue\nproperty float alpha\n",
+         "0.2 0.8 1 0.502"},
+        // out of range: clamped
+        {"double.ply", "property double red\nproperty double green\nproperty double blue\nproperty double alpha\n",
+         "0.2 0.8 7.5 0.502"},
+        {"mixed.ply", "property uchar red\nproperty float green\nproperty ushort blue\nproperty double alpha\n",
+         "51 0.8 65535 0.502"},
+        // the names of the diffuse colour have no alpha: opaque
+        {"diffuse.ply", "property float diffuse_red\nproperty float diffuse_green\nproperty float diffuse_blue\n",
+         "0.2 0.8 1"},
+    };
+    for (const auto& f : files) {
+        const std::string channels = f.channels;
+        writeTextFile(dir.file(f.name), plyOneTriangle(f.properties, "0 0 0 " + channels + "\n5 0 0 " + channels +
+                                                                         "\n0 5 0 " + channels + "\n"));
+        const Built built = buildAndDecode(dir, f.name);
+        ASSERT_TRUE(built.file.hasColors) << f.name;
+        ASSERT_EQ(built.mesh.colors.size(), 3u) << f.name;
+        const int alpha = std::string(f.name) == "diffuse.ply" ? 255 : 128;
+        for (const auto& color : built.mesh.colors)
+            expectColor(color, {51, 204, 255, alpha}, f.name);
     }
 }
 

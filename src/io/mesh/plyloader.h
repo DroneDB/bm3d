@@ -50,6 +50,9 @@ private:
 	vcg::ply::PlyFile pf;
 	bool has_vertex_tex_coords = false;
 	bool has_face_tex_coords = false;
+	//the value of each colour channel (red, green, blue, alpha) that is full intensity, from its type
+	//in the file: 255 for an uchar, 1 for a float (see colourFullScale)
+	double colour_full_scale[4] = {255, 255, 255, 255};
 	int64_t vertices_element;
 	int64_t faces_element;
 

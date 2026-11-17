@@ -4,6 +4,11 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## 1.1.3 (not released)
 
+- **The float colours of a PLY are read.** A colour was read only from uchar channels, so a PLY
+  of float colours (Assimp's `float-color.ply`, Blender's exports) was built grey. Each colour
+  channel is now read from an uchar (0 to 255), an ushort (0 to 65535) or a float or double (0 to 1,
+  as Blender, Assimp and VCG read them), each channel by its own type, and a value out of range is
+  clamped. Other integer types are still not read as a colour.
 - **Texture coordinates outside 0..1 repeat the texture.** The builder brought each texture
   coordinate on its own to its fractional part, which left a negative coordinate negative (then
   clamped to the edge of the texture) and cut every triangle that straddles an edge of the texture
@@ -22,8 +27,7 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   components) was refused as having "no x, y and z coordinates" (exit code 2). Each coordinate is
   now read as whatever scalar type the file gives it, in any place among the other properties, and
   so are the texture coordinates of a vertex (a double `s` and `t` were not read, and the model lost
-  its texture) and its normals. A file of float coordinates gives the same model as before. A colour
-  is still read only from uchar channels.
+  its texture) and its normals. A file of float coordinates gives the same model as before.
 - **A line of text before the first element of a PLY header is skipped, with a warning.** Blender
   2.4 wrote a line without the `comment` keyword after the format line (`Created by Blender3D 247 -
   www.blender.org, source file: ...`), which was a syntax error; Assimp and Blender skip it. Such a
