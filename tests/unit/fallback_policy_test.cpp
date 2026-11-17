@@ -87,8 +87,9 @@ TEST(FallbackPolicy, theSummaryTellsWhatTheBuildThatSucceededDiffersIn) {
     const FallbackPolicy policy(firstAttempt());
     Attempt attempt = policy.after(firstAttempt(), NodeTooLargeError("a")).attempt;
     EXPECT_EQ(policy.summary(attempt),
-              (std::vector<std::string>{"built with nodes of 8192 triangles instead of 16384: the texture "
-                                        "parametrization is too fragmented for larger nodes"}));
+              (std::vector<std::string>{"built with nodes of 8192 triangles instead of 16384: once split "
+                                        "along their texture seams and colour borders, larger nodes have "
+                                        "more vertices than a node holds"}));
     attempt = policy.after(attempt, TexturePackingError("b"))->attempt;
     const auto warnings = policy.summary(attempt);
     ASSERT_EQ(warnings.size(), 2u);

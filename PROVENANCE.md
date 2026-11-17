@@ -311,6 +311,14 @@ describe what was done to them before.
   flat colour is the mean of the texels it draws, and it is written with an alpha when it cuts a
   texel out. Models without `map_d` give the same file.
 
+- `src/build/mesh.{h,cpp}`, `src/build/tmesh.{h,cpp}`, `src/build/level_builder.cpp`: a face whose
+  corners have one colour keeps it (`FaceColor`, `src/build/face_color.h`) and the vertices of a node
+  are split by these colours when it is written; `TMesh::splitSeams` became `splitVertices`
+  (`src/build/vertex_split.h`), the same walk with the colour in the key, which `Mesh` uses for its
+  colours. The node texture of a textured node with faces without a texture has a white square they
+  read (`node_texture_baker.cpp`), where they read the texel at (0, 0). Models without colour
+  borders and textured models whose faces all have a texture give the same file.
+
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.
 

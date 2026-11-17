@@ -51,6 +51,10 @@ public:
 	virtual bool hasColors() { return has_colors; } //call this
 	virtual bool hasNormals() { return has_normals; } //call this
 	virtual bool hasTextures() { return has_textures; }
+	//Whether the colours are those of faces (a material, the colour of an STL face), which every
+	//corner of a face has, rather than of vertices, which vary over the surface; once the whole mesh
+	//has been read
+	virtual bool hasFaceColors() const { return false; }
 	//the vertices the file defines, once the whole mesh has been read (an STL file repeats a vertex
 	//for each of the triangles that has it, and defines three for each)
 	virtual uint64_t vertexCount() const = 0;

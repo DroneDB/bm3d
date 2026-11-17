@@ -23,12 +23,13 @@ for more details.
 #include "mesh.h"
 #include "nodepatches.h"
 #include "shortedge.h"
+#include "vertex_split.h"
 
 using namespace std;
 
 //using namespace vcg;
 
-void Mesh::load(Soup &soup) {
+void Mesh::load(Soup &soup, bm3d::detail::ColorSource colors) {
 
 	vcg::tri::Allocator<Mesh>::AddVertices(*this, soup.size() * 3);
 	vcg::tri::Allocator<Mesh>::AddFaces(*this, soup.size());
@@ -45,6 +46,7 @@ void Mesh::load(Soup &soup) {
 			f.V(k) = &v;
 		}
 		f.node = triangle.node;
+		f.faceColor = bm3d::detail::FaceColor::of(triangle, colors);
 	}
 
 	//UNIFICATION PROCESS
@@ -104,10 +106,7 @@ void Mesh::save(Soup &soup, uint32_t node) {
 			vertex.v[0] = v.P()[0];
 			vertex.v[1] = v.P()[1];
 			vertex.v[2] = v.P()[2];
-			vertex.c[0] = v.C()[0];
-			vertex.c[1] = v.C()[1];
-			vertex.c[2] = v.C()[2];
-			vertex.c[3] = v.C()[3];
+			bm3d::detail::writeCornerColor(t, k, vertex);
 		}
 		triangle.node = node;
 		soup.push_back(triangle);
@@ -127,10 +126,7 @@ void Mesh::getTriangles(Triangle *triangles, uint32_t node) {
 			vertex.v[0] = v.P()[0];
 			vertex.v[1] = v.P()[1];
 			vertex.v[2] = v.P()[2];
-			vertex.c[0] = v.C()[0];
-			vertex.c[1] = v.C()[1];
-			vertex.c[2] = v.C()[2];
-			vertex.c[3] = v.C()[3];
+			bm3d::detail::writeCornerColor(t, k, vertex);
 		}
 		triangle.node = node;
 	}
@@ -177,13 +173,45 @@ uint32_t Mesh::serializedSize(const bm3d::detail::VertexLayout &layout) {
 	return nvert*bm3d::detail::decodedVertexBytes(layout) + nface*bm3d::detail::kDecodedTriangleBytes;
 }
 
-void Mesh:: serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches) {
-
+void Mesh::preparePatches(const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches) {
 	sortFacesIntoPatches(face, patches);
-
 	if(layout.normals)
 		vcg::tri::UpdateNormal<Mesh>::PerVertexNormalized(*this);
+}
 
+bool Mesh::hasColorSeams() const {
+	std::vector<vcg::Color4b> colors(vert.size());
+	std::vector<bool> reached(vert.size(), false);
+	for(const AFace &f: face) {
+		for(int k = 0; k < 3; k++) {
+			const size_t index = size_t(f.cV(k) - &*vert.begin());
+			const vcg::Color4b color = bm3d::detail::cornerColor(f, k);
+			if(!reached[index]) {
+				reached[index] = true;
+				colors[index] = color;
+			} else if(colors[index] != color) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void Mesh::splitColorSeams() {
+	bm3d::detail::splitVertices<vcg::Color4b>(*this,
+		[](const AFace &f, int k) { return bm3d::detail::cornerColor(f, k); },
+		[](AVertex &v, const vcg::Color4b &color) { v.C() = color; });
+}
+
+void Mesh::copyFrom(Mesh &other) {
+	vcg::tri::Append<Mesh, Mesh>::MeshCopy(*this, other);
+	for(size_t i = 0; i < face.size(); i++) {
+		face[i].node = other.face[i].node;
+		face[i].faceColor = other.face[i].faceColor;
+	}
+}
+
+void Mesh::serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout) {
 	vcg::Point3f *c = (vcg::Point3f *)buffer;
 	for(unsigned int i = 0; i < vert.size(); i++)
 		c[i] = vert[i].P();

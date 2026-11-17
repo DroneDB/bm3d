@@ -31,6 +31,7 @@ Stream::Stream(const std::string &cachePrefix, const bm3d::detail::MeshLoaderReg
 	has_colors(false),
 	has_normals(false),
 	has_textures(false),
+	has_face_colors(false),
 	cache_prefix(cachePrefix),
 	registry(loaders),
 	logger(log),
@@ -52,6 +53,7 @@ void Stream::load(MeshLoader *loader) {
 	loadMesh(loader);
 	vertex_count += loader->vertexCount();
 	has_colors &= loader->hasColors();
+	has_face_colors &= loader->hasFaceColors();
 	has_normals &= loader->hasNormals();
 	has_textures &= loader->hasTextures();
 
@@ -67,6 +69,7 @@ void Stream::load(const std::vector<std::string> &paths, const std::string &mate
 	has_colors = true;
 	has_normals = true;
 	has_textures = true;
+	has_face_colors = true;
 	for(const std::string &file: paths) {
 		std::unique_ptr<MeshLoader> loader = getLoader(file, material);
 		load(loader.get());

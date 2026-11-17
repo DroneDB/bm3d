@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "face_color.h"
 #include "model_dag.h"
 #include "node_texture_baker.h"
 #include "node_texture_store.h"
@@ -38,8 +39,9 @@ struct NodeTextures {
 class LevelBuilder {
 public:
 	//scaling: the share of the triangles of a node kept by the simplification, as the nodes of
-	//the next level hold them. textures: null for a model without textures.
-	LevelBuilder(ModelDag &dag, float scaling, NodeTextures *textures);
+	//the next level hold them. textures: null for a model without textures. colors: where the
+	//colours of the model come from (see FaceColor).
+	LevelBuilder(ModelDag &dag, float scaling, NodeTextures *textures, ColorSource colors = ColorSource::Vertices);
 
 	//Makes the nodes of `level` from the cells of `input` and streams their simplified triangles to
 	//`output`. textureScale: the side of the textures of this level relative to the level below.
@@ -56,6 +58,7 @@ private:
 	ModelDag &dag_;
 	float scaling_;
 	NodeTextures *textures_;
+	ColorSource colors_;
 };
 
 } //namespace

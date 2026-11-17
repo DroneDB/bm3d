@@ -40,6 +40,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
 for more details.
 */
+#include "face_color.h"
 #include "node.h"
 #include "../common/cone.h"
 #include "../format/bm3d_format.h"
@@ -100,12 +101,13 @@ class AFace: public vcg::Face<
 		vcg::face::BitFlags> {
 public:
 	uint32_t node;
+	bm3d::detail::FaceColor faceColor;
 };
 
 class Mesh: public vcg::tri::TriMesh<std::vector<AVertex>, std::vector<AFace> > {
 public:
 	enum Simplification { QUADRICS, EDGE, CLUSTER, RANDOM };
-	void load(Soup &soup);
+	void load(Soup &soup, bm3d::detail::ColorSource colors);
 	//void lock(std::vector<bool> &locked);
 	void lockVertices();
 	void save(Soup &soup, uint32_t node);
@@ -115,8 +117,17 @@ public:
 
 	bm3d::detail::Node getNode();
 	uint32_t serializedSize(const bm3d::detail::VertexLayout &layout);
-	//appends nodes found in the mesh
-	void serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches);
+	//Sorts the faces into the patches of the node (appended to patches) and, when the layout has
+	//normals, makes the normals of the vertices: what the node is written from
+	void preparePatches(const bm3d::detail::VertexLayout &layout, std::vector<bm3d::detail::PatchRecord> &patches);
+	//Whether faces that share a vertex are drawn in different colours there (see FaceColor)
+	bool hasColorSeams() const;
+	//Splits the vertices where the faces that share one are drawn in different colours
+	void splitColorSeams();
+	//A copy of the mesh with the data of the faces that vcg does not copy
+	void copyFrom(Mesh &other);
+	//Writes the node, prepared by preparePatches, in buffer (serializedSize bytes)
+	void serialize(unsigned char *buffer, const bm3d::detail::VertexLayout &layout);
 
 	vcg::Sphere3f boundingSphere();
 	bm3d::detail::Cone3s normalsCone();

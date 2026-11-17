@@ -41,7 +41,8 @@ public:
 	//temporary folder, the textures of the nodes to the working directory.
 	//threads: the threads the build keeps busy, the one that makes the nodes and threads - 1 that
 	//encode their textures meanwhile.
-	ModelBuilder(const BuildSettings &settings, int threads, const VertexLayout &layout,
+	//colors: where the colours of the model come from, its faces or its vertices (see FaceColor)
+	ModelBuilder(const BuildSettings &settings, int threads, const VertexLayout &layout, ColorSource colors,
 	             const std::string &scratchDir, const Logger &logger);
 
 	//Reads the textures the materials of the input name into the pyramid; throws Error when one

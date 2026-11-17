@@ -37,6 +37,8 @@ public:
 	void setMaxMemory(uint64_t max_memory);
 	uint32_t getTriangles(uint32_t size, Triangle *buffer);
 	uint64_t vertexCount() const override { return n_vertices; }
+	//the colours of the materials, when no vertex line gives one
+	bool hasFaceColors() const override { return has_colors && !has_vertex_colors; }
 
 private:
 	//the vertex, texture coordinate and normal of one corner of a face as zero based indices,

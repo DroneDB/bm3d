@@ -26,7 +26,8 @@ struct Attempt {
 //the build: the same failure of the same try always gives the same answer.
 //  - A node needs a texture too large to pack: the model is built without textures. Models of
 //    this kind always built that way.
-//  - A node has more vertices than a node holds (a fragmented texture parametrization): the
+//  - A node has more vertices than a node holds once they are split along its texture seams and
+//    colour borders (a fragmented texture parametrization, faces of many colours): the
 //    model is built with half as many triangles per node, up to a number of times. Leaving the node
 //    out, which Nexus did, leaves a hole in the model.
 class FallbackPolicy {

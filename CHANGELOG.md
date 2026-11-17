@@ -17,6 +17,23 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
   a mask cut out were drawn (the masked-out part of a gold leaf decal covered the dish under it). The
   format is unchanged: the WebP image says whether it has an alpha (docs/FORMAT.md, section 6). The
   textures of a model without `map_d` are the same bytes.
+- **The colours of faces keep their borders.** The colour of a material (OBJ `Kd`) or of an STL
+  face is the colour of every corner of its faces, and the builder merges the vertices of a node by
+  position, so a vertex shared by faces of two colours kept one of them and the triangles of the
+  other side were drawn with a gradient towards it: a sawtooth along every border. A face whose corners
+  have one colour now keeps it through the simplification, and the vertices of a node are split by it
+  when the node is written, as they are by texture coordinates; positions are not moved, so nothing
+  cracks. A node that has more vertices than a node holds once split is built again with smaller
+  nodes, as one with a fragmented texture already was. The colours of vertices (PLY, `v x y z r g b`)
+  are not split. A plain version of the CarConcept sample (its 22 materials, without textures) has 1.1 %
+  more vertices (247 540 instead of 244 938); models without colour borders are the same bytes.
+- **The faces without a texture of a textured model keep their colour.** The vertices of a face
+  without a texture (a material with `Kd` and no `map_Kd`, in a model where other materials have one)
+  were given the texture coordinates (0, 0), which read whatever texel lay there in the node
+  texture: another colour in each node, which tinted the faces and drew the borders between nodes as
+  jagged edges of two shades (the body of the CarConcept sample). Each node texture with such faces
+  now has a square of 16 x 16 white texels that they read, so they show the colour of their vertices.
+  Models whose faces all have a texture are the same bytes.
 - **The viewer gives the principal axes of a model.** `Bm3dObject.computePrincipalAxes()` returns
   the centre, the axes and the extents of the vertices of the coarsest level once its node has
   arrived. A flat model (one quad, a planar drawing) has almost no extent along its last axis, the

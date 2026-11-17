@@ -123,7 +123,8 @@ void BuildPipeline::buildOnce(const std::string &input, const std::string &outpu
 	// Place the model's out-of-core caches (chunks + per-node texture file) in the same directory
 	// as the output (the per-build temp folder), so they do not leak into the process working
 	// directory and are reclaimed with it.
-	ModelBuilder model(settings_, attempt.threads, layout, cacheDir, logger_);
+	const ColorSource colors = stream.hasFaceColors() ? ColorSource::Faces : ColorSource::Vertices;
+	ModelBuilder model(settings_, attempt.threads, layout, colors, cacheDir, logger_);
 	readingInput([&] { model.addTextures(stream.textures); });
 
 	tree.reset(new KDTreeSoup(cacheBase + "_tree", settings_.adaptive));

@@ -41,6 +41,7 @@ public:
 	bool has_colors;
 	bool has_normals;
 	bool has_textures;
+	bool has_face_colors; //the colours of every file are those of faces (MeshLoader::hasFaceColors)
 	std::vector<LoadTexture> textures;
 	//the vertices the loaded files define
 	uint64_t vertexCount() const { return vertex_count; }
@@ -63,6 +64,7 @@ public:
 	virtual bool hasColors() { return has_colors; }
 	virtual bool hasNormals() { return has_normals; }
 	virtual bool hasTextures() { return has_textures; }
+	bool hasFaceColors() const { return has_face_colors; }
 
 protected:
 	std::vector<std::vector<uint64_t> > levels; //for each level the list of blocks

@@ -41,6 +41,7 @@ for more details.
 #include <vcg/complex/algorithms/local_optimization/tri_edge_collapse_quadric_tex.h>
 
 
+#include "face_color.h"
 #include "node.h"
 #include "../common/cone.h"
 #include "../format/bm3d_format.h"
@@ -104,18 +105,23 @@ class TFace: public vcg::Face<
 public:
 	uint32_t node;
 	uint32_t tex; //texture number where the wedge tex coords refer to.
+	bm3d::detail::FaceColor faceColor;
 };
 
 class TMesh: public vcg::tri::TriMesh<std::vector<TVertex>, std::vector<TFace> > {
 public:
 
 	enum Simplification { QUADRICS, EDGE, CLUSTER, RANDOM };
-	void load(Soup &soup);
+	void load(Soup &soup, bm3d::detail::ColorSource colors);
 	void lock(std::vector<bool> &locked);
 	void save(Soup &soup, uint32_t node);
 	void getTriangles(Triangle *triangles, uint32_t node);
 
+	//Splits the vertices where the faces that share one disagree on its texture, texture coordinates
+	//or (when the layout has colours) colour; the normals are made first, so they stay smooth
 	void splitSeams(const bm3d::detail::VertexLayout &layout);
+	//A copy of the mesh with the data of the faces that vcg does not copy
+	void copyFrom(TMesh &other);
 
 	float simplify(uint32_t target_faces, Simplification method);
 

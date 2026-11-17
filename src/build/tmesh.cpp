@@ -23,13 +23,14 @@ for more details.
 #include "tmesh.h"
 #include "nodepatches.h"
 #include "shortedge.h"
+#include "vertex_split.h"
 
 
 using namespace std;
 
 //using namespace vcg;
 
-void TMesh::load(Soup &soup) {
+void TMesh::load(Soup &soup, bm3d::detail::ColorSource colors) {
 	vcg::tri::Allocator<TMesh>::AddVertices(*this, soup.size() * 3);
 	vcg::tri::Allocator<TMesh>::AddFaces(*this, soup.size());
 
@@ -50,6 +51,7 @@ void TMesh::load(Soup &soup) {
 		}
 		f.node = triangle.node;
 		f.tex = triangle.tex;
+		f.faceColor = bm3d::detail::FaceColor::of(triangle, colors);
 	}
 
 	//UNIFICATION PROCESS
@@ -101,10 +103,7 @@ void TMesh::save(Soup &soup, uint32_t node) {
 			vertex.v[0] = v.P()[0];
 			vertex.v[1] = v.P()[1];
 			vertex.v[2] = v.P()[2];
-			vertex.c[0] = v.C()[0];
-			vertex.c[1] = v.C()[1];
-			vertex.c[2] = v.C()[2];
-			vertex.c[3] = v.C()[3];
+			bm3d::detail::writeCornerColor(t, k, vertex);
 		}
 		triangle.node = node;
 		triangle.tex = t.tex;
@@ -125,10 +124,7 @@ void TMesh::getTriangles(Triangle *triangles, uint32_t node) {
 			vertex.v[0] = v.P()[0];
 			vertex.v[1] = v.P()[1];
 			vertex.v[2] = v.P()[2];
-			vertex.c[0] = v.C()[0];
-			vertex.c[1] = v.C()[1];
-			vertex.c[2] = v.C()[2];
-			vertex.c[3] = v.C()[3];
+			bm3d::detail::writeCornerColor(t, k, vertex);
 			vertex.t[0] = t.WT(k).U();
 			vertex.t[1] = t.WT(k).V();
 		}
@@ -175,65 +171,47 @@ bm3d::detail::Node TMesh::getNode()
 	node.cone = normalsCone();
 	return node;
 }
+namespace {
+
+//What the corner of a face holds in a node: its texture, its texture coordinates and its colour
+struct TexturedCorner {
+	uint32_t tex = 0;
+	vcg::TexCoord2f uv;
+	vcg::Color4b color;
+	bool operator==(const TexturedCorner &other) const {
+		return tex == other.tex && uv == other.uv && color == other.color;
+	}
+};
+
+} //namespace
+
 //we have textures stored on wedge texture coordinates, we split vertices where wedges coords are different.
 void TMesh::splitSeams(const bm3d::detail::VertexLayout &layout) {
-
 	if(layout.normals)
 		vcg::tri::UpdateNormal<TMesh>::PerVertexNormalized(*this);
 
-	//std::vector<bool> visited(vert.size(), false);
-	std::vector<int> next(vert.size(), -1);
-	std::vector<TVertex> new_vert(vert.size());
-	std::vector<int> new_face;
-	std::vector<int> vert_to_tex(vert.size(), -2);
-	for(auto &f: face) {
-		for(int k = 0; k < 3; k++) {
-			int index = f.V(k) - &*vert.begin();
+	const bool colors = layout.colors;
+	bm3d::detail::splitVertices<TexturedCorner>(*this,
+		[colors](const TFace &f, int k) {
+			TexturedCorner corner;
+			corner.tex = f.tex;
+			corner.uv = f.cWT(k);
+			corner.color = colors ? bm3d::detail::cornerColor(f, k) : vcg::Color4b(0, 0, 0, 0);
+			return corner;
+		},
+		[colors](TVertex &v, const TexturedCorner &corner) {
+			v.T() = corner.uv;
+			if(colors)
+				v.C() = corner.color;
+		});
+}
 
-			assert(index >= 0);
-
-			while(true) {
-				assert(index < (int)new_vert.size());
-//				assert(index < (int)visited.size());
-				assert(index >= 0);
-				TVertex &nv = new_vert[index];
-				if(vert_to_tex[index] == -2) { //first time, just update T.
-					nv = *f.V(k);
-					nv.T() = f.WT(k);
-					vert_to_tex[index] = f.tex;
-					break;
-				}
-
-				if(vert_to_tex[index] == f.tex && nv.T() == f.WT(k))  //found!
-					break;
-
-				if(next[index] == -1) { //ok we have to add a new one.
-					int new_index = new_vert.size();
-					new_vert.push_back(nv);
-					new_vert.back().T() = f.WT(k);
-					next[index] = new_index;
-					next.push_back(-1);
-					vert_to_tex.push_back(f.tex);
-					index = new_index;
-					break;
-				}
-				index = next[index];
-			}
-			assert(new_vert[index].T().U() == f.WT(k).U());
-			new_face.push_back(index);
-		}
-	}
-	for(size_t i = 0; i < vert.size(); i++) {
-		assert(vert_to_tex[i] != -2);
-	}
-	vert = new_vert;
-	vn = vert.size();
-	for(size_t i = 0; i < new_face.size(); i+= 3) {
-		TFace &f = face[i/3];
-		for(int k = 0; k < 3; k++) {
-			assert(f.WT(k).U() == vert[new_face[i+k]].T().U());
-			f.V(k) = &vert[new_face[i+k]];
-		}
+void TMesh::copyFrom(TMesh &other) {
+	vcg::tri::Append<TMesh, TMesh>::MeshCopy(*this, other);
+	for(size_t i = 0; i < face.size(); i++) {
+		face[i].node = other.face[i].node;
+		face[i].tex = other.face[i].tex;
+		face[i].faceColor = other.face[i].faceColor;
 	}
 }
 

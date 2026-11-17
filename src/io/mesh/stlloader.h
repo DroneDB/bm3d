@@ -37,6 +37,8 @@ public:
 
 	void setMaxMemory(uint64_t /*max_memory*/) { /* ignore, here no memory needed */ }
 	uint64_t vertexCount() const override { return 3 * current_triangle; }
+	//the colour of a Materialise STL is the colour of a face
+	bool hasFaceColors() const override { return has_colors; }
 	uint32_t getTriangles(uint32_t size, Triangle *buffer) {
 		return ascii ? getTrianglesAscii(size, buffer) : getTrianglesBinary(size, buffer);
 	}

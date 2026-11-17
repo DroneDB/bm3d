@@ -43,7 +43,7 @@ HierarchyBuilder::Settings hierarchySettings(const BuildSettings &settings, cons
 } //namespace
 
 ModelBuilder::ModelBuilder(const BuildSettings &settings, int threads, const VertexLayout &layout,
-                           const std::string &scratchDir, const Logger &logger):
+                           ColorSource colors, const std::string &scratchDir, const Logger &logger):
 	settings_(settings), layout_(layout), encoder_(settings.textureQuality),
 	dag_(layout, cacheName(scratchDir, "cache_chunks")),
 	store_(cacheName(scratchDir, "cache_tex")),
@@ -52,7 +52,7 @@ ModelBuilder::ModelBuilder(const BuildSettings &settings, int threads, const Ver
 		store_.store(texture, encoded);
 	}) : nullptr),
 	textures_(layout.texCoords ? new NodeTextures{*baker_, store_, *encoders_} : nullptr),
-	levels_(dag_, settings.scaling, textures_.get()),
+	levels_(dag_, settings.scaling, textures_.get(), colors),
 	hierarchy_(hierarchySettings(settings, layout), dag_, levels_),
 	saver_(settings.compression) {
 	dag_.setMaxMemory(settings.buildMemory());

@@ -37,7 +37,7 @@ std::vector<std::string> FallbackPolicy::summary(const Attempt &succeeded) const
 	if(succeeded.nodeFaces != first_.nodeFaces)
 		warnings.push_back("built with nodes of " + std::to_string(succeeded.nodeFaces) + " triangles instead of " +
 		                   std::to_string(first_.nodeFaces) +
-		                   ": the texture parametrization is too fragmented for larger nodes");
+		                   ": once split along their texture seams and colour borders, larger nodes have more vertices than a node holds");
 	if(!succeeded.withTextures)
 		warnings.push_back("textures could not be packed; built without textures");
 	return warnings;

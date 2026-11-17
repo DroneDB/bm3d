@@ -4,13 +4,18 @@
 // The retries of a build through the pipeline: what a try that fails in a way the input can be built
 // round leads to, the warnings it gives the logger and the error of the API that a failure ends in.
 // No small input fails in these ways (a node needs a texture over 16K a side, or more vertices than
-// a node holds), so the tries are made by functions that throw.
+// a node holds), so the tries are made by functions that throw; the last test builds a model whose
+// faces of many colours give a node more vertices than it holds, with nodes larger than the default.
 
 #include <functional>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include "bm3d_file.h"
+#include "model_files.h"
+#include "temp_dir.h"
 
 #include "api/error_mapping.h"
 #include "bm3d/bm3d.h"
@@ -20,6 +25,7 @@
 namespace {
 
 using namespace bm3d::detail;
+using namespace bm3dtest;
 
 // What a run of the pipeline with the given tries left behind
 struct Outcome {
@@ -112,8 +118,8 @@ TEST(BuildPipelineRetries, aNodeThatIsTooLargeIsBuiltAgainWithHalfAsManyTriangle
     EXPECT_EQ(r.warnings[0], "a node has too many vertices");
     EXPECT_EQ(r.warnings[1], "a node has too many vertices");
     EXPECT_EQ(r.warnings[2],
-              "built with nodes of 4096 triangles instead of 16384: the texture parametrization is too "
-              "fragmented for larger nodes");
+              "built with nodes of 4096 triangles instead of 16384: once split along their texture seams "
+              "and colour borders, larger nodes have more vertices than a node holds");
 }
 
 TEST(BuildPipelineRetries, nodesThatAreStillTooLargeAfterTheLastRetryEndTheBuildWithAnErrorThatSaysSo) {
@@ -159,6 +165,31 @@ TEST(BuildPipelineRetries, aFailureThatIsNotTheInputsToBuildRoundIsNotRetried) {
     ASSERT_TRUE(scratch.apiErrorRaised);
     EXPECT_EQ(scratch.kind, bm3d::ErrorKind::BuildFailed);
     EXPECT_TRUE(scratch.warnings.empty());
+}
+
+// A node of faces of many colours has more vertices once they are split, up to three for each
+// triangle: a node over the vertices a node holds is built again with smaller nodes, as a node of a
+// fragmented texture is
+TEST(BuildPipelineRetries, aNodeOfFacesOfManyColoursIsBuiltAgainWithSmallerNodes) {
+    TempDir dir;
+    const auto triangles = waveTriangles(128);  // 32768 triangles
+    std::vector<uint16_t> attributes;
+    for (size_t i = 0; i < triangles.size(); i++)
+        attributes.push_back(uint16_t(0x8000 | (i * 7919 % 0x8000)));  // every face a colour of its own
+    writeBinaryFile(dir.file("many.stl"), binaryStl(triangles, std::string("Materialise COLOR=") + char(200) +
+                                                                   char(100) + char(50) + char(32),
+                                                    attributes));
+    BuildSettings settings;
+    settings.nodeFaces = 32768;
+    std::vector<std::string> warnings;
+    const BuildPipeline pipeline(settings, [&](const std::string& message) { warnings.push_back(message); });
+    ASSERT_NO_THROW(pipeline.build(pathToUtf8(dir.file("many.stl")), pathToUtf8(dir.file("many.bm3d")), 2, {}));
+    ASSERT_FALSE(warnings.empty());
+    EXPECT_NE(warnings.back().find("built with nodes of 16384 triangles instead of 32768"), std::string::npos)
+        << warnings.back();
+    const Bm3dFile h = readBm3dFile(dir.file("many.bm3d"));
+    for (uint32_t node = 0; node + 1 < h.nNodes; node++)
+        EXPECT_LE(readNode(dir.file("many.bm3d"), node).positions.size(), 60000u) << "node " << node;
 }
 
 }  // namespace

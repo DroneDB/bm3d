@@ -92,6 +92,13 @@ const int MAX_WRAPPED_CHART_SIDE = 4096;
 //The packing halves that side until the charts fit, down to this
 const int MIN_WRAPPED_CHART_SIDE = 64;
 
+//The faces of a textured model that have no texture (a material with a colour and no map_Kd) are drawn
+//with a node texture too: they read a square of white texels, which shows the colour of their vertices
+//as it is. It is as large as keeps white texels at its middle through the downscaling of the node
+//texture and the first mipmaps a viewer filters with. Without it they read whatever texel lies at
+//(0, 0), a different colour in each node, which tinted them and drew the borders between nodes.
+const int PLAIN_CHART_SIDE = 16;
+
 //Where each chart goes in the node texture
 struct Packing {
 	std::vector<vcg::Point2i> mapping;
@@ -401,18 +408,25 @@ vcg::Point2i storedSizeOf(const vcg::Point2i &finalSize, int maxNodeTextureSide)
 }
 
 //Points the texture coordinates of the mesh into the node texture, where each chart has been
-//packed: the texel of the chart's repeat each coordinate falls on, from the corner of its rectangle
+//packed: the texel of the chart's repeat each coordinate falls on, from the corner of its rectangle.
+//The vertices of no chart (those of the faces without a texture) point at the middle of the white
+//square packed after the charts, when there is one, and at (0, 0) otherwise.
 void remapTexCoords(TMesh &mesh, const Charts &charts, const ChartRects &rects, const Packing &packing,
-                    TexAtlas &atlas, int level) {
+                    TexAtlas &atlas, int level, bool plainChart) {
 	float pdx = 1/(float)packing.finalSize[0];
 	float pdy = 1/(float)packing.finalSize[1];
+	vcg::Point2f plain(0.0f, 0.0f);
+	if(plainChart) {
+		const vcg::Point2i &corner = packing.mapping[rects.sizes.size()];
+		plain = vcg::Point2f((corner[0] + PLAIN_CHART_SIDE / 2.0f) * pdx, (corner[1] + PLAIN_CHART_SIDE / 2.0f) * pdy);
+	}
 
 	for(size_t i = 0; i < mesh.vert.size(); i++) {
 		auto &p = mesh.vert[i];
 		auto &uv = p.T().P();
 		int b = charts.ofVertex[i];
 		if(b == -1 || b >= (int)rects.origins.size() || b >= (int)packing.mapping.size() || b >= (int)charts.texture.size()) {
-			uv = vcg::Point2f(0.0f, 0.0f);
+			uv = plain;
 			continue;
 		}
 		const vcg::Point2i &o = rects.origins[b];
@@ -490,12 +504,17 @@ void nodeError(TMesh &mesh, const vcg::Point2i &storedSize, bool simplified, Nod
 
 NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 	const Charts charts = findCharts(mesh, logger_);
+	const bool plainChart = std::any_of(mesh.face.begin(), mesh.face.end(),
+	                                    [](const TFace &face) { return !face.IsD() && int(face.tex) < 0; });
 	ChartRects rects;
 	Packing packing;
 	//the charts that repeat their texture are made smaller until the node texture packs
 	for(int maxWrappedSide = MAX_WRAPPED_CHART_SIDE;; maxWrappedSide /= 2) {
 		rects = chartRects(charts, atlas_, level, maxWrappedSide);
-		if(packRects(rects.sizes, packing))
+		std::vector<vcg::Point2i> sizes = rects.sizes;
+		if(plainChart)
+			sizes.push_back(vcg::Point2i(PLAIN_CHART_SIDE, PLAIN_CHART_SIDE));
+		if(packRects(sizes, packing))
 			break;
 		const bool repeats = std::find(rects.wrapped.begin(), rects.wrapped.end(), true) != rects.wrapped.end();
 		if(!repeats || maxWrappedSide / 2 < MIN_WRAPPED_CHART_SIDE) {
@@ -511,7 +530,7 @@ NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 	Image image(packing.finalSize[0], packing.finalSize[1]);
 	image.fill(Image::rgb(127, 127, 127));
 
-	remapTexCoords(mesh, charts, rects, packing, atlas_, level);
+	remapTexCoords(mesh, charts, rects, packing, atlas_, level, plainChart);
 
 	NodeTexture result;
 	nodeError(mesh, storedSize, simplified, result);
@@ -525,6 +544,12 @@ NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 		Image rect = readChart(charts, rects, size_t(i), atlas_, level, smallerRepeats);
 		if(i < (int)packing.mapping.size())
 			image.draw(packing.mapping[i][0], packing.mapping[i][1], rect);
+	}
+	if(plainChart) {
+		Image white(PLAIN_CHART_SIDE, PLAIN_CHART_SIDE);
+		white.fill(Image::rgb(255, 255, 255));
+		const vcg::Point2i &corner = packing.mapping[rects.sizes.size()];
+		image.draw(corner[0], corner[1], white);
 	}
 
 	image = image.mirrored().downscaled(storedSize[0], storedSize[1]);

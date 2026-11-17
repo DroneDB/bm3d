@@ -37,10 +37,20 @@ void streamTriangles(SimplifiedMesh &mesh, int nface, uint32_t node, StreamSoup 
 	}
 }
 
+//A node whose vertices, split along its texture seams and colour borders, are more than a node
+//holds is an error, not a node left out: skipping the block would leave a hole in the model, at this
+//level and at every coarser one built from it. The build is made again with smaller nodes.
+void requireNodeVertices(size_t vertices, int triangles, const char *splitAlong) {
+	if(vertices > MAX_NODE_VERTICES)
+		throw NodeTooLargeError("a node of " + std::to_string(triangles) + " triangles has " +
+		                        std::to_string(vertices) + " vertices once it is split along its " + splitAlong +
+		                        ", more than the " + std::to_string(MAX_NODE_VERTICES) + " a node holds");
+}
+
 } //namespace
 
-LevelBuilder::LevelBuilder(ModelDag &dag, float scaling, NodeTextures *textures):
-	dag_(dag), scaling_(scaling), textures_(textures) {
+LevelBuilder::LevelBuilder(ModelDag &dag, float scaling, NodeTextures *textures, ColorSource colors):
+	dag_(dag), scaling_(scaling), textures_(textures), colors_(colors) {
 }
 
 void LevelBuilder::buildLevel(KDTreeSoup &input, StreamSoup &output, int level, float textureScale, bool keepTriangles) {
@@ -73,18 +83,29 @@ void LevelBuilder::buildPlainNode(KDTreeSoup &input, StreamSoup &output, unsigne
 		if(soup.size() == 0) return;
 
 		ntriangles = soup.size();
-		mesh.load(soup);
+		mesh.load(soup, colors_);
 	}
 
 	//no need to mutex the input, it won't change anything.
 	input.lock(mesh, block);
 
-	std::vector<unsigned char> serialized(mesh.serializedSize(dag_.layout()));
 	std::vector<PatchRecord> patches;
-	mesh.serialize(serialized.data(), dag_.layout(), patches);
+	mesh.preparePatches(dag_.layout(), patches);
+	//the node is written from a copy whose vertices are split along the borders of the colours of
+	//its faces; the mesh keeps one vertex per position, which the simplification needs
+	Mesh split;
+	Mesh *written = &mesh;
+	if(dag_.layout().colors && mesh.hasColorSeams()) {
+		split.copyFrom(mesh);
+		split.splitColorSeams();
+		requireNodeVertices(split.vert.size(), ntriangles, "colour borders");
+		written = &split;
+	}
+	std::vector<unsigned char> serialized(written->serializedSize(dag_.layout()));
+	written->serialize(serialized.data(), dag_.layout());
 	const uint32_t chunk = storeChunk(serialized);
 
-	const Node node = mesh.getNode(); //get node data before simplification
+	const Node node = written->getNode(); //get node data before simplification
 
 	mesh.lockVertices();
 	mesh.quadricInit(); //needed only if Mesh::QUADRICS
@@ -106,24 +127,14 @@ void LevelBuilder::buildTexturedNode(KDTreeSoup &input, StreamSoup &output, unsi
 		if(soup.size() == 0) return;
 
 		ntriangles = soup.size();
-		mesh.load(soup);
+		mesh.load(soup, colors_);
 	}
 
 	input.lock(mesh, block);
 	//we need to replicate vertices where textured seams occours
-	vcg::tri::Append<TMesh,TMesh>::MeshCopy(tmp,mesh);
-	for(int i = 0; i < tmp.face.size(); i++) {
-		tmp.face[i].node = mesh.face[i].node;
-		tmp.face[i].tex = mesh.face[i].tex;
-	}
+	tmp.copyFrom(mesh);
 	tmp.splitSeams(dag_.layout());
-	//an error, not a node left out: skipping the block would leave a hole in the model, at
-	//this level and at every coarser one built from it
-	if(tmp.vert.size() > MAX_NODE_VERTICES)
-		throw NodeTooLargeError("a node of " + std::to_string(ntriangles) + " triangles has " +
-		                            std::to_string(tmp.vert.size()) + " vertices once its texture seams are "
-		                            "split, more than the " + std::to_string(MAX_NODE_VERTICES) +
-		                            " a node holds (the texture parametrization is too fragmented)");
+	requireNodeVertices(tmp.vert.size(), ntriangles, "texture seams and colour borders");
 
 	//save node in the temporary structure
 	std::vector<unsigned char> serialized(tmp.serializedSize(dag_.layout()));
