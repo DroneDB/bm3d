@@ -23,6 +23,7 @@ for more details.
 #include <string>
 
 #include "meshloader.h"
+#include "../../common/logger.h"
 #include "../../common/virtualarray.h"
 
 
@@ -33,8 +34,10 @@ struct PlyFace;
 
 class PlyLoader: public MeshLoader {
 public:
-	//cachePrefix: the scratch file of the vertices goes there (see VirtualMemory)
-	PlyLoader(const std::string &file, const std::string &cachePrefix);
+	//cachePrefix: the scratch file of the vertices goes there (see VirtualMemory); logger receives a
+	//warning for each line of the header that is skipped (see PlyFile::ignoredLines)
+	PlyLoader(const std::string &file, const std::string &cachePrefix,
+	          const bm3d::detail::Logger &logger = bm3d::detail::Logger());
 	~PlyLoader();
 
 	void setMaxMemory(uint64_t max_memory);
@@ -45,7 +48,6 @@ public:
 private:
 	std::string filename;
 	vcg::ply::PlyFile pf;
-	bool double_coords = false;
 	bool has_vertex_tex_coords = false;
 	bool has_face_tex_coords = false;
 	int64_t vertices_element;

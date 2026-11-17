@@ -333,6 +333,9 @@ public:
 
   std::vector<PlyElement>   elements;	// Vettore degli elementi
 	std::vector<std::string>  comments;	// Vettore dei commenti
+	// The lines before the first element that are not a known keyword (some writers put a line of
+	// text there without "comment"): they declare nothing, so they are skipped and kept here
+	std::vector<std::string>  ignoredLines;
 	static const char * typenames[9];
 	static const char * newtypenames[9];
 

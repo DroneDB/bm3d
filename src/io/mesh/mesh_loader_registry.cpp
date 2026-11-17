@@ -30,7 +30,7 @@ MeshLoaderRegistry makeStandard() {
 		return std::unique_ptr<MeshLoader>(new ObjLoader(file, context.materialLibrary));
 	});
 	registry.add(".ply", [](const std::string &file, const MeshLoaderContext &context) {
-		return std::unique_ptr<MeshLoader>(new PlyLoader(file, context.scratchPrefix));
+		return std::unique_ptr<MeshLoader>(new PlyLoader(file, context.scratchPrefix, context.logger));
 	});
 	registry.add(".stl", [](const std::string &file, const MeshLoaderContext &context) {
 		return std::unique_ptr<MeshLoader>(new STLLoader(file, context.logger));

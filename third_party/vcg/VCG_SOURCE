@@ -14,6 +14,7 @@ patch: 6761d7662af67e5fe6769a1dcca02c54b00bfc101fb9c9d151c4f0809c857215  0008-Lo
 patch: 6aba02027ba2ab93138f2700eeba2f903fffba684ba8a45b102fa4aec1794086  0009-RectPacker-keeps-the-order-of-rectangles-of-the-same.patch
 patch: be3043bcd7da4f47179e1e5dfe589508c3d5db0e6172cedee40934ccf0768af1  0010-The-scale-of-the-quadrics-is-computed-with-multiplic.patch
 patch: d71f25ffdbb5e6103d0f5c1db80068e62faed6f3425b9453cd4561a01060b715  0011-The-place-of-a-collapse-stays-near-the-edge-it-collap.patch
+patch: b949212603e2047412ae2db9c6e19f660af4ada3a0b63b835daf322f139099f4  0012-plylib-skips-a-line-of-text-before-the-first-element.patch
 files:
 8b2ad72c96b70174958e129f49b14f68b025182cbaf4731f0b803b1e643788b9  vcg/complex/algorithms/clean.h
 a08171fc34147cbea0246a61532438f61e6361b650f037e64899ce4573a6126b  vcg/complex/algorithms/closest.h
@@ -106,5 +107,5 @@ e9e361c1c656b244a66aa7f6cd641ce7324764c43f0925a68e4528949499e162  vcg/space/texc
 928dcd39d5a14c958848487702fcbf2c3d74b6642923a5531b494110827b4588  vcg/space/triangle2.h
 d068da9f5d2a41412e7ce598c3d91f94f7f673f6d9493c59e8d177433d1fe212  vcg/space/triangle3.h
 eb3d49a11dbbb144f1582ad6406ed19460d665f499a31795bff280bff70f0a4f  wrap/callback.h
-2f29e7eec263653f5aba8eaf296cceb2c232907abf7eecab7cb639939dacae49  wrap/ply/plylib.cpp
-50c08ff2183a2283c9fcd1b3cbe3f27a95c0789b862f7ececf667c1700f9aa96  wrap/ply/plylib.h
+03a9ff42985d14052def8c68fc9e1bbdbf5cbecc49254b54c1aa4a639d61bfcc  wrap/ply/plylib.cpp
+5bca56495c53dad04bcc937041fbc8464bfc28255713b95c8ba31c451740df6e  wrap/ply/plylib.h

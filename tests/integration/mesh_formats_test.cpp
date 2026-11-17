@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -512,6 +514,101 @@ TEST(PlyFormats, aTextureCoordinateBeyondOneIsTheSameAsItsFractionalPart) {
     const Bm3dFile inside = buildFile(dir, "inside.ply", "inside.ply.bm3d");
     EXPECT_EQ(buildFile(dir, "one.ply", "one.ply.bm3d").contentHash, inside.contentHash);
     EXPECT_EQ(buildFile(dir, "two.ply", "two.ply.bm3d").contentHash, inside.contentHash);
+}
+
+// A square whose corners are exact in a float, a double and a short, as the coordinates x, y, z
+const double kSquare[4][3] = {{0.5, 0, -2}, {2.25, 0, 7}, {2.25, 3.75, 7}, {0.5, 3.75, -2}};
+const char* const kSquareFaces = "3 0 1 2\n3 0 2 3\n";
+
+// The square with float coordinates in the usual order, the model the others must give
+std::string plainSquarePly() {
+    std::ostringstream s;
+    s << "ply\nformat ascii 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\n"
+         "element face 2\nproperty list uchar int vertex_indices\nend_header\n";
+    for (const auto& v : kSquare)
+        s << v[0] << " " << v[1] << " " << v[2] << "\n";
+    return s.str() + kSquareFaces;
+}
+
+// The header of the square with its vertex properties in another order and of other types, among
+// float colours: what Blender's importer reads in its test of the order of the components
+std::string mixedSquareHeader(const char* format) {
+    return std::string("ply\nformat ") + format +
+           " 1.0\nelement vertex 4\nproperty float red\nproperty double x\nproperty float green\n"
+           "property float y\nproperty short z\nproperty float blue\nelement face 2\n"
+           "property list int int vertex_indices\nend_header\n";
+}
+
+std::string mixedSquareAsciiPly() {
+    std::ostringstream s;
+    s << mixedSquareHeader("ascii");
+    for (const auto& v : kSquare)
+        s << "0.8 " << v[0] << " 0.2 " << v[1] << " " << v[2] << " 0.5\n";
+    return s.str() + kSquareFaces;
+}
+
+template <typename Bits, typename Real>
+void putRealLittleEndian(std::string& s, Real value) {
+    static_assert(sizeof(Bits) == sizeof(Real), "the bits of the number");
+    Bits bits;
+    std::memcpy(&bits, &value, sizeof bits);
+    detail::putLittleEndian(s, bits);
+}
+
+std::string mixedSquareBinaryPly() {
+    std::string s = mixedSquareHeader("binary_little_endian");
+    for (const auto& v : kSquare) {
+        putRealLittleEndian<uint32_t>(s, 0.8f);
+        putRealLittleEndian<uint64_t>(s, v[0]);
+        putRealLittleEndian<uint32_t>(s, 0.2f);
+        putRealLittleEndian<uint32_t>(s, static_cast<float>(v[1]));
+        detail::putLittleEndian(s, static_cast<int16_t>(v[2]));
+        putRealLittleEndian<uint32_t>(s, 0.5f);
+    }
+    const int faces[2][3] = {{0, 1, 2}, {0, 2, 3}};
+    for (const auto& f : faces) {
+        detail::putLittleEndian(s, int32_t(3));
+        for (int i : f)
+            detail::putLittleEndian(s, int32_t(i));
+    }
+    return s;
+}
+
+// The coordinates of a vertex are read whatever their place among its properties and whatever their
+// scalar types (they were read only as three floats or three doubles), in text and in binary, and
+// give the model of the same coordinates written as floats
+TEST(PlyFormats, theCoordinatesOfAVertexAreReadWhateverTheirTypesAndOrder) {
+    TempDir dir;
+    writeTextFile(dir.file("plain.ply"), plainSquarePly());
+    writeTextFile(dir.file("mixed_ascii.ply"), mixedSquareAsciiPly());
+    writeBinaryFile(dir.file("mixed_binary.ply"), mixedSquareBinaryPly());
+    const Bm3dFile plain = buildFile(dir, "plain.ply", "plain.bm3d");
+    EXPECT_EQ(plain.nface, 2u);
+    for (const char* name : {"mixed_ascii.ply", "mixed_binary.ply"}) {
+        const Bm3dFile mixed = buildFile(dir, name, std::string(name) + ".bm3d");
+        EXPECT_EQ(mixed.nface, 2u) << name;
+        EXPECT_EQ(mixed.contentHash, plain.contentHash) << name;
+    }
+}
+
+// The texture coordinates of a vertex are read whatever their scalar type too: doubles give the
+// model of the same coordinates as floats (they were not read, and the model had no texture)
+TEST(PlyFormats, theTextureCoordinatesOfAVertexAreReadWhateverTheirType) {
+    TempDir dir;
+    writePng(dir.file("t.png"), gradientRaster(3));
+    const auto ply = [](const char* type) {
+        return std::string("ply\nformat ascii 1.0\ncomment TextureFile t.png\nelement vertex 4\n"
+                           "property float x\nproperty float y\nproperty float z\nproperty ") +
+               type + " s\nproperty " + type +
+               " t\nelement face 2\nproperty list uchar int vertex_indices\nend_header\n"
+               "0 0 0 0.25 0.25\n1 0 0 0.75 0.25\n1 1 0 0.75 0.5\n0 1 0 0.25 0.5\n3 0 1 2\n3 0 2 3\n";
+    };
+    writeTextFile(dir.file("float.ply"), ply("float"));
+    writeTextFile(dir.file("double.ply"), ply("double"));
+    const Bm3dFile single = buildFile(dir, "float.ply", "float.bm3d");
+    const Bm3dFile twice = buildFile(dir, "double.ply", "double.bm3d");
+    EXPECT_GE(twice.nTextures, 1u);
+    EXPECT_EQ(twice.contentHash, single.contentHash);
 }
 
 // `v x y z r g b` is a colour of the vertex, 0..1 unless a component of the vertex is more than 1: then

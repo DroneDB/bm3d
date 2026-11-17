@@ -8,7 +8,7 @@ named by their commit names.
 | Part | Upstream | Fork or pin used here |
 |---|---|---|
 | Nexus builder | https://github.com/cnr-isti-vclab/nexus, `master` at `f29e8fd1182b2a1c0c512add99c7edfc8e146680` | https://github.com/DroneDB/nexus at `847f024bf7cc0beb078868749bc7669748c0aa3d` |
-| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 10 patches (`third_party/vcg-patches/`) |
+| VCGLib | https://github.com/cnr-isti-vclab/vcglib, `devel`, commit `03484542632225739ca96b28afcde38267561323` | the same upstream commit plus 12 patches (`third_party/vcg-patches/`) |
 | corto | https://github.com/cnr-isti-vclab/corto, `master`, commit `d240e69306a39417c098475d7002eb16b7264248` | the same upstream commit plus 6 patches (`third_party/corto-patches/`) |
 | API and command line wrapper | none | https://github.com/DroneDB/libnexus at `18acb8c161fd85d1eb614d8be0f8b4dae5fe16f1` (`nxs.cpp`, `nxs.h`, `ddb_nexus_main.cpp`) |
 | Web viewer (added with the release that ships `web/`) | the JavaScript in `html/js` of Nexus, commit `d805432` | the same, with fixes recorded in `web/` |
@@ -77,6 +77,12 @@ of the local optimization when it is made and does the operations of equal prior
 `complex/algorithms/local_optimization/tri_edge_collapse_quadric.h` computes the scale of the
 quadrics, `1e8 / diag^6`, with multiplications instead of `pow`, whose last bit differs between
 libraries.
+
+`0011` (HeDo) keeps the place of a collapse near the edge it collapses. `0012` (HeDo) makes
+`PlyFile::OpenRead` skip a header line that is not a keyword when it comes before the first element
+(Blender 2.4 wrote such a line of text without `comment`) and keep it in `PlyFile::ignoredLines`,
+which the PLY loader reports as warnings; there a skipped line cannot change how the data is read.
+After an element, or as the rest of a line too long for the buffer, it is a syntax error as before.
 
 ## Files taken and how to repeat it
 
@@ -287,6 +293,14 @@ describe what was done to them before.
   with one `ToneMap` of them all (`src/io/image/tone_map.{h,cpp}`), so the 16 bit and float TIFFs
   of a multispectral model have the same brightness in every texture. 8 bit textures are loaded
   as before.
+
+- `src/io/mesh/plyloader.{h,cpp}`: every vertex property is read as the type the header declares
+  (`addVertexScalar`, which finds the property as `addFaceList` does): the coordinates as doubles
+  from any scalar type, in any order among the other properties (they were read only as three
+  floats or three doubles), the texture coordinates and the normals as floats from any scalar type,
+  and a colour from uchar channels as before. The table of `PropDescriptor`s and the separate
+  double coordinates are gone. The loader takes the build's logger and warns of each header line
+  that plylib skipped. A file of float coordinates gives the same model.
 
 Edits made after the import appear in `scripts/import-nexus.py --check`; larger ones are listed
 here as they happen.

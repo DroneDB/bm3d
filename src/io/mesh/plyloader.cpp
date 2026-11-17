@@ -44,27 +44,17 @@ struct PlyFace {
 };
 
 struct PlyVertex {
-	double dv[3];
-	float v[3];
+	double v[3]; //read as a double whatever the type in the file: every scalar type of PLY converts to it exactly
 	float t[2]; //texture
 	float n[3];
 	unsigned char c[4]; //colors
 };
 
-PropDescriptor plyprop1[13]= {
-	{"vertex", "x",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[0]),0,0,0,0,0,0},
-	{"vertex", "y",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[1]),0,0,0,0,0,0},
-	{"vertex", "z",     T_FLOAT, T_FLOAT, offsetof(PlyVertex,v[2]),0,0,0,0,0,0},
-	{"vertex", "red"  , T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[0]),0,0,0,0,0,0},
-	{"vertex", "green", T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[1]),0,0,0,0,0,0},
-	{"vertex", "blue" , T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[2]),0,0,0,0,0,0},
-	{"vertex", "alpha", T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[3]),0,0,0,0,0,0},
-	{"vertex", "nx",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, n[0]),0,0,0,0,0,0},
-	{"vertex", "ny",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, n[1]),0,0,0,0,0,0},
-	{"vertex", "nz",    T_FLOAT, T_FLOAT, offsetof(PlyVertex, n[2]),0,0,0,0,0,0},
-	{"vertex", "diffuse_red",   T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[0]),0,0,0,0,0,0},
-	{"vertex", "diffuse_green", T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[1]),0,0,0,0,0,0},
-	{"vertex", "diffuse_blue" , T_UCHAR, T_UCHAR, offsetof(PlyVertex,c[2]),0,0,0,0,0,0}
+//The colour channels of a vertex: an uchar each, under either set of names (the first set that the
+//file has a red of is the one read; a channel the file lacks is left as it is, see cacheVertices)
+static const char *const vertexColorNames[][4] = {
+	{ "red", "green", "blue", "alpha" },
+	{ "diffuse_red", "diffuse_green", "diffuse_blue", nullptr }
 };
 
 //The names a texture coordinate of a vertex goes by in PLY files; the first pair that the file has
@@ -74,39 +64,58 @@ static const char *const vertexUvNames[][2] = {
 	{ "u", "v" },
 	{ "texture_u", "texture_v" }
 };
-PropDescriptor doublecoords[3] = {
-	{"vertex", "x",     T_DOUBLE, T_DOUBLE, offsetof(PlyVertex,dv[0]),0,0,0,0,0,0},
-	{"vertex", "y",     T_DOUBLE, T_DOUBLE, offsetof(PlyVertex,dv[1]),0,0,0,0,0,0},
-	{"vertex", "z",     T_DOUBLE, T_DOUBLE, offsetof(PlyVertex,dv[2]),0,0,0,0,0,0}
-};
 
 PropDescriptor plyprop5[1]=	{
 	{"face", "texnumber",T_INT,T_INT,offsetof(PlyFace, texNumber), 0,0,0,0,0,0}
 };
 
 
+static bool isIntegerType(int type) {
+	return type == T_CHAR || type == T_UCHAR || type == T_SHORT || type == T_USHORT || type == T_INT || type == T_UINT;
+}
+
+static bool isRealType(int type) {
+	return type == T_FLOAT || type == T_DOUBLE;
+}
+
+//The property `name` of the element `element`, or null when the file has no such element or the
+//element no such property
+static PlyProperty *findProperty(PlyFile &pf, const char *element, const char *name) {
+	for(PlyElement &e: pf.elements)
+		if(e.name == element)
+			return e.FindProp(name);
+	return nullptr;
+}
+
+//A vertex property is read as the type the header declares, whatever its place among the others:
+//plylib reads a property only when it is told the type of the file, and a coordinate may be any
+//scalar type (a double x, a float y and a short z are one valid vertex). memtype is the type it is
+//stored as at offset in PlyVertex (T_FLOAT or T_DOUBLE, which every type of the file converts to;
+//T_UCHAR for a colour, read only from an uchar of the file: a float colour is not a byte).
+//False when the vertex has no such scalar property, or it cannot be stored as memtype.
+static bool addVertexScalar(PlyFile &pf, const char *name, int memtype, size_t offset) {
+	const PlyProperty *property = findProperty(pf, "vertex", name);
+	if(!property || property->islist)
+		return false;
+	const bool storable = isRealType(memtype) ? (isIntegerType(property->tipo) || isRealType(property->tipo))
+	                                          : property->tipo == memtype;
+	if(!storable)
+		return false;
+	return pf.AddToRead("vertex", name, property->tipo, memtype, offset, 0, 0, 0, 0, 0) == vcg::ply::E_NOERROR;
+}
+
 //The face lists are read as the types the header declares, the lengths included: most files give
 //the length as an uchar, but a list of any integer length type (or of any integer index type) is
 //valid PLY. False when the face has no such list, or its items or length are not of the kind
 //asked for (memtype says which: T_UINT for vertex indices, T_FLOAT for texture coordinates).
 static bool addFaceList(PlyFile &pf, const char *name, int memtype, size_t offset, size_t offsetLength, size_t maxlist) {
-	const auto isInteger = [](int type) {
-		return type == T_CHAR || type == T_UCHAR || type == T_SHORT || type == T_USHORT || type == T_INT || type == T_UINT;
-	};
-	for(PlyElement &element: pf.elements) {
-		if(element.name != "face")
-			continue;
-		PlyProperty *property = element.FindProp(name);
-		if(!property || !property->islist || !isInteger(property->tipoindex))
-			return false;
-		const bool integerItems = isInteger(property->tipo);
-		const bool realItems = property->tipo == T_FLOAT || property->tipo == T_DOUBLE;
-		if(memtype == T_UINT ? !integerItems : !realItems)
-			return false;
-		return pf.AddToRead("face", name, property->tipo, memtype, offset, 1, 0,
-		                    property->tipoindex, T_INT, offsetLength, maxlist) == vcg::ply::E_NOERROR;
-	}
-	return false;
+	const PlyProperty *property = findProperty(pf, "face", name);
+	if(!property || !property->islist || !isIntegerType(property->tipoindex))
+		return false;
+	if(memtype == T_UINT ? !isIntegerType(property->tipo) : !isRealType(property->tipo))
+		return false;
+	return pf.AddToRead("face", name, property->tipo, memtype, offset, 1, 0,
+	                    property->tipoindex, T_INT, offsetLength, maxlist) == vcg::ply::E_NOERROR;
 }
 
 //what an error of PlyFile::Open says about the file: plylib reads the header a line at a time
@@ -129,7 +138,7 @@ static std::string headerProblem(int error) {
 	}
 }
 
-PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix):
+PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix, const bm3d::detail::Logger &logger):
 	filename(filename),
 	vertices_element(-1),
 	faces_element(-1),
@@ -142,6 +151,9 @@ PlyLoader::PlyLoader(const std::string &filename, const std::string &cachePrefix
 	int val = pf.Open(bm3d::detail::systemPath(filename).c_str(), PlyFile::MODE_READ);
 	if(val == -1)
 		throw bm3d::detail::Error("ply file " + filename + " " + headerProblem(pf.GetError()));
+	for(const std::string &line: pf.ignoredLines)
+		bm3d::detail::warn(logger, "ply file " + filename + " has a line in its header that is not a keyword of the format; "
+		                   "it is ignored: " + line);
 	init();
 	for(int co = 0; co < int(pf.comments.size()); ++co) {
 		std::string TFILE = "TEXTUREFILE";
@@ -195,55 +207,39 @@ void PlyLoader::init() {
 		}
 	}
 
-	//testing for required vertex fields.
-	if(pf.AddToRead(plyprop1[0])==-1 ||
-			pf.AddToRead(plyprop1[1])==-1 ||
-			pf.AddToRead(plyprop1[2])==-1) {
-
-		if(pf.AddToRead(doublecoords[0])==-1 ||
-				pf.AddToRead(doublecoords[1])==-1 ||
-				pf.AddToRead(doublecoords[2])==-1) {
+	//the coordinates are required, each of any scalar type
+	const char *const coordinateNames[3] = { "x", "y", "z" };
+	for(int k = 0; k < 3; k++)
+		if(!addVertexScalar(pf, coordinateNames[k], T_DOUBLE, offsetof(PlyVertex, v[0]) + k*sizeof(double)))
 			throw bm3d::detail::Error("ply file " + filename + " has no x, y and z coordinates for its vertices");
-		} else {
-			double_coords = true;
-		}
-	}
 
-	//these calls will silently fail if no color is present
-	int error = pf.AddToRead(plyprop1[3]);
-	pf.AddToRead(plyprop1[4]);
-	pf.AddToRead(plyprop1[5]);
-	pf.AddToRead(plyprop1[6]);  //alpha: a vertex without one is opaque (see cacheVertices)
-
-	if(error ==  vcg::ply::E_NOERROR)
+	//the colour, when the file has a red; the alpha is optional: a vertex without one is opaque
+	//(see cacheVertices)
+	for(const auto &names: vertexColorNames) {
+		if(!addVertexScalar(pf, names[0], T_UCHAR, offsetof(PlyVertex, c[0])))
+			continue;
+		for(int k = 1; k < 4; k++)
+			if(names[k])
+				addVertexScalar(pf, names[k], T_UCHAR, offsetof(PlyVertex, c[0]) + k);
 		has_colors = true;
-	else {
-		error = pf.AddToRead(plyprop1[10]);
-		pf.AddToRead(plyprop1[11]);
-		pf.AddToRead(plyprop1[12]);
-
-		if(error ==  vcg::ply::E_NOERROR)
-			has_colors = true;
+		break;
 	}
 
 	for(const auto &names: vertexUvNames) {
-		const PropDescriptor u = { "vertex", names[0], T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[0]), 0, 0, 0, 0, 0, 0 };
-		const PropDescriptor v = { "vertex", names[1], T_FLOAT, T_FLOAT, offsetof(PlyVertex, t[1]), 0, 0, 0, 0, 0, 0 };
-		if(pf.AddToRead(u) != vcg::ply::E_NOERROR)
+		if(!addVertexScalar(pf, names[0], T_FLOAT, offsetof(PlyVertex, t[0])))
 			continue;
-		pf.AddToRead(v);
+		addVertexScalar(pf, names[1], T_FLOAT, offsetof(PlyVertex, t[1]));
 		has_textures = true;
 		has_vertex_tex_coords = true;
 		break;
 	}
 
-	//these calls will fail silently if no normal is present
 	if(!has_faces) { //skip normals for triangle mesh
-		error = pf.AddToRead(plyprop1[7]);
-		pf.AddToRead(plyprop1[8]);
-		pf.AddToRead(plyprop1[9]);
-		if(error == vcg::ply::E_NOERROR)
+		if(addVertexScalar(pf, "nx", T_FLOAT, offsetof(PlyVertex, n[0]))) {
+			addVertexScalar(pf, "ny", T_FLOAT, offsetof(PlyVertex, n[1]));
+			addVertexScalar(pf, "nz", T_FLOAT, offsetof(PlyVertex, n[2]));
 			has_normals = true;
+		}
 	}
 
 	for(const char *name: { "vertex_index", "vertex_indices" })
@@ -277,15 +273,8 @@ void PlyLoader::cacheVertices() {
 	for(uint64_t i = 0; i < n_vertices; i++) {
 		Vertex &v = vertices[i];
 		readElement(&vertex, "vertex", i, n_vertices);
-		if(double_coords) {
-			v.v[0] = (float)vertex.dv[0];
-			v.v[1] = (float)vertex.dv[1];
-			v.v[2] = (float)vertex.dv[2];
-		} else {
-			v.v[0] = vertex.v[0];
-			v.v[1] = vertex.v[1];
-			v.v[2] = vertex.v[2];
-		}
+		for(int k = 0; k < 3; k++)
+			v.v[k] = (float)vertex.v[k];
 		bm3d::detail::requireFinite(v.v, [&]() {
 			return "vertex " + std::to_string(i) + " of ply file " + filename;
 		});

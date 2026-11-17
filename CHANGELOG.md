@@ -2,6 +2,24 @@
 
 All notable changes to bm3d are listed here. The version is in `VERSION`.
 
+## 1.1.3 (not released)
+
+- **The vertex properties of a PLY are read as the types the header declares.** The coordinates
+  were read only when x, y and z were all floats or all doubles, so a valid vertex of mixed types (a
+  double x, a float y and a short z, among float colours, as in Blender's test of the order of the
+  components) was refused as having "no x, y and z coordinates" (exit code 2). Each coordinate is
+  now read as whatever scalar type the file gives it, in any place among the other properties, and
+  so are the texture coordinates of a vertex (a double `s` and `t` were not read, and the model lost
+  its texture) and its normals. A file of float coordinates gives the same model as before. A colour
+  is still read only from uchar channels.
+- **A line of text before the first element of a PLY header is skipped, with a warning.** Blender
+  2.4 wrote a line without the `comment` keyword after the format line (`Created by Blender3D 247 -
+  www.blender.org, source file: ...`), which was a syntax error; Assimp and Blender skip it. Such a
+  line is now skipped and quoted in a warning when it comes before the first element, where it
+  cannot change how the data is read (VCGLib patch `0012`). An unknown line anywhere else, the rest of
+  a header line longer than 511 characters, a property before the first element and a header
+  without `end_header` are still invalid input.
+
 ## 1.1.2
 
 TIFF textures of one band, of 16 bit samples and of floats are read, and samples wider than 8 bits are stretched with one map for the whole model: the multispectral models of OpenDroneMap build. The files written from 8 bit textures and 16 bit PNGs are the same, and the viewer is unchanged; its version follows the release.

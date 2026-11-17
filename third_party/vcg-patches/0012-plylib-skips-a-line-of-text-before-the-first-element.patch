@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HeDo <ldileo@digipa.it>
+Date: Tue, 17 Nov 2026 14:54:19 +0100
+Subject: [PATCH] plylib skips a line of text before the first element
+
+A header line that is not a keyword was a syntax error wherever it was. Some writers put a line of
+text between the format line and the first element without the "comment" keyword (Blender 2.4
+wrote "Created by Blender3D 247 - www.blender.org, source file: ..."), and Assimp and Blender read
+such files. Before the first element, a skipped line cannot change how the data is read: a
+property there is an error, and an element line written wrong either has properties, whose lines
+are then that error, or has none and takes no bytes. So such a line is skipped and kept in
+PlyFile::ignoredLines, for the caller to report. After an element, or as the rest of a line too
+long for the buffer, an unknown line is still a syntax error.
+---
+ wrap/ply/plylib.cpp | 22 ++++++++++++++++++++++
+ wrap/ply/plylib.h   |  3 +++
+ 2 files changed, 25 insertions(+)
+
+diff --git a/wrap/ply/plylib.cpp b/wrap/ply/plylib.cpp
+index 2e41020..506e31a 100644
+--- a/wrap/ply/plylib.cpp
++++ b/wrap/ply/plylib.cpp
+@@ -1086,6 +1086,7 @@ int PlyFile::OpenRead( const char * filename )
+ 
+   header.clear();
+   header.reserve(1536);
++  ignoredLines.clear();
+ 		// ********* Parsing header ***********
+ 
+ 			// Controllo header
+@@ -1180,14 +1181,21 @@ int PlyFile::OpenRead( const char * filename )
+ 		//************* Ciclo lettura elementi ****************
+ 
+ 	curelement = 0;
++	// false when the text read last did not end its line: the line was longer than buf, and what
++	// is read next is the rest of it (set apart from its declaration, which the gotos above jump)
++	bool lineEnded;
++	lineEnded = true;
+ 	for(;;)
+ 	{
++		const bool lineStarts = lineEnded;
+ 		if( pb_fgets(buf,MAXB-1,gzfp)==0 )
+ 		{
+ 			error = E_UNESPECTEDEOF;
+ 			goto error;
+ 		}
+     header.append(buf);
++		const size_t length = strlen(buf);
++		lineEnded = length>0 && buf[length-1]=='\n';
+ 
+ #ifdef __MINGW32__
+     token = strtok(buf,SEP);
+@@ -1338,6 +1346,20 @@ int PlyFile::OpenRead( const char * filename )
+ 				curelement->AddProp(token,t1,0,T_NOTYPE);
+ 			}
+ 		}
++		else if( curelement==0 && lineStarts && lineEnded )
++		{
++				// A whole line before the first element that is not a keyword: some writers put a
++				// line of text there without "comment" (Blender 2.4 wrote "Created by Blender3D
++				// ..."). There, skipping a line cannot change how the data is read: a property
++				// before the first element is an error, and an element line written wrong either
++				// has properties, whose lines are then that error, or has none and takes no bytes.
++				// So the line is skipped and kept in ignoredLines (strtok has cut buf, so it is
++				// taken from the header). After an element, or as a part of a line too long for
++				// buf, it is a syntax error as before.
++			std::string line = header.substr(header.size()-length);
++			line.erase(line.find_last_not_of("\r\n")+1);
++			ignoredLines.push_back(line);
++		}
+ 		else
+ 		{
+ 			error = E_SYNTAX;
+diff --git a/wrap/ply/plylib.h b/wrap/ply/plylib.h
+index fa1c1c5..ab707f7 100644
+--- a/wrap/ply/plylib.h
++++ b/wrap/ply/plylib.h
+@@ -333,6 +333,9 @@ public:
+ 
+   std::vector<PlyElement>   elements;	// Vettore degli elementi
+ 	std::vector<std::string>  comments;	// Vettore dei commenti
++	// The lines before the first element that are not a known keyword (some writers put a line of
++	// text there without "comment"): they declare nothing, so they are skipped and kept here
++	std::vector<std::string>  ignoredLines;
+ 	static const char * typenames[9];
+ 	static const char * newtypenames[9];
+ 
+-- 
+2.53.0
+

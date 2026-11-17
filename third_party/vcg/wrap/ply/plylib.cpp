@@ -1086,6 +1086,7 @@ int PlyFile::OpenRead( const char * filename )
 
   header.clear();
   header.reserve(1536);
+  ignoredLines.clear();
 		// ********* Parsing header ***********
 
 			// Controllo header
@@ -1180,14 +1181,21 @@ int PlyFile::OpenRead( const char * filename )
 		//************* Ciclo lettura elementi ****************
 
 	curelement = 0;
+	// false when the text read last did not end its line: the line was longer than buf, and what
+	// is read next is the rest of it (set apart from its declaration, which the gotos above jump)
+	bool lineEnded;
+	lineEnded = true;
 	for(;;)
 	{
+		const bool lineStarts = lineEnded;
 		if( pb_fgets(buf,MAXB-1,gzfp)==0 )
 		{
 			error = E_UNESPECTEDEOF;
 			goto error;
 		}
     header.append(buf);
+		const size_t length = strlen(buf);
+		lineEnded = length>0 && buf[length-1]=='\n';
 
 #ifdef __MINGW32__
     token = strtok(buf,SEP);
@@ -1337,6 +1345,20 @@ int PlyFile::OpenRead( const char * filename )
 				}
 				curelement->AddProp(token,t1,0,T_NOTYPE);
 			}
+		}
+		else if( curelement==0 && lineStarts && lineEnded )
+		{
+				// A whole line before the first element that is not a keyword: some writers put a
+				// line of text there without "comment" (Blender 2.4 wrote "Created by Blender3D
+				// ..."). There, skipping a line cannot change how the data is read: a property
+				// before the first element is an error, and an element line written wrong either
+				// has properties, whose lines are then that error, or has none and takes no bytes.
+				// So the line is skipped and kept in ignoredLines (strtok has cut buf, so it is
+				// taken from the header). After an element, or as a part of a line too long for
+				// buf, it is a syntax error as before.
+			std::string line = header.substr(header.size()-length);
+			line.erase(line.find_last_not_of("\r\n")+1);
+			ignoredLines.push_back(line);
 		}
 		else
 		{

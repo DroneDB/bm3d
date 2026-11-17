@@ -202,6 +202,44 @@ TEST(PlyHeader, anElementCountThatIsMissingNegativeOrNotANumberIsInvalidInput) {
         expectInvalidInput(c.run("count.ply", header), {"count.ply"}, header);
 }
 
+// A line of text without a keyword between the format line and the first element (Blender 2.4 wrote
+// "Created by Blender3D 247 - www.blender.org, source file: ...") is skipped with a warning that
+// quotes it, as Assimp and Blender skip it; it was a syntax error
+TEST(PlyHeader, aLineOfTextBeforeTheFirstElementIsSkippedWithAWarning) {
+    Case c;
+    const std::string line = "Created by Blender3D 247 - www.blender.org, source file: wuson.blend";
+    for (const std::string& lines : {line, line + "\n" + line, "comment a\n" + line + "\nobj_info b", line + "\r"}) {
+        const Outcome o = c.run("text.ply", plyWithComment(lines));
+        expectExit(o, 0, lines);
+        EXPECT_NE(o.process.err.find("is ignored: " + line + "\n"), std::string::npos) << lines << "\n" << o.process.err;
+    }
+}
+
+// Anywhere else a line that is not a keyword could hide a declaration, so it is still invalid input:
+// before the format line, after an element (among its properties or before end_header), and as the
+// rest of a line too long to read. So are a property before the first element (also what a first
+// element line written wrong leaves) and a header without end_header.
+TEST(PlyHeader, aLineThatIsNotAKeywordAnywhereElseIsInvalidInput) {
+    Case c;
+    const std::string vertex = "element vertex 3\nproperty float x\nproperty float y\nproperty float z\n";
+    const std::string face = "element face 1\nproperty list uchar int vertex_indices\n";
+    const std::string body = "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n";
+    const std::string text = "Created by a program\n";
+    const std::string format = "format ascii 1.0\n";
+    for (const std::string& header :
+         {"ply\n" + text + format + vertex + face + "end_header\n",
+          "ply\n" + format + "element vertex 3\n" + text + "property float x\nproperty float y\nproperty float z\n" + face +
+              "end_header\n",
+          "ply\n" + format + vertex + text + face + "end_header\n",
+          "ply\n" + format + vertex + face + text + "end_header\n",
+          "ply\n" + format + std::string(1100, 'x') + "\n" + vertex + face + "end_header\n",
+          "ply\n" + format + "elemnt vertex 3\nproperty float x\nproperty float y\nproperty float z\n" + face + "end_header\n",
+          "ply\n" + format + "property float w\n" + vertex + face + "end_header\n",
+          "ply\n" + format + vertex + face}) {
+        expectInvalidInput(c.run("bad.ply", header + body), {"bad.ply"}, header.substr(0, 120));
+    }
+}
+
 TEST(PlyHeader, aTextureNamedInALongCommentIsFoundAndUsed) {
     Case c;
     const std::string name = std::string(60, 'a') + ".png";
