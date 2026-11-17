@@ -52,7 +52,10 @@ function render() { renderer.render(scene, camera); }
 chooses the nodes for the current camera, draws them with the shader program three.js chose for the
 material, and asks for the nodes it lacks. Call `render()` again when `onUpdate` says a node has
 arrived (or draw continuously). Without a `material`, the object makes a white Lambert material (basic
-for a model without normals) that shows the vertex colours and the textures the file has.
+for a model without normals) that shows the vertex colours and the textures the file has, on both
+sides of the triangles (`THREE.DoubleSide`): the winding of many meshes is not consistent, and an open
+surface is seen from behind when the camera passes under it. A material of your own decides that with
+its `side`.
 
 `model.dispose()` frees what the model holds on the GPU. `model.flush()` drops the loaded nodes.
 `model.computeBoundingBox()` gives the box around the finest nodes, and `raycast` works against the

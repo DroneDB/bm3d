@@ -33,7 +33,8 @@ const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
 renderer.setSize(400, 300);
 document.body.append(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(${BACKGROUND[0] / 255}, ${BACKGROUND[1] / 255}, ${BACKGROUND[2] / 255});
+// the bytes of BACKGROUND on the canvas: an sRGB colour (three.js converts the background to the output's sRGB)
+scene.background = new THREE.Color().setRGB(${BACKGROUND[0] / 255}, ${BACKGROUND[1] / 255}, ${BACKGROUND[2] / 255}, THREE.SRGBColorSpace);
 scene.add(new THREE.AmbientLight(0xffffff, 1.2), new THREE.DirectionalLight(0xffffff, 2));
 const camera = new THREE.PerspectiveCamera(40, 400 / 300, 0.01, 100);
 
@@ -42,7 +43,9 @@ if (query.get('decoderPath')) options.decoderPath = query.get('decoderPath');
 if (query.get('cache')) options.cache = true;
 const object = new Bm3dObject(query.get('model'), (o) => {
 	const { center, radius } = o.geometry.boundingSphere;
-	camera.position.set(center.x + radius * 0.8, center.y - radius * 2.2, center.z + radius * 1.6);
+	// view=below: from under the model, which shows the back of a surface such as the terrain
+	const below = query.get('view') === 'below' ? -1 : 1;
+	camera.position.set(center.x + radius * 0.8, center.y - radius * 2.2, center.z + below * radius * 1.6);
 	camera.up.set(0, 0, 1);
 	camera.lookAt(center);
 	state.loaded = true;
@@ -141,6 +144,16 @@ test('draws a textured, multiresolution model: not a blank canvas, and refined',
 
 test('the minified bundle draws as well', async ({ page }) => {
 	const errors = await show(page, 'terrain', { nodes: 2, extra: '&bundle=min' });
+	const pixels = await page.evaluate(() => window.__pixels());
+	expect(pixels.drawn / pixels.total).toBeGreaterThan(0.1);
+	expect(pixels.colors).toBeGreaterThan(20);
+	expect(errors).toEqual([]);
+});
+
+test('draws the back of a surface: the terrain seen from below is not a blank canvas', async ({ page }) => {
+	// The triangles of the terrain are wound counterclockwise seen from above: from below every one is
+	// a back face, which a material of one side culls
+	const errors = await show(page, 'terrain', { nodes: 2, extra: '&view=below' });
 	const pixels = await page.evaluate(() => window.__pixels());
 	expect(pixels.drawn / pixels.total).toBeGreaterThan(0.1);
 	expect(pixels.colors).toBeGreaterThan(20);

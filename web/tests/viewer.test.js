@@ -161,6 +161,13 @@ describe('Bm3dObject', () => {
 		expect(object.geometry.boundingSphere.radius).toBeCloseTo(1.5);
 	});
 
+	it('makes a material that draws both sides of the triangles, whatever their winding', async () => {
+		for (const options of [{ textures: true }, { textures: false }]) {
+			const { object } = await loadObject(model(options));
+			expect(object.material.side).toBe(2); // DoubleSide
+		}
+	});
+
 	it('uses the material it is given, and a basic one for a model without normals', async () => {
 		const given = { isMaterial: true };
 		expect((await loadObject(model({ textures: false }), given)).object.material).toBe(given);

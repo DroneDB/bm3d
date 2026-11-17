@@ -9,7 +9,7 @@
 // hands the frame to the traversal and draws the nodes itself with the shader program three
 // chose for the material.
 
-import { Box3, BufferAttribute, BufferGeometry, DataTexture, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Ray, RGBAFormat, Sphere, Vector2, Vector3 } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, DataTexture, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Ray, RGBAFormat, Sphere, Vector2, Vector3 } from 'three';
 
 import { Instance } from './instance.js';
 
@@ -24,10 +24,17 @@ function placeholderTexture() {
 	return texture;
 }
 
-/** The material for what the model holds, when the caller gave none. */
+/**
+ * The material for what the model holds, when the caller gave none. It draws both sides of the
+ * triangles: the winding of a mesh says which side is the front only when the program that wrote it
+ * kept it consistent, and many do not (scans, terrain patches wound clockwise, meshes of mixed
+ * winding), and an open surface is seen from behind as soon as the camera passes under it. Culling
+ * the back faces would leave holes there; three.js turns the normal of a back face to the camera, so
+ * it is lit as the front.
+ */
 function createMaterial(mesh) {
 	const Material = mesh.hasNormals ? MeshLambertMaterial : MeshBasicMaterial;
-	const parameters = { color: 0xffffff };
+	const parameters = { color: 0xffffff, side: DoubleSide };
 	if (mesh.hasColors) parameters.vertexColors = true;
 	if (mesh.hasUvs) parameters.map = placeholderTexture();
 	return new Material(parameters);
@@ -71,7 +78,8 @@ function afterRender(renderer, scene, camera, geometry) {
  *
  * `onLoad(object)` is called when the model has been opened (its index read), `onUpdate()` when a
  * node has arrived (render again). `material` is optional: without one, a white Lambert (or basic,
- * for a model without normals) material is made that shows the vertex colours and the textures.
+ * for a model without normals) material is made that shows the vertex colours and the textures, on
+ * both sides of the triangles.
  * `options`: decoderPath, cache, fetch, requestInit, onError (see the README).
  */
 export class Bm3dObject extends Mesh {

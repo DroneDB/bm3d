@@ -4,6 +4,11 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## 1.1.3 (not released)
 
+- **The viewer draws both sides of the triangles.** The material it makes when it is given none
+  culled the back faces, so a mesh wound clockwise (a MeshLab terrain patch whose triangles face down
+  while its normals face up), a mesh of mixed winding, or any open surface seen from below, showed
+  only fragments or nothing. The material is now double-sided; three.js lights a back face with its
+  normal turned to the camera. A material passed to `Bm3dObject` keeps its own `side`.
 - **The float colours of a PLY are read.** A colour was read only from uchar channels, so a PLY
   of float colours (Assimp's `float-color.ply`, Blender's exports) was built grey. Each colour
   channel is now read from an uchar (0 to 255), an ushort (0 to 65535) or a float or double (0 to 1,
