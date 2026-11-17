@@ -30,7 +30,7 @@ void writeTextFile(const fs::path& file, const std::string& text) {
     writeBinaryFile(file, text);
 }
 
-void writeGridModel(const fs::path& folder, int cells, const std::string& texture) {
+void writeGridModel(const fs::path& folder, int cells, const std::string& texture, const GridTexCoords& uv) {
     std::ostringstream obj;
     obj << "mtllib grid.mtl\n";
     for (int y = 0; y <= cells; y++)
@@ -38,7 +38,8 @@ void writeGridModel(const fs::path& folder, int cells, const std::string& textur
             obj << "v " << x << " " << y << " 0\n";
     for (int y = 0; y <= cells; y++)
         for (int x = 0; x <= cells; x++)
-            obj << "vt " << double(x) / cells << " " << double(y) / cells << "\n";
+            obj << "vt " << uv.repeats * double(x) / cells + uv.offset[0] << " "
+                << uv.repeats * double(y) / cells + uv.offset[1] << "\n";
     obj << "usemtl m\n";
     auto index = [cells](int x, int y) { return y * (cells + 1) + x + 1; };
     for (int y = 0; y < cells; y++)

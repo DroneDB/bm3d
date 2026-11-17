@@ -489,10 +489,11 @@ TEST(PlyFormats, theTextureCoordinatesOfAVertexGoByAnyOfThreePairsOfNames) {
     }
 }
 
-// A texture coordinate outside 0..1 repeats the texture. The builder brings the coordinates of every
-// format back to their fractional part when it assigns the vertices to textures, so the PLY loader
-// does not (it did, on the vertex it keeps for all the faces that share it, which was the same
-// computation twice). A coordinate one or two repeats away gives the model of the one inside.
+// A texture coordinate outside 0..1 repeats the texture. The builder moves the coordinates of every
+// format by whole repeats when it cuts the pieces of texture of a node (see texture_repeat_test.cpp),
+// so the PLY loader does not (it brought each coordinate to its fractional part, on the vertex it
+// keeps for all the faces that share it). A coordinate one or two repeats away gives the model of
+// the one inside.
 TEST(PlyFormats, aTextureCoordinateBeyondOneIsTheSameAsItsFractionalPart) {
     TempDir dir;
     writePng(dir.file("t.png"), gradientRaster(3));

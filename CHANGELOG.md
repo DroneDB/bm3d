@@ -4,6 +4,18 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## 1.1.3 (not released)
 
+- **Texture coordinates outside 0..1 repeat the texture.** The builder brought each texture
+  coordinate on its own to its fractional part, which left a negative coordinate negative (then
+  clamped to the edge of the texture) and cut every triangle that straddles an edge of the texture
+  across all of it: a glTF converted to OBJ with its v flipped (v from -1 to 0, as the DamagedHelmet
+  sample) was a set of streaks, and a texture tiled over a surface was smeared. Each piece of
+  texture a node uses is now moved by whole repeats of its texture, which shows the same texels; a
+  piece that still runs over an edge (a texture tiled several times) is cut from the texture repeated
+  as a tile, made smaller when it would be more than 4096 texels on a side or when the node texture
+  would not pack. A coordinate less than half a texel past an edge counts as on the edge: the
+  simplified levels of an atlas move a few coordinates just past 1, which used to wrap them to 0 and
+  stretch their triangles over the whole piece. Models whose coordinates are in 0..1 are unchanged
+  but for that (the textured terrain fixture changes in its coarse levels).
 - **The vertex properties of a PLY are read as the types the header declares.** The coordinates
   were read only when x, y and z were all floats or all doubles, so a valid vertex of mixed types (a
   double x, a float y and a short z, among float colours, as in Blender's test of the order of the

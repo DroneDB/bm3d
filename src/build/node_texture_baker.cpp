@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <functional>
 #include <map>
+#include <utility>
 
 #include <vcg/space/rect_packer.h>
 
@@ -60,18 +62,35 @@ public:
 };
 
 //The pieces of texture a node uses: the connected pieces of its triangles that use one texture.
-//Each has the box its texture coordinates span, in the unit square of the texture.
+//Each has the box its texture coordinates span.
 struct Charts {
 	std::vector<vcg::Box2f> boxes;
 	std::vector<int> texture;      //the texture each chart belongs to
 	std::vector<int> ofVertex;     //the chart of each vertex of the mesh, -1 for none
 };
 
-//Where each chart is cut from its texture, in the texels of the level, and the box it takes
+//Where each chart is cut from its texture, and the box it takes. The sampler of a model wraps (the
+//texture repeats), so a chart is first moved by whole repeats of its texture to start in the unit
+//square: that shows the same texels. A chart then inside the unit square is cut from the texels of
+//the level. A chart that runs over an edge of its texture is cut from the texture repeated as a tile,
+//at most maxWrappedSide texels on a side: the repeat is made smaller when the chart spans more.
 struct ChartRects {
 	std::vector<vcg::Point2i> sizes;
 	std::vector<vcg::Point2i> origins;
+	//the whole repeats each chart is moved by: subtracted from its texture coordinates
+	std::vector<vcg::Point2f> shifts;
+	//the side in texels of one repeat of the texture in the chart: the size of the level, or less for
+	//a chart that repeats the texture over more texels than a chart may have
+	std::vector<vcg::Point2i> periods;
+	std::vector<bool> wrapped;
 };
+
+//The longest side of a chart that repeats its texture, in texels, before the packing has to make it
+//smaller: a floor that repeats a texture of 1024 texels 50 times would otherwise need a node texture
+//of 51200 texels, which does not pack
+const int MAX_WRAPPED_CHART_SIDE = 4096;
+//The packing halves that side until the charts fit, down to this
+const int MIN_WRAPPED_CHART_SIDE = 64;
 
 //Where each chart goes in the node texture
 struct Packing {
@@ -131,8 +150,7 @@ int NodeTextureBaker::textureOnlyLevels(double texelsPerTriangle, float scaling)
 
 namespace {
 
-//Finds the charts of the mesh. The texture coordinates are brought into the unit square (the
-//fractional part), and a chart's box leaves out the vertices at (0, 0), which stand for no
+//Finds the charts of the mesh. A chart's box leaves out the vertices at (0, 0), which stand for no
 //coordinate.
 Charts findCharts(TMesh &mesh, const Logger &logger) {
 	Charts charts;
@@ -182,12 +200,7 @@ Charts findCharts(TMesh &mesh, const Logger &logger) {
 
 		vcg::Box2f &box = boxes[b];
 		box_texture[b] = tex;
-		auto &t = mesh.vert[i].T().P();
-		if(t[0] != 1.0)
-			t[0] = std::fmod(t[0], 1.0);
-		if(t[1] != 1.0)
-			t[1] = std::fmod(t[1], 1.0);
-
+		const auto &t = mesh.vert[i].T().P();
 		if(t[0] != 0.0f || t[1] != 0.0f)
 			box.Add(t);
 	}
@@ -213,12 +226,40 @@ Charts findCharts(TMesh &mesh, const Logger &logger) {
 	return charts;
 }
 
-//The rectangle of the texels of `level` that each chart is cut from: its box with a texel more on
-//every side, snapped outwards to whole texels
-ChartRects chartRects(const Charts &charts, TexAtlas &atlas, int level) {
+//How a chart is moved along one axis, from the span [low, high] of its texture coordinates there
+//and the texels of its texture along it
+struct SpanPlacement {
+	float shift = 0;      //the whole repeats subtracted from the coordinates
+	bool repeats = false; //the span, once moved, still runs over an edge of the texture
+};
+
+//The whole number of repeats that moves the span into [0, 1]: none when it is there already, and the
+//one that starts it in [0, 1) when it is longer than one repeat or straddles an edge of the texture.
+//A coordinate less than half a texel outside [0, 1] counts as on the edge: the simplified levels
+//move the coordinates of an atlas a little past its edges, and that texel is the one it means.
+//Moving each coordinate on its own (its fractional part) would instead cut the triangles that
+//straddle an edge, and leave a negative coordinate outside.
+SpanPlacement placeSpan(float low, float high, int texels) {
+	const float tolerance = 0.5f / float(texels);
+	if(low >= -tolerance && high <= 1.0f + tolerance)
+		return SpanPlacement();
+	const float fit = std::ceil(high - tolerance) - 1.0f;
+	if(low - fit >= -tolerance)
+		return {fit, false};
+	return {std::floor(low), true};
+}
+
+//The rectangle of texels that each chart is cut from: its box with a texel more on every side,
+//snapped outwards to whole texels. A chart inside the unit square is cut from the texels of `level`
+//(the rectangle kept inside them); one that runs over an edge of its texture from the texture repeated
+//(see ChartRects), at most maxWrappedSide texels on a side.
+ChartRects chartRects(const Charts &charts, TexAtlas &atlas, int level, int maxWrappedSide) {
 	ChartRects rects;
 	rects.sizes.resize(charts.boxes.size());
 	rects.origins.resize(charts.boxes.size());
+	rects.shifts.resize(charts.boxes.size(), vcg::Point2f(0.0f, 0.0f));
+	rects.periods.resize(charts.boxes.size());
+	rects.wrapped.resize(charts.boxes.size(), false);
 	for(size_t b = 0; b < charts.boxes.size(); b++) {
 		vcg::Box2f box = charts.boxes[b];
 		int tex = charts.texture[b];
@@ -227,12 +268,39 @@ ChartRects chartRects(const Charts &charts, TexAtlas &atlas, int level) {
 		float w = atlas.width(tex, level); //img->size().width();
 		float h = atlas.height(tex, level); //img->size().height();
 		if(w <= 0 || h <= 0) continue;
+		vcg::Point2i &size = rects.sizes[b];
+		vcg::Point2i &origin = rects.origins[b];
+		vcg::Point2i &period = rects.periods[b];
+		period = vcg::Point2i(int(w), int(h));
+		if(!box.IsNull()) {
+			for(int k = 0; k < 2; k++) {
+				const SpanPlacement placement = placeSpan(box.min[k], box.max[k], period[k]);
+				rects.shifts[b][k] = placement.shift;
+				rects.wrapped[b] = rects.wrapped[b] || placement.repeats;
+			}
+			box.min -= rects.shifts[b];
+			box.max -= rects.shifts[b];
+		}
+
+		if(rects.wrapped[b]) {
+			for(int k = 0; k < 2; k++) {
+				const double span = (double(box.max[k]) - double(box.min[k])) * period[k] + 2;
+				if(span > maxWrappedSide)
+					period[k] = std::max(1, int(period[k] * (maxWrappedSide - 2) / (span - 2)));
+				origin[k] = int(std::floor(double(box.min[k]) * period[k])) - 1;
+				size[k] = int(std::ceil(double(box.max[k]) * period[k])) + 1 - origin[k];
+				//a repeat of one texel is the mean colour of the texture: the chart is that colour
+				//however many repeats it spans, and its coordinates stop at the last texel
+				if(period[k] == 1)
+					size[k] = std::min(size[k], maxWrappedSide);
+			}
+			continue;
+		}
+
 		float px = 1/(float)w;
 		float py = 1/(float)h;
 		box.Offset(vcg::Point2f(px, py));
 		//snap to higher pix (clamped by 0 and 1 anyway)
-		vcg::Point2i &size = rects.sizes[b];
-		vcg::Point2i &origin = rects.origins[b];
 		origin[0] = std::max(0.0f, std::floor(box.min[0]/px));
 		origin[1] = std::max(0.0f, std::floor(box.min[1]/py));
 		if(origin[0] >= w) origin[0] = w-1;
@@ -248,17 +316,61 @@ ChartRects chartRects(const Charts &charts, TexAtlas &atlas, int level) {
 	return rects;
 }
 
+//The texels of the rectangle (x, y, width, height) of a texture repeated in both directions, each
+//repeat period[0] x period[1] texels: read(x, y, width, height) gives a rectangle inside one repeat
+Image readRepeated(const vcg::Point2i &period, int x, int y, int width, int height,
+                   const std::function<Image(int, int, int, int)> &read) {
+	auto wrap = [](int value, int side) { return ((value % side) + side) % side; };
+	Image image(width, height);
+	for(int ty = 0; ty < height;) {
+		const int sy = wrap(y + ty, period[1]);
+		const int rows = std::min(height - ty, period[1] - sy);
+		for(int tx = 0; tx < width;) {
+			const int sx = wrap(x + tx, period[0]);
+			const int columns = std::min(width - tx, period[0] - sx);
+			image.draw(tx, ty, read(sx, sy, columns, rows));
+			tx += columns;
+		}
+		ty += rows;
+	}
+	return image;
+}
+
+//The texels of chart `chart`, as chartRects placed it
+Image readChart(const Charts &charts, const ChartRects &rects, size_t chart, TexAtlas &atlas, int level,
+                std::map<std::pair<int, std::pair<int, int>>, Image> &smallerRepeats) {
+	const int source = charts.texture[chart];
+	const vcg::Point2i &o = rects.origins[chart];
+	const vcg::Point2i &s = rects.sizes[chart];
+	if(!rects.wrapped[chart])
+		return atlas.read(source, level, o[0], o[1], s[0], s[1]);
+
+	const vcg::Point2i &period = rects.periods[chart];
+	const int w = atlas.width(source, level);
+	const int h = atlas.height(source, level);
+	if(period[0] == w && period[1] == h)
+		return readRepeated(period, o[0], o[1], s[0], s[1], [&](int x, int y, int width, int height) {
+			return atlas.read(source, level, x, y, width, height);
+		});
+	//the repeat made smaller: the whole texture, averaged down once for the charts of the node
+	auto key = std::make_pair(source, std::make_pair(period[0], period[1]));
+	auto found = smallerRepeats.find(key);
+	if(found == smallerRepeats.end())
+		found = smallerRepeats.emplace(key, atlas.read(source, level, 0, 0, w, h).downscaled(period[0], period[1])).first;
+	const Image &repeat = found->second;
+	return readRepeated(period, o[0], o[1], s[0], s[1], [&](int x, int y, int width, int height) {
+		return repeat.copy(x, y, width, height);
+	});
+}
+
 //Packs the rectangles in one image, in a square of 1096 texels on a side or, if they do not fit, in
-//one twice as large, up to four times
-Packing packRects(const std::vector<vcg::Point2i> &sizes) {
-	Packing packing;
+//one twice as large, up to four times. False when they do not fit in the largest.
+bool packRects(const std::vector<vcg::Point2i> &sizes, Packing &packing) {
 	vcg::Point2i maxSize(1096, 1096);
-	bool success = false;
 	for(int i = 0; i < 5; i++, maxSize[0]*= 2, maxSize[1]*= 2) {
 		if(sizes.size() == 0) { //no texture!
 			packing.finalSize = vcg::Point2i(1, 1);
-			success = true;
-			break;
+			return true;
 		}
 		bool too_large = false;
 		for(auto s: sizes) {
@@ -269,18 +381,10 @@ Packing packRects(const std::vector<vcg::Point2i> &sizes) {
 			continue;
 		}
 		packing.mapping.clear(); //TODO this should be done inside the packer
-		success = vcg::RectPacker<float>::PackInt(sizes, maxSize, packing.mapping, packing.finalSize);
-		if(success)
-			break;
+		if(vcg::RectPacker<float>::PackInt(sizes, maxSize, packing.mapping, packing.finalSize))
+			return true;
 	}
-	if(!success) {
-		//an error, not a blank node texture: the texture coordinates of the node are not
-		//remapped on this path, so its texture would be the size of the failed packing
-		//(over 16K a side, gigabytes of memory) and its pixels unset.
-		throw TexturePackingError("Failed packing: the texture in a single bm3d node would be > 16K\n"
-		                              "Try to reduce the size of the nodes using -t (default is 4096)");
-	}
-	return packing;
+	return false;
 }
 
 //The size the node texture is stored at: the packed rectangles, made smaller to fit in
@@ -297,7 +401,7 @@ vcg::Point2i storedSizeOf(const vcg::Point2i &finalSize, int maxNodeTextureSide)
 }
 
 //Points the texture coordinates of the mesh into the node texture, where each chart has been
-//packed
+//packed: the texel of the chart's repeat each coordinate falls on, from the corner of its rectangle
 void remapTexCoords(TMesh &mesh, const Charts &charts, const ChartRects &rects, const Packing &packing,
                     TexAtlas &atlas, int level) {
 	float pdx = 1/(float)packing.finalSize[0];
@@ -319,22 +423,23 @@ void remapTexCoords(TMesh &mesh, const Charts &charts, const ChartRects &rects, 
 			uv = vcg::Point2f(0.0f, 0.0f);
 			continue;
 		}
-		float w = atlas.width(tex, level);
-		float h = atlas.height(tex, level);
-		if(w <= 0 || h <= 0) {
+		if(atlas.width(tex, level) <= 0 || atlas.height(tex, level) <= 0) {
 			uv = vcg::Point2f(0.0f, 0.0f);
 			continue;
 		}
-		float px = 1/(float)w;
-		float py = 1/(float)h;
+		const vcg::Point2i &period = rects.periods[b];
+		float px = 1/(float)period[0];
+		float py = 1/(float)period[1];
 
+		uv -= rects.shifts[b];
 		if(uv[0] < 0.0f)
 			uv[0] = 0.0f;
 		if(uv[1] < 0.0f)
 			uv[1] = 0.0f;
 
-		float dx = uv[0]/px - o[0];
-		float dy = uv[1]/py - o[1];
+		const vcg::Point2i &s = rects.sizes[b];
+		float dx = std::min(uv[0]/px - o[0], float(s[0]));
+		float dy = std::min(uv[1]/py - o[1], float(s[1]));
 		if(dx < 0.0f) dx = 0.0f;
 		if(dy < 0.0f) dy = 0.0f;
 
@@ -385,8 +490,22 @@ void nodeError(TMesh &mesh, const vcg::Point2i &storedSize, bool simplified, Nod
 
 NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 	const Charts charts = findCharts(mesh, logger_);
-	const ChartRects rects = chartRects(charts, atlas_, level);
-	const Packing packing = packRects(rects.sizes);
+	ChartRects rects;
+	Packing packing;
+	//the charts that repeat their texture are made smaller until the node texture packs
+	for(int maxWrappedSide = MAX_WRAPPED_CHART_SIDE;; maxWrappedSide /= 2) {
+		rects = chartRects(charts, atlas_, level, maxWrappedSide);
+		if(packRects(rects.sizes, packing))
+			break;
+		const bool repeats = std::find(rects.wrapped.begin(), rects.wrapped.end(), true) != rects.wrapped.end();
+		if(!repeats || maxWrappedSide / 2 < MIN_WRAPPED_CHART_SIDE) {
+			//an error, not a blank node texture: the texture coordinates of the node are not
+			//remapped on this path, so its texture would be the size of the failed packing
+			//(over 16K a side, gigabytes of memory) and its pixels unset.
+			throw TexturePackingError("Failed packing: the texture in a single bm3d node would be > 16K\n"
+			                          "Try to reduce the size of the nodes using -t (default is 4096)");
+		}
+	}
 	const vcg::Point2i storedSize = storedSizeOf(packing.finalSize, maxNodeTextureSide_);
 
 	Image image(packing.finalSize[0], packing.finalSize[1]);
@@ -398,13 +517,12 @@ NodeTexture NodeTextureBaker::bake(TMesh &mesh, int level, bool simplified) {
 	nodeError(mesh, storedSize, simplified, result);
 
 	//copy the charts into the image using the mapping
+	std::map<std::pair<int, std::pair<int, int>>, Image> smallerRepeats;
 	for(int i = 0; i < (int)charts.boxes.size(); i++) {
 		int source = charts.texture[i];
 		if(source < 0) continue;
-		const vcg::Point2i &o = rects.origins[i];
-		const vcg::Point2i &s = rects.sizes[i];
 
-		Image rect = atlas_.read(source, level, o[0], o[1], s[0], s[1]);
+		Image rect = readChart(charts, rects, size_t(i), atlas_, level, smallerRepeats);
 		if(i < (int)packing.mapping.size())
 			image.draw(packing.mapping[i][0], packing.mapping[i][1], rect);
 	}

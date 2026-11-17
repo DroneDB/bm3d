@@ -71,6 +71,8 @@ NodeMesh readNode(const fs::path& path, uint32_t node) {
             mesh.normals.push_back({decoded.normals[i] / 32767.0f, decoded.normals[i + 1] / 32767.0f, decoded.normals[i + 2] / 32767.0f});
         for (size_t i = 0; i + 3 < decoded.colors.size(); i += 4)
             mesh.colors.push_back({decoded.colors[i], decoded.colors[i + 1], decoded.colors[i + 2], decoded.colors[i + 3]});
+        for (size_t i = 0; i + 1 < decoded.uvs.size(); i += 2)
+            mesh.uvs.push_back({decoded.uvs[i], decoded.uvs[i + 1]});
         mesh.indices.assign(decoded.indices.begin(), decoded.indices.end());
     } catch (const std::exception& e) {
         ADD_FAILURE() << pathToUtf8(path) << ": " << e.what();

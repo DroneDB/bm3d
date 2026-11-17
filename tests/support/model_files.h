@@ -24,9 +24,16 @@ std::string readBinaryFile(const fs::path& file);
 // The smallest model the build accepts: one triangle
 constexpr const char* kTriangleObj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
 
-// A flat cells x cells grid of squares, two triangles each, covered once by the texture
+// How the texture coordinates of a grid follow its positions: (u, v) = repeats x (x, y) / cells
+// + offset. The default covers the grid once with the texture.
+struct GridTexCoords {
+    double repeats = 1;
+    std::array<double, 2> offset = {0, 0};
+};
+
+// A flat cells x cells grid of squares (x and y from 0 to cells), two triangles each, textured by
 // `texture` (a file in `folder`): writes grid.obj and grid.mtl
-void writeGridModel(const fs::path& folder, int cells, const std::string& texture);
+void writeGridModel(const fs::path& folder, int cells, const std::string& texture, const GridTexCoords& uv = {});
 
 // Two triangles over a square with texture coordinates, and the material that names the texture
 // file (in `folder`): writes model.obj and model.mtl. `uv` replaces the four "vt" lines.

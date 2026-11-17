@@ -107,6 +107,7 @@ bm3d_add_tests(bm3d_integration_tests integration
     integration/mesh_formats_test.cpp
     integration/simplified_levels_test.cpp
     integration/texture_formats_test.cpp
+    integration/texture_repeat_test.cpp
     integration/texture_resolution_test.cpp)
 
 bm3d_add_tests(bm3d_cli_tests cli

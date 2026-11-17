@@ -41,6 +41,7 @@ struct NodeMesh {
     std::vector<std::array<float, 3>> positions;
     std::vector<std::array<float, 3>> normals;   // empty when the file holds none
     std::vector<std::array<uint8_t, 4>> colors;  // red, green, blue, alpha; empty when the file holds none
+    std::vector<std::array<float, 2>> uvs;       // texture coordinates in the node texture; empty when none
     std::vector<uint32_t> indices;               // three per triangle
 };
 
