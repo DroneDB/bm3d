@@ -12,6 +12,7 @@
 import { Box3, BufferAttribute, BufferGeometry, DataTexture, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, Ray, RGBAFormat, Sphere, Vector2, Vector3 } from 'three';
 
 import { Instance } from './instance.js';
+import { principalAxes } from './shape.js';
 
 function noCentering() {
 	throw new Error('bm3d: centering, and in general applying a matrix to the geometry, is not supported.');
@@ -140,6 +141,18 @@ export class Bm3dObject extends Mesh {
 			max.set(Math.max(max.x, x + r), Math.max(max.y, y + r), Math.max(max.z, z + r));
 		}
 		return new Box3(min, max);
+	}
+
+	/**
+	 * The principal axes of the coarsest level (node 0), once it has arrived (null before), in the
+	 * coordinates of the model: { center, axes, extents }, the axes from the longest extent to the
+	 * shortest. A flat model has a last extent of almost 0, and its last axis is the normal of its
+	 * plane: an application that frames the model can look along it rather than along the plane.
+	 */
+	computePrincipalAxes() {
+		const { instance } = this.geometry;
+		if (!instance || !instance.isReady || !instance.mesh.root) return null;
+		return principalAxes(instance.mesh.root.positions);
 	}
 
 	/** Ray casting against the coarsest level (node 0), once it has arrived. */

@@ -59,7 +59,20 @@ its `side`.
 
 `model.dispose()` frees what the model holds on the GPU. `model.flush()` drops the loaded nodes.
 `model.computeBoundingBox()` gives the box around the finest nodes, and `raycast` works against the
-coarsest level.
+coarsest level. `model.computePrincipalAxes()` gives the principal axes of the vertices of the coarsest
+level once its node has arrived (`null` before; `onUpdate` says when): `{ center, axes, extents }`,
+the axes as unit `[x, y, z]` from the longest extent to the shortest. The box and the bounding sphere
+cannot tell a flat model (one quad, a planar drawing): its last extent is almost 0 and its last axis
+is the normal of its plane, so a camera that frames it can look along that axis rather than along
+the plane, where it sees nothing.
+
+```js
+const shape = model.computePrincipalAxes();
+if (shape && shape.extents[2] < 0.02 * shape.extents[0]) {
+  const [x, y, z] = shape.axes[2];
+  // put the camera on the line through the centre along (x, y, z)
+}
+```
 
 ### Options (the sixth argument)
 

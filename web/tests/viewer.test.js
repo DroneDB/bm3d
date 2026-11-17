@@ -188,6 +188,17 @@ describe('Bm3dObject', () => {
 		expect(box.max.toArray()).toEqual([5.5, 1.5, 0.5]);
 	});
 
+	it('gives the principal axes of its coarsest node once it has arrived', async () => {
+		const { object } = await loadObject(model({ textures: false }));
+		expect(object.computePrincipalAxes()).toBeNull();
+		// node 0 of a quad in the plane y = 2
+		object.geometry.instance.mesh.root = { positions: new Float32Array([0, 2, 0, 4, 2, 0, 4, 2, 3, 0, 2, 3]), indices: new Uint16Array([0, 1, 2, 0, 2, 3]) };
+		const shape = object.computePrincipalAxes();
+		expect(Math.abs(shape.axes[2][1])).toBeCloseTo(1, 6);
+		expect(shape.extents[2]).toBeCloseTo(0, 6);
+		expect(shape.center).toEqual([2, 2, 1.5].map((x) => expect.closeTo(x, 6)));
+	});
+
 	it('reports a file it cannot open', async () => {
 		const bytes = model();
 		bytes[0] = 0;

@@ -4,6 +4,12 @@ All notable changes to bm3d are listed here. The version is in `VERSION`.
 
 ## 1.1.3 (not released)
 
+- **The viewer gives the principal axes of a model.** `Bm3dObject.computePrincipalAxes()` returns
+  the centre, the axes and the extents of the vertices of the coarsest level once its node has
+  arrived. A flat model (one quad, a planar drawing) has almost no extent along its last axis, the
+  normal of its plane: an application can frame it face-on, where a fixed camera along that plane
+  showed a blank canvas. The bounding box and sphere, built from node spheres, cannot tell such a
+  model.
 - **The viewer draws both sides of the triangles.** The material it makes when it is given none
   culled the back faces, so a mesh wound clockwise (a MeshLab terrain patch whose triangles face down
   while its normals face up), a mesh of mixed winding, or any open surface seen from below, showed
